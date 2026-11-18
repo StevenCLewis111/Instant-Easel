@@ -110,17 +110,163 @@ class Panel(tk.Frame):
         self.inner = inner; self._style(); on_change(self._style)
     def _style(self): self.configure(bg=PALETTE["panel2" if self.inner else "panel"], highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
 
-class Title(tk.Label):
+# ---------------------------------------------------------------- painted words: labels drawn like the HISTORY button
+# Tk can't outline text, so each label's words are drawn as a picture instead: Courier Prime Bold in the label's colour with a
+# thin dark edge (the same look as the painted HISTORY button). Redrawn when the text, colour or zoom changes; a label that isn't
+# on screen waits until it is. A character the font doesn't have (like ▸) is drawn in a fallback font instead of a box.
+PAINT_TEXT = True
+_pf = {}; _glyph = {}
+def _pil_font(px, fallback=False):
+    k = (px, fallback)
+    if k not in _pf:
+        import os
+        from PIL import ImageFont
+        try: import paths; mine = os.path.join(paths.APP, "fonts", "CourierPrime-Bold.ttf")
+        except Exception: mine = "CourierPrime-Bold.ttf"
+        names = ("seguisym.ttf", "DejaVuSans-Bold.ttf", "arialbd.ttf", "DejaVuSans.ttf") if fallback else (mine, "courbd.ttf", "DejaVuSansMono-Bold.ttf")
+        f = None
+        for n in names:
+            try: f = ImageFont.truetype(n, px); break
+            except Exception: pass
+        _pf[k] = f or ImageFont.load_default()
+    return _pf[k]
+
+def _has_glyph(ch):
+    """does Courier Prime draw this character (rather than its empty box)?"""
+    if ch not in _glyph:
+        if ch.isspace() or ord(ch) < 127: _glyph[ch] = True
+        else:
+            from PIL import Image, ImageDraw
+            f = _pil_font(24)
+            def ink(c):
+                im = Image.new("L", (48, 48)); ImageDraw.Draw(im).text((8, 8), c, font=f, fill=255); return im.tobytes()
+            _glyph[ch] = ink(ch) != ink("￿")
+    return _glyph[ch]
+
+def _runs(s):
+    """split s into runs of (text, needs the fallback font)"""
+    out = []
+    for ch in s:
+        fb = not _has_glyph(ch)
+        if out and out[-1][1] == fb: out[-1][0] += ch
+        else: out.append([ch, fb])
+    return out
+
+def _line_w(s, px):
+    return sum(_pil_font(px, fb).getlength(t) for t, fb in _runs(s))
+
+def _wrap(text, px, width):
+    lines = []
+    for para in str(text).split("\n"):
+        if width <= 0 or _line_w(para, px) <= width: lines.append(para); continue
+        cur = ""
+        for word in para.split(" "):
+            t = word if not cur else cur + " " + word
+            if cur and _line_w(t, px) > width: lines.append(cur); cur = word
+            else: cur = t
+        lines.append(cur)
+    return lines
+
+def paint_words(text, px, fill, underline=False, justify="left", wrap=0, min_w=0, align="w"):
+    """the words as an RGBA picture"""
+    from PIL import Image, ImageDraw
+    sw = max(1, round(px / 10)); f = _pil_font(px); asc, desc = f.getmetrics(); lh = asc + desc
+    lines = _wrap(text, px, wrap); widths = [_line_w(l, px) for l in lines]
+    tw = int(max(widths or [0])) + 1; W = max(tw, int(min_w)) + 2 * sw; H = lh * len(lines) + 2 * sw + (sw + 1 if underline else 0)
+    im = Image.new("RGBA", (max(1, W), max(1, H))); d = ImageDraw.Draw(im)
+    left = sw + (0 if align in ("w", "nw", "sw") else (W - 2 * sw - tw) if align in ("e", "ne", "se") else (W - 2 * sw - tw) // 2)
+    for i, (l, w) in enumerate(zip(lines, widths)):
+        x = left + (0 if justify == "left" else (tw - w) if justify == "right" else (tw - w) / 2); y = sw + i * lh
+        for t, fb in _runs(l):
+            ff = _pil_font(px, fb); dy = (asc - ff.getmetrics()[0]) if fb else 0
+            d.text((x, y + dy), t, font=ff, fill=fill, stroke_width=sw, stroke_fill=(5, 10, 35)); x += ff.getlength(t)
+        if underline:
+            uy = y + asc + max(1, sw); d.rectangle((left, uy, left + tw, uy + max(1, px // 14)), fill=fill)
+    return im
+
+class _Painted:
+    """mixin for the theme's labels: the words drawn as a picture (see paint_words)"""
+    _ready = False; _chars = 0; _dfont = None; _dwrap = 0; _dirty = False
+    def _paint_init(self, font):
+        self._dfont = font if isinstance(font, (tuple, list)) else None
+        try: self._chars = int(tk.Label.cget(self, "width") or 0)
+        except (tk.TclError, ValueError): self._chars = 0
+        try: self._dwrap = int(self.__dict__.get("_zd", {}).get("opt", {}).get("wraplength") or tk.Label.cget(self, "wraplength") or 0)
+        except (tk.TclError, ValueError): self._dwrap = 0
+        self._ready = PAINT_TEXT and not str(tk.Label.cget(self, "image"))       # a label showing its own picture (an icon) keeps it
+        if self._ready:
+            rec = self.__dict__.setdefault("_zd", {}).setdefault("opt", {})          # Tk ignores padding round a picture: it's drawn in
+            px_, py_ = rec.pop("padx", None), rec.pop("pady", None)
+            self._pads = (int(px_ if px_ is not None else tk.Label.cget(self, "padx")), int(py_ if py_ is not None else tk.Label.cget(self, "pady")))
+            self.tk.call(self._w, "configure", "-width", 0, "-padx", 0, "-pady", 0); on_change(self._repaint, zoom=True)
+            self.bind("<Map>", lambda e: self._dirty and self._repaint(), add="+")
+        self._repaint()
+    def cget(self, key):
+        if key == "width" and self._ready: return self._chars          # the width in characters, as asked for
+        return super().cget(key)
+    __getitem__ = cget
+    def configure(self, cnf=None, **kw):
+        if cnf is not None and not isinstance(cnf, dict): return super().configure(cnf)    # a question about one option
+        kw = {**(cnf or {}), **kw}
+        if not kw or not self._ready or getattr(self, "_skin", None) is not None: return super().configure(**kw)   # painted buttons look after themselves
+        if "image" in kw: self._opt_out(); return super().configure(**kw)         # given its own picture (an icon): plain label from now on
+        for i, k in enumerate(("padx", "pady")):
+            if k in kw and getattr(self, "_pads", None) is not None:
+                v = kw.pop(k); pads = list(self._pads); pads[i] = int(v) if isinstance(v, (int, float)) else pads[i]; self._pads = tuple(pads); kw.setdefault("text", tk.Label.cget(self, "text"))
+        changed = "width" in kw
+        if changed: self._chars = int(kw.pop("width") or 0)
+        if "font" in kw: self._dfont = kw["font"] if isinstance(kw["font"], (tuple, list)) else None
+        if "wraplength" in kw:
+            try: self._dwrap = int(kw["wraplength"] or 0)
+            except (TypeError, ValueError): self._dwrap = 0
+        r = super().configure(**kw) if kw else None
+        if changed or any(k in kw for k in ("text", "font", "fg", "foreground", "wraplength", "justify", "anchor")): self._repaint()
+        return r
+    config = configure
+    def __setitem__(self, key, value): self.configure(**{key: value})
+    def _opt_out(self):
+        """back to a plain Tk label (its padding and width as they were)"""
+        self._ready = False; px_, py_ = getattr(self, "_pads", (0, 0))
+        rec = self.__dict__.setdefault("_zd", {}).setdefault("opt", {}); rec["padx"], rec["pady"] = px_, py_
+        tk.Label.configure(self, image="", padx=px_, pady=py_, width=self._chars); self._ph = None   # (let go of the words picture first)
+    def _repaint(self):
+        if not self._ready or getattr(self, "_skin", None) is not None: return
+        try:
+            if getattr(self, "_shown_once", False) and not self.winfo_ismapped(): self._dirty = True; return    # off screen: when it shows
+        except tk.TclError: return
+        self._dirty = False
+        try:
+            text = tk.Label.cget(self, "text")
+            if not text: tk.Label.configure(self, image=""); self._ph = None; return
+            import tkinter.font as tkf
+            if self._dfont: size = self._dfont[1]; under = "underline" in self._dfont[2:]
+            else:
+                fo = tkf.Font(root=self, font=tk.Label.cget(self, "font")); size = fo.actual("size"); under = bool(fo.actual("underline"))
+                size = size / max(Z, 0.01)                                     # (already zoomed)
+            pt = max(5, int(round(abs(size) * Z))); px = max(6, int(round(pt * float(self.tk.call("tk", "scaling"))))) if size > 0 else max(6, int(round(abs(size) * Z)))
+            r, g, b = (c // 257 for c in self.winfo_rgb(tk.Label.cget(self, "fg")))
+            cw = _pil_font(px).getlength("0")
+            im = paint_words(text, px, (r, g, b), under, str(tk.Label.cget(self, "justify")), int(round(self._dwrap * Z)), cw * self._chars, str(tk.Label.cget(self, "anchor")))
+            ex, ey = (int(round(v * Z)) for v in getattr(self, "_pads", (0, 0)))
+            if ex or ey:
+                from PIL import Image
+                big = Image.new("RGBA", (im.width + 2 * ex, im.height + 2 * ey)); big.paste(im, (ex, ey)); im = big
+            from PIL import ImageTk
+            self._ph = ImageTk.PhotoImage(im); tk.Label.configure(self, image=self._ph); self._shown_once = True
+        except tk.TclError: pass
+
+class Title(_Painted, tk.Label):
     def __init__(self, master, text, big=False, **kw):
-        super().__init__(master, text=text, font=BIG if big else TITLE, **kw); self._style(); on_change(self._style)
+        super().__init__(master, text=text, font=BIG if big else TITLE, **kw); self._style(); on_change(self._style); self._paint_init(BIG if big else TITLE)
     def _style(self): self.configure(bg=self.master["bg"], fg=PALETTE["title"])
 
-class Text(tk.Label):
+class Text(_Painted, tk.Label):
     def __init__(self, master, text="", muted=False, font=None, **kw):
         super().__init__(master, text=text, font=font or MONO_S, justify="left", **kw); self.muted = muted; self._style(); on_change(self._style)
+        self._paint_init(font or MONO_S)
     def _style(self): self.configure(bg=self.master["bg"], fg=PALETTE["muted" if self.muted else "text"])
 
-class Button(tk.Label):
+class Button(_Painted, tk.Label):
     """blue rounded-look button; green outline on hover/focus; Enter or Space activates it"""
     def __init__(self, master, text, command=None, kind="normal", width=None, **kw):
         super().__init__(master, text=text, font=MONO, padx=14, pady=6, cursor="hand2", takefocus=1, highlightthickness=2, width=width or 0, **kw)
@@ -128,7 +274,7 @@ class Button(tk.Label):
         self.bind("<Button-1>", lambda e: self.invoke()); self.bind("<Enter>", lambda e: self._set_hover(True)); self.bind("<Leave>", lambda e: self._set_hover(False))
         self.bind("<FocusIn>", lambda e: self._style()); self.bind("<FocusOut>", lambda e: self._style())
         self.bind("<Return>", lambda e: self.invoke()); self.bind("<space>", lambda e: self.invoke())
-        self._style(); on_change(self._style)
+        self._style(); on_change(self._style); self._paint_init(MONO)
     def _set_hover(self, h): self.hover = h; self._style()
     def _style(self):
         key = "danger" if self.kind == "danger" else "button"; hi = key + "_hi"
@@ -378,13 +524,13 @@ class Entry(tk.Entry):
         self._style(); on_change(self._style)
     def _style(self): self.configure(bg=PALETTE["field"], fg="white", highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
 
-class Choice(tk.Label):
+class Choice(_Painted, tk.Label):
     """click to cycle through choices, shown as a blue setting button: 'CLOUDS: MANY'"""
     def __init__(self, master, label, choices, variable):
         super().__init__(master, font=MONO_S, padx=12, pady=6, cursor="hand2", takefocus=1, highlightthickness=2)
         self.label = label; self.choices = choices; self.var = variable
         self.bind("<Button-1>", self.next); self.bind("<Return>", self.next); self.bind("<Button-3>", self.prev)
-        variable.trace_add("write", lambda *a: self._style()); self._style(); on_change(self._style)
+        variable.trace_add("write", lambda *a: self._style()); self._style(); on_change(self._style); self._paint_init(MONO_S)
     def next(self, e=None):
         c = self.choices; v = self.var.get(); self.var.set(c[(c.index(v) + 1) % len(c)] if v in c else c[0])
     def prev(self, e=None):

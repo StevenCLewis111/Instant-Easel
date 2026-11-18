@@ -105,6 +105,7 @@ def _take_over(w, text, chars, taller=0):
     """remember the widget's design pads / font and stop the zoom resetting its pads (the picture includes them now)"""
     rec = w.__dict__.setdefault("_zd", {}).setdefault("opt", {})
     pads = (rec.pop("padx", None), rec.pop("pady", None))
+    if pads == (None, None) and getattr(w, "_pads", None): pads = tuple(w._pads)       # painted-words labels keep their design pads here
     if pads[0] is None: pads = (int(w.cget("padx")), pads[1])
     if pads[1] is None: pads = (pads[0], int(w.cget("pady")))
     pads = (pads[0], pads[1] + taller)

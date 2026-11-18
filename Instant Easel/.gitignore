@@ -7,3 +7,12 @@ my-models/text/base/
 logs/*.log
 .json/instant_easel_settings.json
 build/
+
+# made on your PC while the app runs: never uploaded
+firefox_profile/
+EXE Build/.json/
+EXE Build/logs/
+EXE Build/recovery/
+EXE Build/my-library/
+EXE Build/my-models/
+EXE Build/firefox_profile/

@@ -2,3 +2,12 @@ __pycache__/
 *.pyc
 # the downloaded text model (several GB): never uploaded; each PC downloads its own
 my-models/text/base/
+
+# made on your PC while the app runs: never uploaded
+firefox_profile/
+EXE Build/.json/
+EXE Build/logs/
+EXE Build/recovery/
+EXE Build/my-library/
+EXE Build/my-models/
+EXE Build/firefox_profile/

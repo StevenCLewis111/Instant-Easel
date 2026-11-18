@@ -296,14 +296,14 @@ class InstantEasel(tk.Tk):
             if abs(self.logo.width() - tw) > 1 or self.logo.height() != lh:
                 self.logo = ImageTk.PhotoImage(self.logo_src.resize((tw, lh), Image.LANCZOS)); self.logo_lbl.configure(image=self.logo)
                 self.update_idletasks()
-        for lbl in self.mascot_lbl.values(): lbl.configure(image="", width=1, height=1)   # the old-size pictures would hold the header tall
+        for lbl in self.mascot_lbl.values(): lbl.configure(image="", width=0, height=0)   # the old-size pictures would hold the header tall
         self.update_idletasks()                                                 # (after a big window turns small); measure it without them
         h = self.tabs.winfo_y() + self.tabs.winfo_height() - 4                 # to the bottom of the tabs, keeping 4 px clear of the top border
         if h < 40: return self.after(50, self._size_mascots)
         self._mph = {}
         for col, src in self.mascot_src.items():
             k = h / src.height; im = _outlined(src.resize((max(1, int(src.width * k)), h), Image.LANCZOS), T.PALETTE["border"])
-            self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col])
+            self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col], width=0, height=0)   # 0 = the picture's own size
 
     def goto(self, tab, page=None):
         """open a tab (and one of its pages), with the tab row showing it"""
