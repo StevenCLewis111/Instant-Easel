@@ -244,8 +244,7 @@ class InstantEasel(tk.Tk):
                 cols = _np.flatnonzero((_np.asarray(im)[..., 3] > 40).any(0))                      # painted columns only: no see-through margin at the sides
                 if len(cols): im = im.crop((int(cols[0]), 0, int(cols[-1]) + 1, im.height))
                 self.mascot_src[col] = im
-                lbl = tk.Label(top, bg=top["bg"], bd=0, padx=0, pady=0, highlightthickness=0)
-                lbl.grid(row=0, column=col, rowspan=2, sticky=sticky, padx=(0, 18) if col == 0 else (18, 0))   # outer edge on the border line below
+                lbl = tk.Label(self.frame, bg=top["bg"], bd=0, padx=0, pady=0, highlightthickness=0)   # placed (see _size_mascots): standing on the border below
                 self.mascot_lbl[col] = lbl
                 T.on_change(lambda l=lbl: l.configure(bg=self.frame["bg"]))
             except Exception: pass
@@ -287,7 +286,8 @@ class InstantEasel(tk.Tk):
                 self.update_idletasks()
         for lbl in self.mascot_lbl.values(): lbl.configure(image="", width=0, height=0)   # the old-size pictures would hold the header tall
         self.update_idletasks()                                                 # (after a big window turns small); measure it without them
-        h = self.tabs.winfo_y() + self.tabs.winfo_height() - 4                 # to the bottom of the tabs, keeping 4 px clear of the top border
+        body_y = self.body.winfo_y() if hasattr(self, "body") else self.top.winfo_y() + self.top.winfo_height()
+        h = body_y - self.top.winfo_y() - 4                                    # from 4 px under the top border down to the green line under the header
         if h < 40: return self.after(50, self._size_mascots)
         self._mph = {}
         mid = max(self.tabs.winfo_reqwidth(), self.top.grid_bbox(1, 0, 1, 1)[2])            # the middle column: the logo or the tab row, whichever is wider
@@ -298,6 +298,8 @@ class InstantEasel(tk.Tk):
             im = _outlined(src.resize((max(1, int(src.width * k)), max(1, int(src.height * k))), Image.LANCZOS), T.PALETTE["border"])
             self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col], width=0, height=0)   # 0 = the picture's own size
             self._mpil = getattr(self, "_mpil", {}); self._mpil[col] = im
+            x = self.top.winfo_x() if col == 0 else self.top.winfo_x() + self.top.winfo_width() - im.width   # outer edge in line with the page's border
+            self.mascot_lbl[col].place(x=x, y=body_y - im.height, bordermode="outside")      # flat bottom standing on the line
         self.update_idletasks()
         if any(self.mascot_lbl[c].winfo_width() + 1 < self._mpil[c].width for c in self._mpil) and getattr(self, "_fit_tries", 0) < 2:
             self._fit_tries = getattr(self, "_fit_tries", 0) + 1; return self.after(30, self._size_mascots)    # the layout moved: measure once more
