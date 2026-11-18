@@ -199,7 +199,7 @@ class InstantEasel(tk.Tk):
             except Exception:
                 try: ctypes.windll.user32.SetProcessDPIAware()
                 except Exception: pass
-            try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("InstantEasel.App")   # the taskbar shows Instant Easel's icon, not Python's
+            try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("InstantEaselPro.App")   # the taskbar shows Instant Easel's icon, not Python's
             except Exception: pass
         super().__init__(); self.withdraw()                           # never seen half-built: shown once everything is laid out (show_window)
         self._hide()

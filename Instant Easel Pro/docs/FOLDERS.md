@@ -1,6 +1,6 @@
 # Where everything lives (Instant Easel Pro)
 
-Start the app with `python main.py` from this folder (or the built `InstantEasel.exe`).
+Start the app with `python main.py` from this folder (or the built `InstantEaselPro.exe`).
 
 | Folder | What's in it |
 |---|---|
@@ -21,7 +21,7 @@ Start the app with `python main.py` from this folder (or the built `InstantEasel
 | `dev/` | Development tools (brand maker, render / repaint helpers). |
 | `docs/` | Notes, roadmap, research. |
 | `my-library/`, `my-models/` | What the app has learned, and your models. `my-models/text/` holds the text model (downloaded on your PC, never uploaded) and each tab's text memory. See `docs/TEXT_MODEL_SETUP.md`. |
-| `build/`, `EXE Build/`, `PaintEngine.spec`, `build_windows.bat` | Building `InstantEasel.exe`: GitHub builds it on every push (`.github/workflows/build-windows.yml`, the new exe lands in `EXE Build/`), or run `build_windows.bat` on your own PC. |
+| `build/`, `EXE Build/`, `PaintEngine.spec`, `build_windows.bat` | Building `InstantEaselPro.exe`: GitHub builds it on every push (`.github/workflows/build-windows.yml`, the new exe lands in `EXE Build/`), or run `build_windows.bat` on your own PC. |
 
 Adding a script: put it in the tab folder it belongs to; nothing else to change (the app finds it by name). Moving a picture the app
 uses: change its area in `AREAS` in `systems/Core/ui_art.py`.

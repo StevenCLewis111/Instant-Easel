@@ -245,7 +245,7 @@ class TextModelPage(SettingsPage):
 # ---------------------------------------------------------------- Updates
 REPO = "StevenCLewis111/books"
 class UpdatesPage(SettingsPage):
-    TITLE = "Updates"; NOTE = "Checks GitHub for a newer InstantEasel.exe. Nothing is downloaded or installed without asking."
+    TITLE = "Updates"; NOTE = "Checks GitHub for a newer InstantEaselPro.exe. Nothing is downloaded or installed without asking."
     def build(self):
         import main
         T.Text(self.body, f"THIS VERSION: {main.VERSION}", font=T.f(11)).pack(anchor="w", pady=(0, 8))

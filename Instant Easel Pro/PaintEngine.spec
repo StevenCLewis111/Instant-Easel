@@ -1,4 +1,4 @@
-# PyInstaller spec: builds InstantEasel.exe with everything bundled (offline)
+# PyInstaller spec: builds InstantEaselPro.exe with everything bundled (offline)
 # The scripts live in folders under systems/ (sorted by tab), so every one of those folders is searched.
 import os
 SYSTEMS = [d for d, _, files in os.walk('systems') if any(f.endswith('.py') for f in files)]
@@ -9,4 +9,4 @@ a = Analysis(['main.py'], pathex=['.'] + SYSTEMS,
                             'art_panel', 'crash', 'image_grabber', 'shortcut'],
              excludes=['matplotlib', 'pandas'])
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='InstantEasel', icon='images/UI/App Icon/icon.ico', console=False, upx=False)
+exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='InstantEaselPro', icon='images/UI/App Icon/icon.ico', console=False, upx=False)

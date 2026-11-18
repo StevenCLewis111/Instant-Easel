@@ -66,7 +66,7 @@ It also handles **word forms** (rocks, rocky, rock) and **misspellings** ("sunst
 
 **What it paints today:** mountain landscapes at sunset or night (moon and stars), with clouds, a canyon, a grassy rise, rocks, and up to two sitting or standing figures. Subjects it can't paint yet, like dragons, oceans or forests, are reported as unknown rather than guessed at.
 
-## The Windows app (InstantEasel.exe)
+## The Windows app (InstantEaselPro.exe)
 A double-click desktop program with its own window. It's fully offline: no website, no internet, nothing sent anywhere.
 - **Open image**, pick a **style**, press **Paint it**, then **Save result**. Or pick a **book scene** from the list.
 - **Add a painting as a style** from inside the app. Your styles are kept in a `my-styles` folder next to the .exe.
