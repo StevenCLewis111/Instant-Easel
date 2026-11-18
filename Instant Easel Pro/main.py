@@ -594,7 +594,9 @@ class InstantEasel(tk.Tk):
     def show_window(self):
         first = not getattr(self, "_ready", False)
         if first: self._hide()
-        self.deiconify(); self.apply_window_mode(); self.after(50, self._win_prep)
+        if first and prefs.get("window_mode") != "Windowed":                     # while still hidden: lay out once at the windowed size, so the
+            self.deiconify(); self._to_fixed(); self._settle(0.8); self._size_mascots()   # header's guy and girl get their windowed size and
+        self.deiconify(); self.apply_window_mode(); self.after(50, self._win_prep)       # place to keep (scaled) when maximized or full screen
         if first:
             self._settle(); self.warm_up(); self._ready = True
             if self._splash: self._splash.close(); self._splash = None

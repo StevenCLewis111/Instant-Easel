@@ -39,6 +39,10 @@ def _load():
         _data = dict(DEFAULTS)
         try: _data.update(json.load(open(_FILE)))
         except Exception: pass
+        if not _data.get("_launch_maximized_v2"):                         # once more (Nov 2026): start maximized (title bar and taskbar showing), not full screen
+            _data["window_mode"] = "Maximized"; _data["_launch_maximized_v2"] = _data["_launch_maximized_v1"] = True
+            try: json.dump(_data, open(_FILE, "w"), indent=1)
+            except Exception: pass
         if not _data.get("_launch_maximized_v1"):                         # once: the new start-up default (title bar, fills the screen above the taskbar)
             _data["window_mode"] = "Maximized"; _data["_launch_maximized_v1"] = True
             try: json.dump(_data, open(_FILE, "w"), indent=1)
