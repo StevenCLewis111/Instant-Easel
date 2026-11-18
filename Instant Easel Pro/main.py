@@ -296,6 +296,8 @@ class InstantEasel(tk.Tk):
             k = h / src.height
             if room > 40 and src.width * k > room: k = room / src.width                     # too wide for its space: smaller, never cut off
             im = _outlined(src.resize((max(1, int(src.width * k)), max(1, int(src.height * k))), Image.LANCZOS), T.PALETTE["border"])
+            over = int(self.frame.cget("highlightthickness")) - (body_y - im.height)   # rows that would reach the top border or above it
+            if over > 0: im = im.crop((0, over, im.width, im.height))            # cut those off, so nothing shows on or above the top line
             self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col], width=0, height=0)   # 0 = the picture's own size
             self._mpil = getattr(self, "_mpil", {}); self._mpil[col] = im
             x = self.top.winfo_x() if col == 0 else self.top.winfo_x() + self.top.winfo_width() - im.width   # outer edge in line with the page's border
