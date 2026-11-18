@@ -250,6 +250,7 @@ class InstantEasel(tk.Tk):
                 T.on_change(lambda l=lbl: l.configure(bg=self.frame["bg"]))
             except Exception: pass
         self.after_idle(self._size_mascots); T.on_change(lambda: self.mascot_src and self.after_idle(self._size_mascots))   # outline follows the theme colour
+        self.frame.bind("<Configure>", lambda e: T.defer(self, "header", 80, self._paint_header), add="+")   # the header picture follows the window size
 
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), **WP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
@@ -270,27 +271,108 @@ class InstantEasel(tk.Tk):
         """the logo spans exactly the tab row (Images' left edge to Settings' right edge); the guy and girl's flat bottoms sit on the tab row's bottom"""
         self.update_idletasks()
         if getattr(self, "logo_src", None) is not None and self.tabs.winfo_width() > 50:
-            kids = self.tabs.winfo_children()
+            kids = list(self.tabs.btns.values())                                               # the tab buttons only (not the header picture behind them)
             if kids[-1].winfo_width() < 20: return self.after(50, self._size_mascots)           # tabs not laid out yet: measure again shortly
             trim = kids[-1].winfo_width() / 2                                                  # half a Settings tab, taken off each end
             left = kids[0].winfo_x() + kids[0].winfo_width() / 2 + trim                        # middle of the Images tab, then in by the trim
             right = kids[-1].winfo_x() + kids[-1].winfo_width() / 2 - trim                     # middle of the Settings tab, then in by the trim
             tw = int(round(right - left)); lh0 = int(round(150 * T.Z))
-            tw = min(int(tw * 0.9), int(self.logo_src.width * lh0 / self.logo_src.height * 1.12))   # in a little from both ends; at most a touch wider than its own shape
+            tw = min(int(tw * 1.0), int(self.logo_src.width * lh0 / self.logo_src.height * 1.3))    # stretched side to side, up to the tab row's span
             shift = int(round((left + right) / 2 - self.tabs.winfo_width() / 2))               # the two tabs differ in width: nudge so both edges land on their middles
             self.logo_lbl.grid_configure(padx=f"{max(0, 2 * shift)} {max(0, -2 * shift)}")      # measured pixels, passed as text so zoom leaves them alone
             lh = int(round(150 * T.Z))
             if abs(self.logo.width() - tw) > 1 or self.logo.height() != lh:
-                self.logo = ImageTk.PhotoImage(self.logo_src.resize((tw, lh), Image.LANCZOS)); self.logo_lbl.configure(image=self.logo)
+                self._logo_pil = self.logo_src.resize((tw, lh), Image.LANCZOS)
+                self.logo = ImageTk.PhotoImage(self._logo_pil); self.logo_lbl.configure(image=self.logo)
                 self.update_idletasks()
         for lbl in self.mascot_lbl.values(): lbl.configure(image="", width=0, height=0)   # the old-size pictures would hold the header tall
         self.update_idletasks()                                                 # (after a big window turns small); measure it without them
         h = self.tabs.winfo_y() + self.tabs.winfo_height() - 4                 # to the bottom of the tabs, keeping 4 px clear of the top border
         if h < 40: return self.after(50, self._size_mascots)
         self._mph = {}
+        mid = max(self.tabs.winfo_reqwidth(), self.top.grid_bbox(1, 0, 1, 1)[2])            # the middle column: the logo or the tab row, whichever is wider
+        room = (self.top.winfo_width() - mid) // 2 - int(round(18 * T.Z)) - 2               # the space beside the logo and tab row
         for col, src in self.mascot_src.items():
-            k = h / src.height; im = _outlined(src.resize((max(1, int(src.width * k)), h), Image.LANCZOS), T.PALETTE["border"])
+            k = h / src.height
+            if room > 40 and src.width * k > room: k = room / src.width                     # too wide for its space: smaller, never cut off
+            im = _outlined(src.resize((max(1, int(src.width * k)), max(1, int(src.height * k))), Image.LANCZOS), T.PALETTE["border"])
             self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col], width=0, height=0)   # 0 = the picture's own size
+            self._mpil = getattr(self, "_mpil", {}); self._mpil[col] = im
+        self.update_idletasks()
+        if any(self.mascot_lbl[c].winfo_width() + 1 < self._mpil[c].width for c in self._mpil) and getattr(self, "_fit_tries", 0) < 2:
+            self._fit_tries = getattr(self, "_fit_tries", 0) + 1; return self.after(30, self._size_mascots)    # the layout moved: measure once more
+        self._fit_tries = 0
+        self._paint_header()
+        if not getattr(self, "_settling", False):                                # once more when the window has settled (sizes read mid-resize are stale)
+            self._settling = True
+            self.after(150, lambda: (self._size_mascots(), setattr(self, "_settling", False)))
+
+    # ---------------- the header's picture (images/UI/Header/header-background.png): the waterfall, trees and stream behind the guy,
+    # the girl, the logo and the tabs. Tk can't draw see-through widgets on a picture, so a backdrop fills the header and every piece
+    # on it carries the matching slice of the picture behind it.
+    HEADER_CROP, HEADER_DIM = 0.70, 0.85                                       # which band of the picture (from its top), and how bright
+    def _header_band(self, W, H):
+        key = (W, H, T.PALETTE["panel"])
+        if getattr(self, "_hband_key", None) == key: return self._hband
+        src = getattr(self, "_hsrc", None)
+        if src is None:
+            try: src = self._hsrc = Image.open(paths.ui("Header", "header-background.png")).convert("RGBA")
+            except Exception: self._hsrc = False; return None
+        if src is False: return None
+        from PIL import ImageEnhance
+        s = src.resize((W, max(H, round(src.height * W / src.width))), Image.LANCZOS)
+        top = min(round(s.height * self.HEADER_CROP), s.height - H); band = s.crop((0, top, W, top + H))
+        rgb = ImageEnhance.Brightness(band.convert("RGB")).enhance(self.HEADER_DIM).convert("RGBA"); rgb.putalpha(band.getchannel("A"))
+        out = Image.new("RGBA", (W, H), T.PALETTE["panel"]); out.alpha_composite(rgb)
+        self._hband, self._hband_key = out, key; self._hcache = {}; return out
+
+    def _hbox(self, w):
+        """where a widget sits on the header picture"""
+        fx, fy = self.frame.winfo_rootx() + self._hl, self.frame.winfo_rooty() + self._hl
+        return w.winfo_rootx() - fx, w.winfo_rooty() - fy, w.winfo_width(), w.winfo_height()
+
+    def _on_picture(self, w, im):
+        """a PhotoImage of im (RGBA) sitting on its slice of the header picture"""
+        band = getattr(self, "_hband", None)
+        if band is None: return ImageTk.PhotoImage(im)
+        x, y, ww, wh = self._hbox(w); W, H = im.size                         # the picture's own size (never the widget's old one)
+        x, y = x + (ww - W) // 2, y + (wh - H) // 2                              # where Tk will centre it in the widget
+        key = (id(im), x, y, W, H, id(band))
+        if key in self._hcache: return self._hcache[key]
+        piece = band.crop((x, y, x + W, y + H)); piece.alpha_composite(im)
+        if len(self._hcache) > 200: self._hcache.clear()
+        self._hcache[key] = ph = ImageTk.PhotoImage(piece); return ph
+
+    def _tab_under(self, w, ph):
+        im = ImageTk.getimage(ph); im.load(); w._on = self._on_picture(w, im); return w._on       # the button keeps its own picture alive
+
+    def _paint_header(self):
+        if not getattr(self, "logo_lbl", None): return
+        self.update_idletasks()
+        self._hl = int(self.frame.cget("highlightthickness")); W = self.frame.winfo_width() - 2 * self._hl
+        H = self.body.winfo_y() - self._hl if hasattr(self, "body") else self.top.winfo_y() + self.top.winfo_height()
+        if W < 50 or H < 30: return
+        band = self._header_band(W, H)
+        if band is None: return
+        for name, master in (("_bd_frame", self.frame), ("_bd_top", self.top), ("_bd_tabs", self.tabs)):
+            lbl = getattr(self, name, None)
+            if lbl is None:
+                lbl = tk.Label(master, bd=0, highlightthickness=0, padx=0, pady=0, bg=T.PALETTE["panel"]); setattr(self, name, lbl)
+                if master is self.frame: lbl.place(x=self._hl, y=self._hl, width=W, height=H)
+                else: lbl.place(x=0, y=0, relwidth=1, relheight=1)
+                lbl.lower()
+            if master is self.frame: lbl.place_configure(width=W, height=H)
+            x, y, ww, wh = self._hbox(master) if master is not self.frame else (0, 0, W, H)
+            ph = ImageTk.PhotoImage(band.crop((x, y, x + max(1, ww), y + max(1, wh)))); lbl.configure(image=ph); lbl._ph = ph
+        lp = getattr(self, "_logo_pil", None)
+        if lp is not None and lp.size == (self.logo.width(), self.logo.height()): self._logo_on = self._on_picture(self.logo_lbl, lp); self.logo_lbl.configure(image=self._logo_on)
+        for col, im in getattr(self, "_mpil", {}).items():
+            ph = self._on_picture(self.mascot_lbl[col], im); self.mascot_lbl[col].configure(image=ph); self.mascot_lbl[col]._on = ph
+        for b in self.tabs.btns.values():
+            if getattr(b, "_skin", None) is not None:
+                b.tk.call(b._w, "configure", "-bd", 0, "-highlightthickness", 0)          # no border round the picture (it would show a plain colour)
+                b._under = self._tab_under; b._skin["ph"] = None; skin.draw(b)
+        for w in [self.logo_lbl] + list(self.mascot_lbl.values()): w.tk.call(w._w, "configure", "-bd", 0, "-highlightthickness", 0)
 
     def goto(self, tab, page=None):
         """open a tab (and one of its pages), with the tab row showing it"""
