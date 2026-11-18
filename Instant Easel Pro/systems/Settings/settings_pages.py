@@ -42,13 +42,14 @@ class SettingsPage(tk.Frame):
 
 # ---------------------------------------------------------------- General
 class GeneralPage(SettingsPage):
-    TITLE = "General"; NOTE = "Where your images are saved, in what format, and how the app starts and closes."
+    TITLE = "General"; NOTE = "Where your work is saved, in what format, and how the app starts and closes."
     def build(self):
-        c = self.row("Save folder"); self.folder_lbl = T.Text(c, prefs.get("save_folder"), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
-        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "Open", lambda: prefs.open_folder(prefs.save_folder())).pack(side="left", padx=6)
+        c = self.row("Your work folder", "Images, Videos, Code and Chats each have a folder inside it. Every tab saves its work there and opens "
+                     "from there, so anything one tab makes is easy to pick up in another.")
+        self.folder_lbl = T.Text(c, prefs.get("save_folder"), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
+        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
-        self.toggle("Auto-save every result", "auto_save", "Each image you create is saved straight away, in a dated folder inside the save folder.")
         self.entry("File names", "name_pattern", note="{date}, {time} and {n} (number) are filled in. Example: instant-easel-2026-11-15-163000-1.png")
         self.choice("Open on start", "start_tab", ["Drawing", "AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Editing", "Settings", "Last used"])
         self.toggle("Confirm before quitting", "confirm_exit")
@@ -95,7 +96,7 @@ class PrivacyPage(SettingsPage):
     def refresh(self):
         rows = [("Training pictures and image models", prefs.folder_size(self.lib)), ("What the AI tabs were taught", prefs.folder_size(self.tabs)),
                 ("Downloaded AI models", prefs.folder_size(self.models)),
-                ("Saved images", prefs.folder_size(prefs.get("save_folder")) if os.path.isdir(prefs.get("save_folder")) else 0)]
+                ("Your work folder (images, videos, code, chats)", prefs.folder_size(prefs.get("save_folder")) if os.path.isdir(prefs.get("save_folder")) else 0)]
         for name in ("instant_easel_settings.json", "instant_easel_theme.json", "instant_easel_errors.log"):
             p = _data_file(name); rows.append((name, os.path.getsize(p) if os.path.exists(p) else 0))
         self.usage.configure(text="\n".join(f"{k:<44} {prefs.human(v):>10}" for k, v in rows))
@@ -112,7 +113,7 @@ def paths_data(*p):
     import paths; d = paths.data(*p); os.makedirs(d, exist_ok=True); return d
 
 # ---------------------------------------------------------------- AI models: the core text model + each tab's own model
-IMAGE_MODELS = {"sd15": ("Stable Diffusion 1.5", "Runs on a 6 GB card and can be trained on your pictures there. The image engine is the next thing being built."),
+IMAGE_MODELS = {"sd15": ("Stable Diffusion 1.5", "2.1 GB. Runs on a 6 GB card, and your image models (Cartoon, Fashion...) train on top of it."),
                 "sdxl": ("Stable Diffusion XL", "Sharper pictures, but needs about 8 GB; on a 6 GB card it's slow and can't be trained."),
                 "file": ("A model file you add", "Any .safetensors image model; put it here with Add a model file.")}
 VIDEO_MODELS = {"none": ("None yet", "Making videos needs a video model and a graphics card with 16 GB or more (or a rented one online)."),
@@ -140,12 +141,12 @@ class AIModelsPage(SettingsPage):
         self._slot("AI Chat", "built", {"core": ("Core text model", "Chat talks to the core model directly. Teach it in AI Training > Chat Learning.")})
         self._slot("AI Coding", "built", {"core": ("Core text model", "The core model writes and explains code too."),
                                           "coder7b": (coder["label"], coder["note"])}, text=True)
-        self._slot("AI Images", "partial", IMAGE_MODELS, files=(".safetensors", ".ckpt"), kind="image")
+        self._slot("AI Images", "built", IMAGE_MODELS, files=(".safetensors", ".ckpt"), kind="image", get=self._get_images)
         self._slot("AI Videos", "planned", VIDEO_MODELS)
         threading.Thread(target=self._find_card, daemon=True).start()
         self._tick()
 
-    def _slot(self, tab, status, choices, text=False, files=None, kind=None):
+    def _slot(self, tab, status, choices, text=False, files=None, kind=None, get=None):
         import learning_areas as LA
         key = "model_" + tab.replace(" ", "_"); cur = prefs.get(key) if prefs.get(key) in choices else list(choices)[0]
         r = _frame(self.body); r.pack(fill="x", anchor="w", pady=(4, 0))
@@ -157,10 +158,15 @@ class AIModelsPage(SettingsPage):
             k = next(k for k, c in choices.items() if c[0] == v.get()); prefs.set(key, k); note.configure(text=choices[k][1])
         v.trace_add("write", changed)
         if text: T.Button(r, "Download", lambda: self._download(next(k for k, c in choices.items() if c[0] == v.get())), width=10).pack(side="left", padx=4)
+        if get: T.Button(r, "Download", get, width=10).pack(side="left", padx=4)
         if files:
             T.Button(r, "Add a model file", lambda: self._add_file(kind, files), width=16).pack(side="left", padx=4)
             T.Button(r, "Open folder", lambda: prefs.open_folder(self._kind_dir(kind)), width=11).pack(side="left", padx=4)
 
+    def _get_images(self):
+        import imaging; q = self.app.q
+        imaging.download(on_done=lambda ok, m: q.put(lambda: T.banner(self.app, ("DOWNLOADED — " if ok else "DOWNLOAD FAILED — ") + m, "success" if ok else "error")))
+        T.banner(self.app, "DOWNLOADING — the image engine and Stable Diffusion 1.5 (about 2.2 GB); progress shows in AI Images", "success")
     def _kind_dir(self, kind): d = os.path.join(self.brain.ROOT, kind); os.makedirs(d, exist_ok=True); return d
     def _add_file(self, kind, exts):
         p = filedialog.askopenfilename(parent=self.app, title="Choose a model file", filetypes=[("Model files", " ".join("*" + e for e in exts)), ("All files", "*.*")])

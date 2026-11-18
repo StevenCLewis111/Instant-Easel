@@ -5,12 +5,12 @@ status: "built" | "partial" | "planned"     order: recommended build order (1 = 
 """
 MENUS = [
  ("AI Images", "Make new images", [
-   dict(name="Text to Image", status="planned", order=3, desc="Type what you want; the image model paints it.",
+   dict(name="Text to Image", status="partial", order=3, desc="Type what you want; the image model paints it.",
         options=["Your words go through the core text model first, which turns them into a clear picture description",
                  "Pick which of your image models (Cartoon, Fashion, Nature...) to switch on", "Size, how many, seed", "Save / download"],
-        notes="Needs an image model: Settings > AI Models > AI Images (Stable Diffusion 1.5 recommended for a 6 GB card). Being built next."),
-   dict(name="Image to Image", status="planned", order=4, desc="Repaint any picture, guided by words.",
-        options=["Start from a picture", "How much to change it", "Your image models"], notes="Needs the image engine (being built next)."),
+        notes="Download the image engine once (on this page or Settings > AI Models). Every picture goes into your Images folder."),
+   dict(name="Image to Image", status="partial", order=4, desc="Repaint any picture, guided by words.",
+        options=["Start from a picture (opens your Images folder)", "How much to change it", "Your image models"], notes="Uses the same image engine as Text to Image."),
    dict(name="Prompt to Edit", status="planned", order=10, desc="Edit an image by describing the change.",
         options=["'make it night', 'warmer', 'more clouds', 'remove the rocks', 'brighter'", "For its own paintings: re-paint with changed settings",
                  "For any picture: maps words to Edit adjustments", "Shows what it changed; one-click undo"]),

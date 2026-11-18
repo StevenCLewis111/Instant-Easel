@@ -1,6 +1,6 @@
 """
 draw_studio.py: Instant Easel's drawing studio (Editing > Draw), laid out like a full drawing app in Instant Easel's theme.
-  Top:    Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror; New, Open, Use last created, Save, Send to Editing
+  Top:    Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror; New, Open, Save
   Left:   brush library (all 45 brushes with live stroke previews) and brush properties (size, opacity, preview)
   Centre: the layered canvas (zoom with the wheel, pan with the right mouse button)
   Right:  layers (add, duplicate, delete, merge down, move, show/hide, opacity, blend mode) and colour (hue ring + square, hex, history)
@@ -78,8 +78,8 @@ class DrawStudio(tk.Frame):
             if self._tb:                                                           # a stretchy gap before every item but the first: all gaps equal
                 g = tk.Frame(bar, width=2, height=1, bg=self["bg"]); g.pack(side="left", fill="x", expand=True); T.on_change(lambda g=g: g.configure(bg=self["bg"]))
             w.pack(side="left"); self._tb.append((w, kind, icon)); return w
-        for text, cmd, kind, ic in (("New", lambda: self.new(*self.size_wh), "danger", "new"), ("Open", self.open, "normal", "open"), ("Use last created", self.use_last, "normal", "picture"),
-                                    ("Save", self.save, "normal", "save"), ("Send to Editing", self.send, "normal", "send")):
+        for text, cmd, kind, ic in (("New", lambda: self.new(*self.size_wh), "danger", "new"), ("Open", self.open, "normal", "open"),
+                                    ("Save", self.save, "normal", "save")):
             add(T.Button(bar, text, cmd, kind=kind), "file", ic)
         for tip, cmd, ic in (("Undo (Ctrl+Z)", self.undo, "undo"), ("Redo (Ctrl+Y)", self.redo, "redo"), ("Zoom out (mouse wheel)", lambda: self.zoom_by(1 / 1.25), "zoom out"),
                              ("Zoom in (mouse wheel)", lambda: self.zoom_by(1.25), "zoom in"), ("Fit to the window (right-drag pans)", self.fit, "fit")):
@@ -641,16 +641,9 @@ class DrawStudio(tk.Frame):
         self.new(im.width, im.height, background=im)
 
     def open(self):
-        p = filedialog.askopenfilename(parent=self, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
+        p = filedialog.askopenfilename(parent=self, initialdir=prefs.save_folder(), filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
         if p: self.load_image(Image.open(p))
 
-    def use_last(self):
-        pages = self.app.pages["AI Images"].pages; im = None
-        for n in ("Image to Image", "Text to Image"):
-            r = getattr(pages.get(n), "result", None)
-            if r is not None: im = r; break
-        if im is None: return T.banner(self.app, "NOTHING YET — create an image first")
-        self.load_image(im)
 
     def _recomp(self, rect=None):
         """update the finished picture (all visible layers over the background) in rect = (x0, y0, x1, y1), or everywhere.
@@ -671,9 +664,6 @@ class DrawStudio(tk.Frame):
                                          filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp")])
         if p: prefs.save_image(self.flatten(), p); T.banner(self.app, f"SAVED — {os.path.basename(p)}", "success")
 
-    def send(self):
-        ed = self.app.pages["Editing"]; light = ed.pages.get("Light")
-        if light: light.set_image(self.flatten()); self.app.goto("Editing", "Light"); T.banner(self.app, "SENT TO EDITING — your drawing is open in Light", "success")
 
     # ------------------------------------------------------------------ view
     def fit(self):

@@ -18,7 +18,7 @@ import paths
 from PIL import Image, ImageTk
 import theme as T
 import paint_window, features, edit as E, draw_studio, prefs, settings_pages as SP
-import crash, skin, ui_art as UA, learning_areas as LA
+import crash, skin, ui_art as UA, learning_areas as LA, image_pages as IP
 
 APP_NAME = "Instant Easel"
 DESIGN = (1560, 920)
@@ -248,7 +248,7 @@ class InstantEasel(tk.Tk):
             except Exception: pass
         self.after_idle(self._size_mascots); T.on_change(lambda: self.mascot_src and self.after_idle(self._size_mascots))   # outline follows the theme colour
 
-        built = {"Image Scraper": ScraperPage, **LA.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
+        built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
                  "AI Models": SP.AIModelsPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
@@ -782,7 +782,7 @@ class EditBase(Page):
         for fn in self.app.edit["listeners"]: fn()
         if record: self.app.hist_touch()
     def open(self):
-        p = filedialog.askopenfilename(parent=self.app, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
+        p = filedialog.askopenfilename(parent=self.app, initialdir=prefs.save_folder(), filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
         if p: self.set_image(Image.open(p), path=p)
     def last(self):
         c = self.app.pages["AI Images"].pages; im = None

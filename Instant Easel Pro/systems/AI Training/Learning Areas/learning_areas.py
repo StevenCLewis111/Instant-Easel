@@ -16,7 +16,7 @@ What's here follows current best practice:
 
 The settings are kept in .json/learning_settings.json.
 """
-import os, json, shutil, hashlib, threading, tkinter as tk
+import os, re, json, shutil, hashlib, threading, tkinter as tk
 from tkinter import filedialog
 import theme as T, prefs, paths, skin
 
@@ -125,8 +125,9 @@ AREAS = {
                  C("Training length", "planned", "About 100 steps per picture; start with a short test and check before a long run.",
                    "length", ["Short test", "Normal", "Long"], "Normal")]),
    ("Train", [I("Pictures ready", "built", "Pictures in this model, per label.", "waiting"),
-              B("Train this image model", "planned", "Trains this model's add-on (a LoRA) on its pictures. Needs the image engine, which is being built next.", "planned")]),
-   ("Test", [B("Make a test picture", "planned", "Paints a request with this model switched on, next to the same request without it.", "planned"),
+              B("Train this image model", "planned", "Trains this model's add-on (a LoRA) on its pictures, on top of Stable Diffusion 1.5. Coming next.", "planned"),
+              B("Add a trained add-on you already have", "built", "A LoRA file (.safetensors) made for Stable Diffusion 1.5: this model uses it straight away.", "add_lora")]),
+   ("Test", [B("Make a test picture", "built", "Opens Text to Image with this model switched on. Try the same request with it set to None to compare.", "try_model"),
              B("Roll back to an earlier version", "planned", "Every training saves a version; go back if a new one made it worse.", "planned")]),
   ]),
  "Video Learning": dict(tab="AI Videos", intro="Teaches movement: how things move, a look, or a character, from short video clips.",
@@ -321,7 +322,7 @@ class AreaPage(tk.Frame):
     def do_open_folder(self): prefs.open_folder(self.folder())
 
     def do_add_clips(self):
-        ps = filedialog.askopenfilenames(parent=self.app, title="Choose short video clips",
+        ps = filedialog.askopenfilenames(parent=self.app, title="Choose short video clips", initialdir=prefs.work_folder("Videos"),
                                          filetypes=[("Videos", "*.mp4 *.mov *.webm *.mkv *.avi"), ("All files", "*.*")])
         for p in ps: shutil.copy(p, self.folder())
         if ps: T.banner(self.app, f"ADDED — {len(ps)} clips are in the video library", "success")
@@ -333,7 +334,7 @@ class AreaPage(tk.Frame):
         if ps: T.banner(self.app, f"ADDED — {len(ps)} documents are in the {self.tab} library", "success")
 
     def do_import_code(self):
-        src = filedialog.askdirectory(parent=self.app, title="Choose a folder of code")
+        src = filedialog.askdirectory(parent=self.app, title="Choose a folder of code", initialdir=prefs.work_folder("Code"))
         if not src: return
         g = lambda k, d: get(self.AREA, k, d)
         n = import_code(src, self.library(), permissive=g("permissive", True), dedupe=g("dedupe", True), compiles=g("compiles", True))
@@ -371,7 +372,7 @@ class AreaPage(tk.Frame):
         system = brain.SYSTEMS.get(self.tab, brain.CHAT_SYSTEM) + style; lib = bool(g("use_library")) if self.tab == "AI Chat" else True
         T.banner(self.app, "THINKING — the first answer takes longer while the model loads", "success")
         def work():
-            try: ans = brain.ask(self.tab, question, system=system, use_library=lib); q.put(lambda: Answer(self.app, question, ans))
+            try: ans = brain.ask(self.tab, question, system=system, use_library=lib); q.put(lambda: Answer(self.app, question, ans, self.tab))
             except Exception as e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T ANSWER — {e}"))
         threading.Thread(target=work, daemon=True).start()
 
@@ -394,13 +395,31 @@ class Dialog(tk.Toplevel):
         if all(vals): self.result = tuple(vals) + ((None,) if len(vals) == 1 else ())
         self.destroy()
 
+CODE_EXT = {"python": ".py", "py": ".py", "javascript": ".js", "js": ".js", "typescript": ".ts", "html": ".html", "css": ".css",
+            "java": ".java", "c": ".c", "cpp": ".cpp", "c++": ".cpp", "csharp": ".cs", "cs": ".cs", "go": ".go", "rust": ".rs", "bash": ".sh", "sh": ".sh"}
+
+def save_answer(tab, question, answer):
+    """a chat goes into Chats (question and answer); code goes into Code (each code block as its own file, the full answer beside it)"""
+    import re
+    if tab == "AI Coding":
+        blocks = re.findall(r"```([A-Za-z+#]*)\n(.*?)```", answer, re.S); out = []
+        for i, (lang, code) in enumerate(blocks):
+            out.append(prefs.new_text("Code", code, question + (f"-{i + 1}" if len(blocks) > 1 else ""), CODE_EXT.get(lang.lower(), ".txt")))
+        if not out: out.append(prefs.new_text("Code", answer, question, ".md"))
+        return out
+    return [prefs.new_text("Chats", f"# {question}\n\n{answer}\n", question, ".md")]
+
 class Answer(tk.Toplevel):
-    def __init__(self, app, question, answer):
+    def __init__(self, app, question, answer, tab="AI Chat"):
         super().__init__(app); self.title("Its answer"); self.configure(bg=T.PALETTE["bg"]); self.transient(app)
         p = T.Panel(self, pad=14); p.pack(fill="both", expand=True, padx=8, pady=8)
         T.Text(p, question, muted=True, wraplength=600).pack(anchor="w", pady=(0, 8))
         T.Text(p, answer, wraplength=600).pack(anchor="w")
-        T.Button(p, "Close", self.destroy, kind="danger").pack(pady=(12, 0))
+        r = tk.Frame(p, bg=p["bg"]); r.pack(pady=(12, 0)); where = "Code" if tab == "AI Coding" else "Chats"
+        def save():
+            paths_ = save_answer(tab, question, answer)
+            T.banner(app, f"SAVED — {', '.join(os.path.basename(x) for x in paths_)} in your {where} folder", "success")
+        T.Button(r, f"Save to {where}", save).pack(side="left", padx=6); T.Button(r, "Close", self.destroy, kind="danger").pack(side="left")
 
 class ImageAreaPage(AreaPage):
     """Image Learning: the same steps, for the image model picked in the bar at the top"""
@@ -456,6 +475,18 @@ class ImageAreaPage(AreaPage):
             w = self.IM.pictures(n); return "   ".join(f"{k}: {v}" for k, v in w.items()) or "no pictures yet"
         return super().info_text(what)
     def pictures(self): return self.app.pages["AI Training"].pages["Pictures"]
+    def do_add_lora(self):
+        n = self.need_model()
+        if not n: return
+        p = filedialog.askopenfilename(parent=self.app, title="Choose a LoRA file", filetypes=[("LoRA", "*.safetensors"), ("All files", "*.*")])
+        if not p: return
+        d = os.path.join(self.IM.folder(n), "lora"); shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
+        shutil.copy(p, os.path.join(d, re.sub(r"[^A-Za-z0-9_-]+", "_", n) + ".safetensors"))
+        T.banner(self.app, f"ADDED — {n} now uses {os.path.basename(p)}", "success")
+    def do_try_model(self):
+        n = self.need_model()
+        if not n: return
+        self.app.goto("AI Images", "Text to Image"); pg = self.app.pages["AI Images"].pages["Text to Image"]; pg.refresh(); pg.model.set(n)
     def do_scraper(self):
         if self.need_model(): self.goto("Image Scraper")
     def do_review(self):
@@ -487,7 +518,7 @@ class PicturesPage(tk.Frame):
         self.info.configure(text=("   ".join(f"{k.upper()}: {v}" for k, v in w.items()) or "NO PICTURES YET"))
 
     def add_images(self):
-        ps = filedialog.askopenfilenames(parent=self.app, title="Choose pictures to learn from",
+        ps = filedialog.askopenfilenames(parent=self.app, title="Choose pictures to learn from", initialdir=prefs.save_folder(),
                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")])
         if ps: self.review(ps)
 

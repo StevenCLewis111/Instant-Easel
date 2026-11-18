@@ -7,8 +7,8 @@ Generated from `features.py` (the same list the app's menus use).
 | # | Feature | Menu | Status |
 |---|---|---|---|
 | 1 | AI Models | Settings | 🟡 partial |
-| 3 | Text to Image | AI Images | ⬜ planned |
-| 4 | Image to Image | AI Images | ⬜ planned |
+| 3 | Text to Image | AI Images | 🟡 partial |
+| 4 | Image to Image | AI Images | 🟡 partial |
 | 5 | Image Learning | AI Training | 🟡 partial |
 | 6 | Inpainting | AI Images | ⬜ planned |
 | 7 | AI Tools | Editing | ⬜ planned |
@@ -53,7 +53,7 @@ A full drawing studio: paint by hand on a blank page, the last created image, or
 
 ## AI Images: Make new images
 
-### Text to Image  (⬜ planned)
+### Text to Image  (🟡 partial)
 Type what you want; the image model paints it.
 
 - Your words go through the core text model first, which turns them into a clear picture description
@@ -61,16 +61,16 @@ Type what you want; the image model paints it.
 - Size, how many, seed
 - Save / download
 
-*Note:* Needs an image model: Settings > AI Models > AI Images (Stable Diffusion 1.5 recommended for a 6 GB card). Being built next.
+*Note:* Download the image engine once (on this page or Settings > AI Models). Every picture goes into your Images folder.
 
-### Image to Image  (⬜ planned)
+### Image to Image  (🟡 partial)
 Repaint any picture, guided by words.
 
-- Start from a picture
+- Start from a picture (opens your Images folder)
 - How much to change it
 - Your image models
 
-*Note:* Needs the image engine (being built next).
+*Note:* Uses the same image engine as Text to Image.
 
 ### Prompt to Edit  (⬜ planned)
 Edit an image by describing the change.

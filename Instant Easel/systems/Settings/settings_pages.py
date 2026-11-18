@@ -44,8 +44,9 @@ class SettingsPage(tk.Frame):
 class GeneralPage(SettingsPage):
     TITLE = "General"; NOTE = "Where your drawings are saved, in what format, and how the app starts and closes."
     def build(self):
-        c = self.row("Save folder"); self.folder_lbl = T.Text(c, prefs.get("save_folder"), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
-        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "Open", lambda: prefs.open_folder(prefs.save_folder())).pack(side="left", padx=6)
+        c = self.row("Your work folder", "Your drawings are saved in its Images folder, and Open starts there too.")
+        self.folder_lbl = T.Text(c, prefs.get("save_folder"), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
+        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
         self.choice("Undo steps", "undo_steps", ["10", "30", "60", "100"], "More steps use more memory on big canvases.")

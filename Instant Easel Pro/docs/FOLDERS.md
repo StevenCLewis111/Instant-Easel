@@ -36,3 +36,14 @@ uses: change its area in `AREAS` in `systems/Core/ui_art.py`.
 | `my-library/Image models/<Name>/` | Each of your image models (Cartoon, Fashion...): `model.json` and its `pictures/<label>/`. |
 
 `docs/old/` holds the notes from the first, from-scratch version (the hand-written painter), kept for reference.
+
+## Your work (Settings > General > Your work folder)
+
+| Folder | What goes in it |
+|---|---|
+| `Images/` | Every picture: drawings you save, AI Images results, edited photos. Every "open a picture" box starts here. |
+| `Videos/` | Videos (when AI Videos is built). |
+| `Code/` | Code from AI Coding (each code block as its own file). |
+| `Chats/` | Chats you save from AI Chat. |
+
+`systems/AI Images/Image Engine/imaging.py` is the image engine; `systems/AI Images/image_pages.py` is its Text to Image and Image to Image pages.

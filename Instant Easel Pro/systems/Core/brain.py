@@ -115,8 +115,9 @@ def _get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "InstantEasel", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
 
-def _fetch(url, dest, label, size_hint=0):
-    """download url to dest with progress (resumes a part-finished file)"""
+def _fetch(url, dest, label, size_hint=0, report=None):
+    """download url to dest with progress (resumes a part-finished file). report(text, fraction) defaults to this module's status"""
+    report = report or (lambda text, frac: _set("downloading", text, frac))
     tmp = dest + ".part"; have = os.path.getsize(tmp) if os.path.exists(tmp) else 0
     req = urllib.request.Request(url, headers={"User-Agent": "InstantEasel", **({"Range": f"bytes={have}-"} if have else {})})
     with urllib.request.urlopen(req, timeout=60) as r:
@@ -128,8 +129,8 @@ def _fetch(url, dest, label, size_hint=0):
                 chunk = r.read(1 << 20)
                 if not chunk: break
                 f.write(chunk); done += len(chunk)
-                _set("downloading", f"Downloading {label}… {done / 1e9:.2f} of {total / 1e9:.2f} GB" if total else f"Downloading {label}… {done / 1e6:.0f} MB",
-                     done / total if total else 0)
+                report(f"Downloading {label}… {done / 1e9:.2f} of {total / 1e9:.2f} GB" if total else f"Downloading {label}… {done / 1e6:.0f} MB",
+                       done / total if total else 0)
     os.replace(tmp, dest)
 
 def _runtime_asset():

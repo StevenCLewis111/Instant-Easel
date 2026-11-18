@@ -641,7 +641,7 @@ class DrawStudio(tk.Frame):
         self.new(im.width, im.height, background=im)
 
     def open(self):
-        p = filedialog.askopenfilename(parent=self, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
+        p = filedialog.askopenfilename(parent=self, initialdir=prefs.save_folder(), filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
         if p: self.load_image(Image.open(p))
 
 

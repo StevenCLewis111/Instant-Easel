@@ -11,7 +11,7 @@ def home_dir(): return paths.HOME                                     # your dat
 
 DEFAULTS = {
     # General
-    "save_folder": os.path.join(os.path.expanduser("~"), "Pictures", "Instant Easel"),
+    "save_folder": os.path.join(os.path.expanduser("~"), "Documents", "Instant Easel"),
     "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-{date}-{time}-{n}",
     "start_tab": "Drawing", "confirm_exit": True,
     # Generation defaults
@@ -66,8 +66,33 @@ def all_settings(): return dict(_load())
 def models_folder():
     f = get("models_folder") or os.path.join(home_dir(), "models"); os.makedirs(f, exist_ok=True); return f
 
-def save_folder():
+# Your work folder: every tab saves into, and opens from, the folder for that kind of thing, so anything one tab makes is easy to
+# pick up in another (an image the chat made is in Images; Videos' "load image" opens Images).
+KINDS = ("Images", "Videos", "Code", "Chats")
+def work_root():
     f = get("save_folder"); os.makedirs(f, exist_ok=True); return f
+
+def work_folder(kind="Images"):
+    d = os.path.join(work_root(), kind); os.makedirs(d, exist_ok=True); return d
+
+def save_folder(): return work_folder("Images")                     # pictures you save or make: the Images folder
+
+def _slug(text, n=40):
+    import re; t = re.sub(r"[^A-Za-z0-9]+", "-", str(text)).strip("-").lower(); return t[:n].rstrip("-")
+
+def new_image(img, hint=""):
+    """save a picture something made straight into Images (named by date and time, plus a hint like the request)"""
+    name = next_name(); stem, e = os.path.splitext(name); h = _slug(hint)
+    path = os.path.join(save_folder(), f"{stem}-{h}{e}" if h else name); k = 2
+    while os.path.exists(path): path = os.path.join(save_folder(), f"{stem}-{h}-{k}{e}" if h else f"{stem}-{k}{e}"); k += 1
+    return save_image(img, path)
+
+def new_text(kind, text, hint="", ext=".md"):
+    """save text (a chat, some code) into Chats or Code"""
+    now = datetime.datetime.now(); h = _slug(hint) or kind.lower()
+    path = os.path.join(work_folder(kind), f"{now.strftime('%Y-%m-%d-%H%M%S')}-{h}{ext}")
+    with open(path, "w", encoding="utf-8") as f: f.write(text)
+    return path
 
 def ext(): return {"PNG": ".png", "JPEG": ".jpg", "WebP": ".webp"}[get("save_format")]
 
@@ -81,13 +106,6 @@ def save_image(img, path):
     if fmt == "JPEG" and img.mode != "RGB": img = img.convert("RGB")
     img.save(path, fmt, quality=int(get("jpeg_quality")))
     return path
-
-def auto_save(images, label="result"):
-    """if auto-save is on, every result goes to the save folder (dated subfolder) the moment it's made"""
-    if not get("auto_save"): return []
-    d = os.path.join(save_folder(), datetime.date.today().isoformat()); os.makedirs(d, exist_ok=True); out = []
-    for i, im in enumerate(images): out.append(save_image(im, os.path.join(d, next_name(i + 1))))
-    return out
 
 def open_folder(path):
     os.makedirs(path, exist_ok=True)
