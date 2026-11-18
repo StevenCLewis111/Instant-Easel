@@ -1,5 +1,5 @@
 """
-settings_pages.py: Instant Easel's Settings pages. Every value lives in prefs.py (instant_easel_settings.json next to the app).
+settings_pages.py: Instant Easel Pro's Settings pages. Every value lives in prefs.py (instant_easel_settings.json next to the app).
 """
 import os, sys, json, glob, shutil, zipfile, platform, subprocess, threading, tkinter as tk
 from tkinter import filedialog
@@ -50,12 +50,12 @@ class GeneralPage(SettingsPage):
         T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "App's own folder", self.own).pack(side="left", padx=(6, 0)); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
-        self.entry("File names", "name_pattern", note="{date}, {time} and {n} (number) are filled in. Example: instant-easel-2026-11-15-163000-1.png")
+        self.entry("File names", "name_pattern", note="{date}, {time} and {n} (number) are filled in. Example: instant-easel-pro-2026-11-15-163000-1.png")
         self.choice("Open on start", "start_tab", ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Drawing", "Editing", "Settings", "Last used"])
         self.toggle("Confirm before quitting", "confirm_exit")
         self.buttons(("Create desktop shortcut", self.shortcut, "normal"))
     def shortcut(self):
-        """a desktop shortcut with the Instant Easel icon"""
+        """a desktop shortcut with the Instant Easel Pro icon"""
         try:
             import shortcut; path = shortcut.make(); T.banner(self.app, f"SHORTCUT CREATED — {os.path.basename(path)} is on your desktop", "success")
         except Exception as e: T.banner(self.app, f"COULDN'T MAKE THE SHORTCUT — {e}")
@@ -86,7 +86,7 @@ class DisplayPage(SettingsPage):
 
 # ---------------------------------------------------------------- Privacy & data
 class PrivacyPage(SettingsPage):
-    TITLE = "Privacy & Data"; NOTE = ("Instant Easel works offline. Your prompts, pictures and everything the AI tabs learn stay on this PC. The internet "
+    TITLE = "Privacy & Data"; NOTE = ("Instant Easel Pro works offline. Your prompts, pictures and everything the AI tabs learn stay on this PC. The internet "
                                       "is only used to download a model, search for training pictures, or check for updates.")
     def build(self):
         import brain; self.lib = paths_data("my-library"); self.tabs = brain.TABS_DIR; self.models = brain.ROOT
@@ -112,67 +112,159 @@ class PrivacyPage(SettingsPage):
             shutil.rmtree(self.tabs, ignore_errors=True); self.refresh(); T.banner(self.app, "CLEARED — the AI tabs start fresh", "success")
 
 def paths_data(*p):
-    import paths; d = paths.data(*p); os.makedirs(d, exist_ok=True); return d
+    import paths; d = paths.ai(*p); os.makedirs(d, exist_ok=True); return d
+
+# ---------------------------------------------------------------- AI Storage: the AI drive and each AI's portion
+class AIStoragePage(SettingsPage):
+    TITLE = "AI Storage"; NOTE = ("Give the AI its own drive. Models, what each AI learned, its libraries and memory all live there, and each AI "
+                                  "gets its own portion. More room lets an AI keep bigger libraries and longer memory; it can't make a model "
+                                  "think faster, because a model runs from your graphics card's memory.")
+    def build(self):
+        import storage, paths; self.storage = storage; self.paths = paths
+        c = self.row("AI drive"); self.where = T.Text(c, paths.ai_root(), font=T.f(9)); self.where.pack(side="left", padx=(0, 8))
+        T.Button(c, "Choose…", self.choose).pack(side="left"); T.Button(c, "App's own folder", lambda: self.move(paths.HOME)).pack(side="left", padx=6)
+        T.Button(c, "Open", lambda: prefs.open_folder(paths.ai_root())).pack(side="left")
+        self.free = T.Text(self.body, "", muted=True, font=T.f(9)); self.free.pack(anchor="w", padx=(20, 0))
+        T.Text(self.body, "EACH AI'S PORTION", font=T.f(11)).pack(anchor="w", pady=(12, 4)); self.rows = {}
+        for area in storage.AREAS:
+            r = _frame(self.body); r.pack(fill="x", anchor="w", pady=3)
+            T.Text(r, area.upper(), font=T.f(10), width=16, anchor="w").pack(side="left")
+            bar = tk.Canvas(r, width=260, height=16, highlightthickness=1, highlightbackground=T.PALETTE["border"], bg=T.PALETTE["field"]); bar.pack(side="left", padx=8)
+            lab = T.Text(r, "", font=T.f(9), width=22, anchor="w"); lab.pack(side="left")
+            v = tk.StringVar(value=str(storage.budget_gb(area))); T.Choice(r, "portion GB", ["25", "50", "100", "150", "200", "300", "400", "500"], v).pack(side="left", padx=8)
+            v.trace_add("write", lambda *a, area=area, v=v: (storage.set_budget_gb(area, int(v.get())), self.refresh()))
+            self.rows[area] = (bar, lab)
+        self.total = T.Text(self.body, "", muted=True, font=T.f(9)); self.total.pack(anchor="w", pady=(8, 0))
+        self.buttons(("Refresh", self.refresh, "normal")); self.refresh()
+    def refresh(self):
+        st = self.storage; free, total = st.drive_free(); budgets = sum(st.budget_gb(a) for a in st.AREAS)
+        self.where.configure(text=self.paths.ai_root())
+        self.free.configure(text=f"{free / 1e9:,.0f} GB free of {total / 1e9:,.0f} GB on that drive")
+        for area, (bar, lab) in self.rows.items():
+            u = st.used(area); b = st.budget_gb(area) * 1e9; frac = min(1.0, u / b) if b else 0
+            bar.delete("all"); w = int(bar["width"]); bar.create_rectangle(0, 0, int(w * frac), 18, fill=T.PALETTE["border"], width=0)
+            lab.configure(text=f"{u / 1e9:.2f} of {st.budget_gb(area)} GB")
+        self.total.configure(text=f"Portions add up to {budgets} GB" + (" — more than the drive's free space" if budgets * 1e9 > free + sum(st.used(a) for a in st.AREAS) else ""))
+    def choose(self):
+        d = filedialog.askdirectory(parent=self.app, title="Choose the drive (or a folder on it) for the AI")
+        if not d: return
+        if os.path.dirname(os.path.abspath(d)) == os.path.abspath(d) or len(os.path.abspath(d)) <= 3: d = os.path.join(d, "Instant Easel Pro AI")   # a whole drive: its own folder on it
+        self.move(d)
+    def move(self, d):
+        import brain, imaging
+        if os.path.abspath(d) == os.path.abspath(self.paths.ai_root()): return
+        if T.popup(self.app, "MOVE THE AI'S THINGS?", f"Everything the AI keeps is copied to\n{d}\nthen removed from where it is now. "
+                   "The models stop while this happens.", (("Move", "normal"), ("Cancel", "danger"))) != "Move": return
+        brain.stop(); imaging.stop_now(); q = self.app.q
+        def work():
+            try:
+                self.storage.move_to(d, progress=lambda t: q.put(lambda t=t: T.banner(self.app, f"MOVING — {t}", "success")))
+                q.put(lambda: (self.refresh(), T.banner(self.app, "MOVED — close and reopen the app to finish", "success")))
+            except Exception as e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T MOVE — {e}"))
+        threading.Thread(target=work, daemon=True).start()
 
 # ---------------------------------------------------------------- AI models: the core text model + each tab's own model
-IMAGE_MODELS = {"sd15": ("Stable Diffusion 1.5", "2.1 GB. Runs on a 6 GB card, and your image models (Cartoon, Fashion...) train on top of it."),
-                "sdxl": ("Stable Diffusion XL", "Sharper pictures, but needs about 8 GB; on a 6 GB card it's slow and can't be trained."),
-                "file": ("A model file you add", "Any .safetensors image model; put it here with Add a model file.")}
-VIDEO_MODELS = {"none": ("None yet", "Making videos needs a video model and a graphics card with 16 GB or more (or a rented one online)."),
-                "wan22": ("Wan 2.2 5B", "The smallest good video model; needs about 16 GB. Saved as your choice for later.")}
+IMAGE_MODELS = {"sd15": ("Stable Diffusion 1.5", "2.1 GB. The best free image model for a 6 GB card, and your image models (Cartoon, Fashion...) train on top of it."),
+                "sdxl": ("Stable Diffusion XL", "Sharper pictures, but needs about 8 GB; on a 6 GB card it's slow and can't be trained. Add it with Add manually."),
+                "file": ("Your own model file", "A .safetensors image model you added with Add manually.")}
+VIDEO_MODELS = {"none": ("Wan 2.2 5B (recommended)", "The best free video model that fits a home PC, but it needs a graphics card with 16 GB or more. "
+                                                     "Your card has 6 GB, so making videos waits for a bigger card (or a rented one)."),
+                "file": ("Your own model file", "A video model file you added with Add manually (kept for when video making is built).")}
 
 class AIModelsPage(SettingsPage):
-    TITLE = "AI Models"; NOTE = ("One core text model understands you in every AI tab; switch between 4B and 9B any time (both stay downloaded). "
-                                 "A tab can add its own model on top for what it makes. Everything runs on this PC.")
+    TITLE = "AI Models"; NOTE = ("One core text model understands you in every AI tab. Each tab can add its own model for what it makes. "
+                                 "Download recommended picks the best free model for your PC; Add manually uses a model file you have. "
+                                 "Either way it's installed and set up for you.")
     def build(self):
-        import brain; self.brain = brain
-        def head(text): T.Text(self.body, text, font=T.f(11)).pack(anchor="w", pady=(10, 2))
-        head("CORE TEXT MODEL")
-        names = {k: v["label"] for k, v in brain.CORES.items()}; self.core_v = tk.StringVar(value=names[brain.core_key()])
-        c = self.row("Core model")
-        T.Choice(c, "", list(names.values()), self.core_v).pack(side="left")
-        self.core_v.trace_add("write", lambda *a: self._switch({v: k for k, v in names.items()}[self.core_v.get()]))
-        self.core_note = T.Text(self.body, "", muted=True, font=T.f(9)); self.core_note.pack(anchor="w", padx=(20, 0))
-        self.state = T.Text(self.body, "", font=T.f(10)); self.state.pack(anchor="w", pady=(4, 0))
-        self.card = T.Text(self.body, "Your graphics card: checking…", muted=True, font=T.f(9)); self.card.pack(anchor="w")
-        self.buttons(("Download it", lambda: self._download(None), "normal"), ("Start it now", self._start, "normal"),
-                     ("Stop it", self._stop, "danger"), ("Open the models folder", lambda: prefs.open_folder(brain.ROOT), "normal"))
-        head("EACH TAB'S MODEL  (text tabs use the core unless you pick their own)")
-        self.slot_rows = []
+        import brain, imaging; self.brain = brain; self.imaging = imaging
+        def head(text): T.Text(self.body, text, font=T.f(11)).pack(anchor="w", pady=(8, 2))
+        head("CORE TEXT MODEL  (every AI tab uses it)")
+        cores = {k: v["label"] for k, v in brain.CORES.items()}
+        if brain.model_file("custom-core"): cores["custom-core"] = brain.spec("custom-core")["label"] + " (yours)"
+        self.cores = cores; self.core_v = tk.StringVar(value=cores.get(brain.core_key(), cores["4b"]))
+        r = self._row("CORE", "built")
+        self.core_choice = T.Choice(r, "", list(cores.values()), self.core_v); self.core_choice.pack(side="left", padx=(8, 8))
+        self.core_v.trace_add("write", lambda *a: self._switch(next(k for k, v in self.cores.items() if v == self.core_v.get())))
+        T.Button(r, "Download recommended", lambda: self._dl_text(None), width=20).pack(side="left", padx=4)
+        T.Button(r, "Add manually", lambda: self._add_text("custom-core", "core_model"), width=13).pack(side="left", padx=4)
+        T.Button(r, "Start", self._start, width=7).pack(side="left", padx=4); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
+        self.core_note = T.Text(self.body, "", muted=True, font=T.f(9)); self.core_note.pack(anchor="w", padx=(30, 0))
+        self.state = T.Text(self.body, "", font=T.f(10)); self.state.pack(anchor="w", padx=(30, 0))
+        self.card = T.Text(self.body, "Your graphics card: checking…", muted=True, font=T.f(9)); self.card.pack(anchor="w", padx=(30, 0))
+        head("EACH TAB'S MODEL")
         coder = brain.TAB_MODELS["coder7b"]
-        self._slot("AI Chat", "built", {"core": ("Core text model", "Chat talks to the core model directly. Teach it in AI Training > Chat Learning.")})
+        self._slot("AI Chat", "built", {"core": ("Core text model (recommended)", "Chat talks to the core model; it's the best free choice for your card."),
+                                        "custom-AI_Chat": ("Your own model file", "A .gguf text model you added with Add manually.")},
+                   rec=lambda: self._dl_text(None, select=("model_AI_Chat", "core")), add=lambda: self._add_text("custom-AI_Chat", "model_AI_Chat"))
         self._slot("AI Coding", "built", {"core": ("Core text model", "The core model writes and explains code too."),
-                                          "coder7b": (coder["label"], coder["note"])}, text=True)
-        self._slot("AI Images", "built", IMAGE_MODELS, files=(".safetensors", ".ckpt"), kind="image", get=self._get_images)
-        self._slot("AI Videos", "planned", VIDEO_MODELS)
+                                          "coder7b": (coder["label"] + " (recommended)", coder["note"] + " The best free coding model that fits your card."),
+                                          "custom-AI_Coding": ("Your own model file", "A .gguf coding model you added with Add manually.")},
+                   rec=lambda: self._dl_text("coder7b", select=("model_AI_Coding", "coder7b")), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"))
+        self._slot("AI Images", "built", IMAGE_MODELS, rec=self._dl_images, add=self._add_image, folder=imaging.IMAGE)
+        self._slot("AI Videos", "planned", VIDEO_MODELS, rec=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
         threading.Thread(target=self._find_card, daemon=True).start()
         self._tick()
 
-    def _slot(self, tab, status, choices, text=False, files=None, kind=None, get=None):
+    def _row(self, name, status):
         import learning_areas as LA
-        key = "model_" + tab.replace(" ", "_"); cur = prefs.get(key) if prefs.get(key) in choices else list(choices)[0]
         r = _frame(self.body); r.pack(fill="x", anchor="w", pady=(4, 0))
         if LA.DOT: LA.DOT(r, status, 14).pack(side="left", padx=(0, 8))
-        T.Text(r, tab.upper(), font=T.f(10), width=12, anchor="w").pack(side="left")
-        v = tk.StringVar(value=choices[cur][0]); T.Choice(r, "", [c[0] for c in choices.values()], v).pack(side="left", padx=(8, 8))
-        note = T.Text(self.body, choices[cur][1], muted=True, font=T.f(9)); note.configure(wraplength=820); note.pack(anchor="w", padx=(30, 0))
+        T.Text(r, name, font=T.f(10), width=10, anchor="w").pack(side="left"); return r
+
+    def _slot(self, tab, status, choices, rec, add, folder=None):
+        key = "model_" + tab.replace(" ", "_"); cur = prefs.get(key) if prefs.get(key) in choices else list(choices)[0]
+        r = self._row(tab.upper(), status)
+        v = tk.StringVar(value=choices[cur][0]); ch = T.Choice(r, "", [c[0] for c in choices.values()], v); ch.pack(side="left", padx=(8, 8))
+        note = T.Text(self.body, choices[cur][1], muted=True, font=T.f(9)); note.configure(wraplength=860); note.pack(anchor="w", padx=(30, 0))
         def changed(*a):
             k = next(k for k, c in choices.items() if c[0] == v.get()); prefs.set(key, k); note.configure(text=choices[k][1])
-        v.trace_add("write", changed)
-        if text: T.Button(r, "Download", lambda: self._download(next(k for k, c in choices.items() if c[0] == v.get())), width=10).pack(side="left", padx=4)
-        if get: T.Button(r, "Download", get, width=10).pack(side="left", padx=4)
-        if files:
-            T.Button(r, "Add a model file", lambda: self._add_file(kind, files), width=16).pack(side="left", padx=4)
-            T.Button(r, "Open folder", lambda: prefs.open_folder(self._kind_dir(kind)), width=11).pack(side="left", padx=4)
+        v.trace_add("write", changed); self.__dict__.setdefault("slot_vars", {})[key] = (v, choices)
+        T.Button(r, "Download recommended", rec, width=20).pack(side="left", padx=4)
+        T.Button(r, "Add manually", add, width=13).pack(side="left", padx=4)
+        if folder: T.Button(r, "Open folder", lambda: prefs.open_folder(folder), width=11).pack(side="left", padx=4)
 
-    def _get_images(self):
-        import imaging; q = self.app.q
-        imaging.download(on_done=lambda ok, m: q.put(lambda: T.banner(self.app, ("DOWNLOADED — " if ok else "DOWNLOAD FAILED — ") + m, "success" if ok else "error")))
-        T.banner(self.app, "DOWNLOADING — the image engine and Stable Diffusion 1.5 (about 2.2 GB); progress shows in AI Images", "success")
-    def _kind_dir(self, kind): d = os.path.join(self.brain.ROOT, kind); os.makedirs(d, exist_ok=True); return d
-    def _add_file(self, kind, exts):
-        p = filedialog.askopenfilename(parent=self.app, title="Choose a model file", filetypes=[("Model files", " ".join("*" + e for e in exts)), ("All files", "*.*")])
-        if p: shutil.copy(p, self._kind_dir(kind)); T.banner(self.app, f"ADDED — {os.path.basename(p)} is in the {kind} models folder", "success")
+    def _select(self, key, value):
+        prefs.set(key, value); pair = getattr(self, "slot_vars", {}).get(key)
+        if pair: pair[0].set(pair[1][value][0])
+    def _done(self, title):
+        q = self.app.q
+        return lambda ok, m: q.put(lambda: T.banner(self.app, (f"{title} — " if ok else "COULDN'T SET IT UP — ") + m, "success" if ok else "error"))
+
+    # ---- text models (core, chat, coding)
+    def _dl_text(self, key, select=None):
+        if select: self._select(*select)
+        if key is None and self.brain.core_key() not in self.brain.CORES: self.core_v.set(self.cores["4b"])      # your own core: the recommended one instead
+        key = key or self.brain.core_key()
+        self.brain.download(on_done=self._done("INSTALLED"), key=key)
+        T.banner(self.app, "DOWNLOADING — it's installed and set up when it finishes (progress below)", "success"); self._tick(once=True)
+    def _add_text(self, slot, pref_key):
+        p = filedialog.askopenfilename(parent=self.app, title="Choose a text model file (.gguf)", filetypes=[("Text models", "*.gguf"), ("All files", "*.*")])
+        if not p: return
+        import learning_areas as LA
+        if not LA.fits(self.app, "Shared models", [p]): return
+        self.brain.add_file(slot, p, on_done=self._done("INSTALLED"))
+        if pref_key == "core_model":
+            self.cores["custom-core"] = self.brain.spec("custom-core")["label"] + " (yours)"; self.core_choice.choices = list(self.cores.values())
+            self.core_v.set(self.cores["custom-core"])
+        else: self._select(pref_key, slot)
+    # ---- image and video models
+    def _dl_images(self):
+        self._select("model_AI_Images", "sd15"); self.imaging.download(on_done=self._done("INSTALLED"))
+        T.banner(self.app, "DOWNLOADING — the image engine and Stable Diffusion 1.5 (about 2.2 GB); it's set up when it finishes", "success")
+    def _add_image(self):
+        p = filedialog.askopenfilename(parent=self.app, title="Choose an image model file", filetypes=[("Image models", "*.safetensors *.ckpt *.gguf"), ("All files", "*.*")])
+        if not p: return
+        import learning_areas as LA
+        if not LA.fits(self.app, "Shared models", [p]): return
+        self.imaging.add_file(p, on_done=self._done("INSTALLED")); self._select("model_AI_Images", "file")
+    def _dl_video(self):
+        T.popup(self.app, "NOT ON THIS CARD YET", "The recommended video model (Wan 2.2 5B) needs a graphics card with 16 GB or more; yours has 6 GB.\n"
+                "Nothing was downloaded. When you have a bigger card, this button will install it.", (("OK", "normal"),))
+    def _add_video(self):
+        p = filedialog.askopenfilename(parent=self.app, title="Choose a video model file", filetypes=[("Video models", "*.safetensors *.gguf"), ("All files", "*.*")])
+        if not p: return
+        d = os.path.join(self.brain.ROOT, "video"); os.makedirs(d, exist_ok=True); shutil.copy(p, d); self._select("model_AI_Videos", "file")
+        T.banner(self.app, f"KEPT — {os.path.basename(p)} is ready for when video making is built", "success")
 
     def _find_card(self):
         cards = self.brain.gpu(); txt = "Your graphics card: " + (", ".join(f"{c['name']} ({c['gb']} GB reported)" for c in cards) if cards else "not found (the model runs on the processor)")
@@ -181,19 +273,17 @@ class AIModelsPage(SettingsPage):
         prefs.set("core_model", key)
         if self.brain.ready(): self.brain.stop()
         self._tick(once=True)
-    def _download(self, key):
-        if key == "core": key = None
-        self.brain.download(on_done=lambda ok, m: self.app.q.put(lambda: T.banner(self.app, ("DOWNLOADED — " if ok else "DOWNLOAD FAILED — ") + m, "success" if ok else "error")), key=key)
-        self._tick(once=True)
     def _start(self):
         self.brain.load_async(on_done=lambda ok, m: self.app.q.put(lambda: T.banner(self.app, ("READY — " if ok else "COULDN'T START — ") + m, "success" if ok else "error")))
     def _stop(self): self.brain.stop(); self._tick(once=True)
     def _tick(self, once=False):
         if not self.winfo_exists(): return
-        st = self.brain.status(); spec = self.brain.CORES[self.brain.core_key()]
-        self.core_note.configure(text=spec["note"])
-        pct = f" ({st['progress'] * 100:.0f}%)" if st["state"] == "downloading" and st.get("progress") else ""
-        self.state.configure(text=f"STATUS: {st['detail'] or st['state'] or ''}{pct}")
+        st = self.brain.status(); ist = self.imaging.status()
+        self.core_note.configure(text=self.brain.spec(self.brain.core_key())["note"])
+        pct = lambda x: f" ({x['progress'] * 100:.0f}%)" if x["state"] == "downloading" and x.get("progress") else ""
+        line = f"TEXT: {st['detail'] or st['state'] or ''}{pct(st)}"
+        if ist["state"] in ("downloading", "error"): line += f"     IMAGES: {ist['detail']}{pct(ist)}"
+        self.state.configure(text=line)
         if not once: self.after(1000, self._tick)
 
 # ---------------------------------------------------------------- Updates
@@ -250,7 +340,7 @@ class BackupPage(SettingsPage):
         import brain; lib = brain.TABS_DIR
         return glob.glob(os.path.join(lib, "*", "examples.jsonl")), lib
     def export(self):
-        p = filedialog.asksaveasfilename(parent=self.app, defaultextension=".zip", initialfile="instant-easel-backup.zip", filetypes=[("Backup", "*.zip")])
+        p = filedialog.asksaveasfilename(parent=self.app, defaultextension=".zip", initialfile="instant-easel-pro-backup.zip", filetypes=[("Backup", "*.zip")])
         if not p: return
         learned, lib = self._learned()
         with zipfile.ZipFile(p, "w", zipfile.ZIP_DEFLATED) as z:

@@ -1,5 +1,5 @@
 """
-brain.py: Instant Easel's core text model. One English model is the base of every AI tab; each tab keeps its own memory.
+brain.py: Instant Easel Pro's core text model. One English model is the base of every AI tab; each tab keeps its own memory.
 
     The core model      Qwen3.5 4B or 9B (Apache 2.0), chosen in Settings > AI Models and switchable any time.
                           4B  about 3 GB, fits fully on a 6 GB graphics card (fast)
@@ -34,14 +34,14 @@ TAB_MODELS = {                             # text models a tab can use instead o
     "coder7b": dict(label="Qwen2.5 Coder 7B", repo="bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", quant="Q4_K_M", size=4.7e9, layers=99,
                     note="Made for code. About 4.7 GB; fits on a 6 GB card."),
 }
-CHAT_SYSTEM = "You are the helper inside Instant Easel, a creative app. Answer clearly and plainly."
+CHAT_SYSTEM = "You are the helper inside Instant Easel Pro, a creative app. Answer clearly and plainly."
 SYSTEMS = {"AI Chat": CHAT_SYSTEM,
            "AI Coding": "You are a careful programming assistant. Give working code first, then a short explanation.",
            "AI Images": "You turn requests into clear, detailed picture descriptions for an image model.",
            "AI Videos": "You turn requests into clear, detailed descriptions of short video scenes, including the motion."}
 MAX_EXAMPLES_IN_PROMPT = 12
 
-ROOT = paths.data("my-models"); RUNTIME = os.path.join(ROOT, "runtime", "llama.cpp")
+ROOT = paths.ai("my-models"); RUNTIME = os.path.join(ROOT, "runtime", "llama.cpp")
 TEXT = os.path.join(ROOT, "text"); TABS_DIR = os.path.join(TEXT, "tabs")
 
 _lock = threading.RLock(); _state = dict(state=None, detail="", model=None, progress=0.0)
@@ -56,14 +56,19 @@ def _prefs():
     import prefs; return prefs
 
 def core_key():
-    k = _prefs().get("core_model"); return k if k in CORES else "4b"
+    k = _prefs().get("core_model"); return k if k in CORES or (k == "custom-core" and model_file(k)) else "4b"
 
-def spec(key): return CORES.get(key) or TAB_MODELS.get(key)
+def spec(key):
+    """what we know about a model; a model you added yourself ("custom-...") is named after its file"""
+    if key and key.startswith("custom"):
+        f = model_file(key); return dict(label=os.path.splitext(os.path.basename(f))[0] if f else "Your own model", layers=99, size=0,
+                                         note="A model file you added yourself.")
+    return CORES.get(key) or TAB_MODELS.get(key)
 
 def tab_model(tab):
     """the model key a tab uses: its own choice in Settings > AI Models, else the core"""
     k = _prefs().get("model_" + _slug(tab)) if tab else None
-    return k if k in TAB_MODELS else core_key()
+    return k if k in TAB_MODELS or (k and k.startswith("custom") and model_file(k)) else core_key()
 
 # ---------------------------------------------------------------- what's on disk
 def _model_dir(key): return os.path.join(TEXT, key)
@@ -87,8 +92,8 @@ def installed(key=None): return bool(server_exe() and model_file(key or core_key
 def status():
     if _state["state"] in ("downloading", "loading", "busy", "error") or (_server["proc"] and _state["state"] == "ready"): return dict(_state)
     key = core_key()
-    if installed(key): return dict(state="installed", detail=f"{CORES[key]['label']} is downloaded; it starts the first time it's needed.", model=CORES[key]["label"], progress=0)
-    miss = [x for x, ok in (("the engine (llama.cpp)", server_exe()), (CORES[key]["label"], model_file(key))) if not ok]
+    if installed(key): return dict(state="installed", detail=f"{spec(key)['label']} is downloaded; it starts the first time it's needed.", model=spec(key)["label"], progress=0)
+    miss = [x for x, ok in (("the engine (llama.cpp)", server_exe()), (spec(key)["label"], model_file(key))) if not ok]
     return dict(state="not-installed", detail="Not downloaded yet: " + " and ".join(miss) + ".", model=None, progress=0)
 
 def ready(): return _server["proc"] is not None and _server["proc"].poll() is None
@@ -175,6 +180,9 @@ def download(on_done=None, key=None):
     key = key or core_key()
     def work():
         try:
+            import storage
+            ok, msg = storage.room("Shared models", 0 if model_file(key) else spec(key)["size"])
+            if not ok: raise RuntimeError(msg)
             if not server_exe(): _install_runtime()
             if not model_file(key): _install_model(key)
             _set(None, ""); on_done and on_done(True, f"{spec(key)['label']} is downloaded")
@@ -182,12 +190,18 @@ def download(on_done=None, key=None):
             _set("error", f"Download failed: {e}"); on_done and on_done(False, str(e))
     _set("downloading", "Starting the download…", 0.0); threading.Thread(target=work, name="download model", daemon=True).start()
 
-def add_file(key, path):
-    """use a .gguf file you already have for a model slot"""
+def add_file(key, path, on_done=None):
+    """install a .gguf file you already have into a model slot (and the engine too, if it isn't here yet)"""
     d = _model_dir(key); os.makedirs(d, exist_ok=True)
     for f in os.listdir(d):
         if f.endswith(".gguf"): os.remove(os.path.join(d, f))
     shutil.copy(path, os.path.join(d, os.path.basename(path)))
+    if not server_exe():
+        def work():
+            try: _install_runtime(); _set(None, ""); on_done and on_done(True, "your model and the engine are set up")
+            except Exception as e: _set("error", f"Download failed: {e}"); on_done and on_done(False, str(e))
+        _set("downloading", "Getting the engine for your model…", 0.0); threading.Thread(target=work, daemon=True).start()
+    elif on_done: on_done(True, "your model is set up")
 
 def remove_model(key):
     if _server["key"] == key: stop()
@@ -293,19 +307,13 @@ def _shots(tab, text):
         out += [dict(role="user", content=e["text"]), dict(role="assistant", content=e["answer"] if isinstance(e["answer"], str) else json.dumps(e["answer"]))]
     return out
 
-LIB_EXT = (".txt", ".md", ".py", ".js", ".ts", ".html", ".css", ".json", ".csv", ".java", ".c", ".cpp", ".h", ".cs", ".go", ".rs", ".rb", ".php", ".sh")
-def lookup(tab, text, k=3, size=900):
-    """the library passages that share the most words with the question"""
-    words = _words(text); best = []
-    for d, _, fs in os.walk(library_dir(tab)):
-        for f in fs:
-            if not f.lower().endswith(LIB_EXT): continue
-            try: body = open(os.path.join(d, f), encoding="utf-8", errors="ignore").read()
-            except OSError: continue
-            for i in range(0, len(body), size):
-                chunk = body[i:i + size]; score = len(words & _words(chunk))
-                if score: best.append((score, f, chunk))
-    best.sort(key=lambda x: -x[0]); return [(f, c) for _, f, c in best[:k]]
+def library_index(tab):
+    import memory; return memory.Index(os.path.join(_tab_dir(tab), "library.db"))
+
+def lookup(tab, text, k=3):
+    """the library passages that best match the question (a full-text index, so big libraries stay fast)"""
+    idx = library_index(tab); idx.sync_folder(library_dir(tab))
+    return [(r["source"], r["text"]) for r in idx.search(text, k=k, kinds=("library",))]
 
 def ask(tab, text, system=None, max_tokens=600, use_library=True):
     start(tab_model(tab))

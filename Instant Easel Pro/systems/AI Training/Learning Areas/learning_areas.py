@@ -218,6 +218,19 @@ def read_examples(path):
     return out
 
 # ---------------------------------------------------------------- the page
+def fits(app, tab, files=(), folder=None):
+    """True if these files (or this folder) fit in the AI's portion on the AI drive; otherwise says so and returns False"""
+    import storage
+    size = sum(os.path.getsize(f) for f in files if os.path.isfile(f))
+    if folder:
+        for d, _, fs in os.walk(folder):
+            for f in fs:
+                try: size += os.path.getsize(os.path.join(d, f))
+                except OSError: pass
+    ok, msg = storage.room(storage.area_for(tab), size)
+    if not ok: T.banner(app, "NO ROOM — " + msg)
+    return ok
+
 def _frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
 
@@ -293,7 +306,7 @@ class AreaPage(tk.Frame):
 
     # ---- where things live
     def folder(self):
-        if self.AREA == "Video Learning": d = paths.data("my-library", "Video clips"); os.makedirs(d, exist_ok=True); return d
+        if self.AREA == "Video Learning": d = paths.ai("my-library", "Video clips"); os.makedirs(d, exist_ok=True); return d
         import brain; return brain._tab_dir(self.tab)
 
     def library(self):
@@ -324,18 +337,21 @@ class AreaPage(tk.Frame):
     def do_add_clips(self):
         ps = filedialog.askopenfilenames(parent=self.app, title="Choose short video clips", initialdir=prefs.work_folder("Videos"),
                                          filetypes=[("Videos", "*.mp4 *.mov *.webm *.mkv *.avi"), ("All files", "*.*")])
+        if ps and not fits(self.app, "AI Videos", ps): return
         for p in ps: shutil.copy(p, self.folder())
         if ps: T.banner(self.app, f"ADDED — {len(ps)} clips are in the video library", "success")
 
     def do_import_docs(self):
         ps = filedialog.askopenfilenames(parent=self.app, title="Choose documents for the library",
                                          filetypes=[("Documents", "*.txt *.md *.pdf *.html *.csv *.json"), ("All files", "*.*")])
+        if ps and not fits(self.app, self.tab, ps): return
         for p in ps: shutil.copy(p, self.library())
         if ps: T.banner(self.app, f"ADDED — {len(ps)} documents are in the {self.tab} library", "success")
 
     def do_import_code(self):
         src = filedialog.askdirectory(parent=self.app, title="Choose a folder of code", initialdir=prefs.work_folder("Code"))
         if not src: return
+        if not fits(self.app, self.tab, folder=src): return
         g = lambda k, d: get(self.AREA, k, d)
         n = import_code(src, self.library(), permissive=g("permissive", True), dedupe=g("dedupe", True), compiles=g("compiles", True))
         if n["licence"] and not n["copied"]:
@@ -553,6 +569,7 @@ class PicturesPage(tk.Frame):
             rows.append((path, v, use))
         def commit():
             import hashlib
+            if not fits(self.app, "AI Images", [p for p, _, use in rows if use.get()]): return
             added = dropped = skipped = 0; seen = set()
             if get("Image Learning", "dedupe"):
                 for d_, _, fs in os.walk(self.IM.pictures_dir(n)):

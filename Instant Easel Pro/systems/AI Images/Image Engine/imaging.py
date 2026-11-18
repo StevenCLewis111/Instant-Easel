@@ -1,5 +1,5 @@
 """
-imaging.py: Instant Easel's image engine. Paints pictures from words (and repaints pictures) on this PC.
+imaging.py: Instant Easel Pro's image engine. Paints pictures from words (and repaints pictures) on this PC.
 
     The engine      stable-diffusion.cpp (sd-cli), downloaded once: the Vulkan build on Windows, which runs on Intel Arc, AMD and
                     NVIDIA cards. Like the text engine it needs no Python add-ons.
@@ -19,7 +19,7 @@ import os, sys, re, json, shutil, threading, subprocess, zipfile, tarfile, rando
 import paths
 
 SD15 = dict(label="Stable Diffusion 1.5", repo="Comfy-Org/stable-diffusion-v1-5-archive", file="v1-5-pruned-emaonly-fp16.safetensors", size=2.13e9)
-ROOT = paths.data("my-models"); RUNTIME = os.path.join(ROOT, "runtime", "stable-diffusion.cpp"); IMAGE = os.path.join(ROOT, "image")
+ROOT = paths.ai("my-models"); RUNTIME = os.path.join(ROOT, "runtime", "stable-diffusion.cpp"); IMAGE = os.path.join(ROOT, "image")
 NEGATIVE = "blurry, low quality, deformed, extra fingers, watermark, text, signature"
 SIZES = {"Square 512 x 512": (512, 512), "Tall 512 x 768": (512, 768), "Wide 768 x 512": (768, 512)}
 
@@ -51,6 +51,8 @@ def model_file():
         xl = [f for f in files if "xl" in f.lower()]
         if xl: return os.path.join(IMAGE, xl[0])
     if choice == "file":
+        mine = _prefs().get("image_file")
+        if mine in files: return os.path.join(IMAGE, mine)
         own = [f for f in files if f != SD15["file"]]
         if own: return os.path.join(IMAGE, own[0])
     return os.path.join(IMAGE, files[0]) if files else None
@@ -95,9 +97,24 @@ def _install_sd15():
     brain._fetch(f"https://huggingface.co/{SD15['repo']}/resolve/main/{SD15['file']}", os.path.join(IMAGE, SD15["file"]), SD15["label"], SD15["size"],
                  report=lambda t, f: _set("downloading", t, f))
 
+def add_file(path, on_done=None):
+    """install an image model file you already have, choose it, and get the engine if it isn't here yet"""
+    os.makedirs(IMAGE, exist_ok=True); shutil.copy(path, os.path.join(IMAGE, os.path.basename(path)))
+    _prefs().set("model_AI_Images", "file"); _prefs().set("image_file", os.path.basename(path))
+    if engine_exe():
+        if on_done: on_done(True, f"{os.path.basename(path)} is set up")
+        return
+    def work():
+        try: _install_runtime(); _set(None, ""); on_done and on_done(True, f"{os.path.basename(path)} and the image engine are set up")
+        except Exception as e: _set("error", f"Download failed: {e}"); on_done and on_done(False, str(e))
+    _set("downloading", "Getting the image engine…", 0.0); threading.Thread(target=work, daemon=True).start()
+
 def download(on_done=None):
     def work():
         try:
+            import storage
+            ok, msg = storage.room("Shared models", 0 if model_file() else SD15["size"])
+            if not ok: raise RuntimeError(msg)
             if not engine_exe(): _install_runtime()
             if not os.path.exists(os.path.join(IMAGE, SD15["file"])) and _prefs().get("model_AI_Images") in ("sd15", None): _install_sd15()
             _set(None, ""); on_done and on_done(True, "the image engine and model are downloaded")
@@ -136,7 +153,7 @@ def paint(prompt, n=1, size="Square 512 x 512", steps=20, cfg=7.0, seed=None, ne
     if not exe or not model: raise RuntimeError("the image engine isn't downloaded yet (Settings > AI Models > AI Images)")
     w, h = SIZES.get(size, (512, 512)); extra, lora_dir = image_model_bits(image_model); f = _flags()
     base_seed = random.randint(0, 2 ** 31 - 2) if seed is None else int(seed); out = []
-    tmp = os.path.join(paths.data("my-models"), "image-work"); os.makedirs(tmp, exist_ok=True)
+    tmp = os.path.join(ROOT, "image-work"); os.makedirs(tmp, exist_ok=True)
     init_path = None
     if init_image is not None:
         init_path = os.path.join(tmp, "start.png"); im = init_image.convert("RGB"); im.thumbnail((w, h)); im = im.resize((w, h)); im.save(init_path)

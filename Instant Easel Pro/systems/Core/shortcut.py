@@ -1,5 +1,5 @@
 """
-shortcut.py: makes a desktop shortcut to Instant Easel with its own icon (images/UI/App Icon/icon.ico). Windows only.
+shortcut.py: makes a desktop shortcut to Instant Easel Pro with its own icon (images/UI/App Icon/icon.ico). Windows only.
     python shortcut.py            (or Settings > General > Create desktop shortcut)
 It points at InstantEaselPro.exe when the app is built, or at main.py (run without a console window) when it isn't.
 """

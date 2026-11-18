@@ -17,7 +17,7 @@ FOCUS = ["Cartoons", "Fashion", "Nature", "Portraits", "Animals", "Products", "A
 EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
 def root():
-    d = paths.data("my-library", "Image models"); os.makedirs(d, exist_ok=True); return d
+    d = paths.ai("my-library", "Image models"); os.makedirs(d, exist_ok=True); return d
 
 def _safe(name): return re.sub(r'[<>:"/\\|?*]+', "", name).strip()[:60]
 

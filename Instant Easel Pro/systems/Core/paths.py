@@ -1,5 +1,5 @@
 """
-paths.py: where everything in Instant Easel lives. Every script asks here instead of building paths from its own location, so
+paths.py: where everything in Instant Easel Pro lives. Every script asks here instead of building paths from its own location, so
 scripts can sit in any folder under systems/ and still find the pictures, fonts, settings and logs.
 
     APP     the program's own files (images/, fonts/) - inside the .exe bundle when frozen
@@ -34,6 +34,25 @@ def image(*p): return os.path.join(IMAGES, *p)
 def ui(*p): return os.path.join(UI, *p)
 def font(name): return os.path.join(FONTS, name)
 def data(*p): return os.path.join(HOME, *p)
+def ai_root():
+    """where the AI keeps everything (models, what each AI learned, its libraries and memory): the AI drive chosen in Settings >
+    AI Storage, or this app's own folder. Read from the settings file, so it's known before anything else starts."""
+    try:
+        import json; d = json.load(open(os.path.join(JSON_DIR, "instant_easel_settings.json"), encoding="utf-8")).get("ai_drive") or ""
+        if d and os.path.isdir(d): return d
+    except Exception: pass
+    return HOME
+
+def ai(*p):
+    """a path in the AI's storage (see ai_root)"""
+    return os.path.join(ai_root(), *p)
+
+def user_id():
+    """each copy of the app is its own user (the project folder, or the folder the .exe is in): a short, stable name for it"""
+    import hashlib, re
+    base = re.sub(r"[^A-Za-z0-9]+", "-", os.path.basename(HOME)).strip("-") or "user"
+    return f"{base}-{hashlib.md5(HOME.lower().encode()).hexdigest()[:6]}"
+
 def saved_images(*p):
     """pictures the app saves (scraped images, the starting image ...): HOME/images/..."""
     d = os.path.join(HOME, "images", *p[:-1]) if p else os.path.join(HOME, "images")

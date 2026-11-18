@@ -1,5 +1,5 @@
 """
-ui_art.py: Instant Easel's painted UI pictures (images/UI/<area>/..., see AREAS), found by name, sized and cached.
+ui_art.py: Instant Easel Pro's painted UI pictures (images/UI/<area>/..., see AREAS), found by name, sized and cached.
 
 Every lookup returns None when a picture isn't there, so the caller keeps drawing its own (nothing ever goes blank).
 To swap a picture, replace its PNG; to use a different one, change the name in the tables below.

@@ -1,5 +1,5 @@
 """
-features.py: the single list of everything Instant Easel does or will do, organized the way the menus are.
+features.py: the single list of everything Instant Easel Pro does or will do, organized the way the menus are.
 The app's menus and ROADMAP.md are both generated from this, so they can never disagree.
 status: "built" | "partial" | "planned"     order: recommended build order (1 = next)     blank=True: an empty bordered page for now
 """
@@ -125,6 +125,8 @@ MENUS = [
    dict(name="AI Models", status="partial", order=1, desc="The core text model (Qwen3.5 4B or 9B, switchable) and each AI tab's own model.",
         options=["Core text model: Qwen3.5 4B or 9B, download, start, stop, switch any time", "AI Chat: the core model", "AI Coding: the core model or Qwen2.5 Coder 7B",
                  "AI Images: Stable Diffusion 1.5 / XL / your own file (engine being built next)", "AI Videos: needs a 16 GB+ graphics card"]),
+   dict(name="AI Storage", status="built", order=0, desc="Give the AI its own drive; each AI gets its own portion.",
+        options=["Choose the AI drive (everything moves there)", "Each AI's portion with used / budget", "Adding stops politely when a portion is full"]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=["Anywhere", "Text to Image", "Image to Image", "Draw studio", "Editing"]),
    dict(name="Backup & Reset", status="built", order=0, desc="Export / import settings, theme, words and learned style; reset all settings.", options=["Export backup", "Import backup", "Reset all settings"]),
@@ -157,7 +159,7 @@ through llama.cpp, which reaches Intel Arc, AMD and NVIDIA cards through Vulkan.
 
 def roadmap_md():
     icon = {"built": "✅ built", "partial": "🟡 partial", "planned": "⬜ planned"}
-    out = ["# Instant Easel: roadmap and feature tracker", "", "Generated from `features.py` (the same list the app's menus use).", "",
+    out = ["# Instant Easel Pro: roadmap and feature tracker", "", "Generated from `features.py` (the same list the app's menus use).", "",
            "## Build order", "", "| # | Feature | Menu | Status |", "|---|---|---|---|"]
     todo = sorted([(f["order"], m, f) for m, _, fs in MENUS for f in fs if f["status"] != "built"], key=lambda x: x[0])
     for o, m, f in todo: out.append(f"| {o} | {f['name']} | {m} | {icon[f['status']]} |")

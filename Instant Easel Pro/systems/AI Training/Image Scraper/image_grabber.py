@@ -94,7 +94,7 @@ def app_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-try:                                                               # inside Instant Easel: its logs/ and images/Image Scraper/ folders
+try:                                                               # inside Instant Easel Pro: its logs/ and images/Image Scraper/ folders
     import paths as _paths
     LOG_FILE = _paths.log_file("image_grabber_log.txt"); OUTPUT_DIR = _paths.saved_images("Image Scraper", "x")[:-2]
     PROFILE_DIR = _paths.data(PROFILE_FOLDER_NAME)
@@ -571,7 +571,7 @@ class App:
             pass
 
     def poll(self):
-        if not self.root.winfo_exists():  # window closed (when opened from Instant Easel)
+        if not self.root.winfo_exists():  # window closed (when opened from Instant Easel Pro)
             return
         while not self.msgs.empty():
             line = self.msgs.get()

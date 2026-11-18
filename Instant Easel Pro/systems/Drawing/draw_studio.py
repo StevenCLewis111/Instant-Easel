@@ -1,5 +1,5 @@
 """
-draw_studio.py: Instant Easel's drawing studio (Editing > Draw), laid out like a full drawing app in Instant Easel's theme.
+draw_studio.py: Instant Easel Pro's drawing studio (Editing > Draw), laid out like a full drawing app in Instant Easel Pro's theme.
   Top:    Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror; New, Open, Save
   Left:   brush library (all 45 brushes with live stroke previews) and brush properties (size, opacity, preview)
   Centre: the layered canvas (zoom with the wheel, pan with the right mouse button)

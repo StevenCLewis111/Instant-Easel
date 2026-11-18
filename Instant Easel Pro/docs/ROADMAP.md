@@ -1,4 +1,4 @@
-# Instant Easel: roadmap and feature tracker
+# Instant Easel Pro: roadmap and feature tracker
 
 Generated from `features.py` (the same list the app's menus use).
 
@@ -394,6 +394,13 @@ The core text model (Qwen3.5 4B or 9B, switchable) and each AI tab's own model.
 - AI Coding: the core model or Qwen2.5 Coder 7B
 - AI Images: Stable Diffusion 1.5 / XL / your own file (engine being built next)
 - AI Videos: needs a 16 GB+ graphics card
+
+### AI Storage  (✅ built)
+Give the AI its own drive; each AI gets its own portion.
+
+- Choose the AI drive (everything moves there)
+- Each AI's portion with used / budget
+- Adding stops politely when a portion is full
 
 ### Updates  (✅ built)
 Check GitHub for a newer version; opt-in check at startup.

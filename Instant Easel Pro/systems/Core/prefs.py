@@ -1,5 +1,5 @@
 """
-prefs.py: Instant Easel's settings. One store, saved as instant_easel_settings.json next to the app, read by every page.
+prefs.py: Instant Easel Pro's settings. One store, saved as instant_easel_settings.json next to the app, read by every page.
     import prefs
     prefs.get("save_format")          # -> "PNG"
     prefs.set("auto_save", True)      # saves to disk and tells anything listening
@@ -12,7 +12,7 @@ def home_dir(): return paths.HOME                                     # your dat
 DEFAULTS = {
     # General
     "work_folder": "",                     # "" = the folder of the app you launched (main.py's folder, or the .exe's folder)
-    "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-{date}-{time}-{n}",
+    "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-pro-{date}-{time}-{n}",
     "start_tab": "AI Images", "confirm_exit": True,
     "seed_mode": "random", "fixed_seed": 1234,
     # Performance
@@ -23,6 +23,7 @@ DEFAULTS = {
     # Privacy & data
     "keep_training_copies": False,
     # AI models: one core text model for every AI tab; a tab can add its own model (Settings > AI Models)
+    "ai_drive": "", "ai_budgets": {},       # Settings > AI Storage: where the AI keeps everything, and each AI's portion (GB)
     "core_model": "4b", "model_AI_Coding": "core", "model_AI_Images": "sd15", "model_AI_Videos": "none", "image_model": "",
     "use_gpu": True, "models_folder": "",
     # Updates
@@ -38,6 +39,7 @@ def _load():
         _data = dict(DEFAULTS)
         try: _data.update(json.load(open(_FILE)))
         except Exception: pass
+        if _data.get("name_pattern") == "instant-easel-{date}-{time}-{n}": _data["name_pattern"] = DEFAULTS["name_pattern"]   # the Pro name
         if not _data.get("_launch_maximized_v1"):                         # once: the new start-up default (title bar, fills the screen above the taskbar)
             _data["window_mode"] = "Maximized"; _data["_launch_maximized_v1"] = True
             try: json.dump(_data, open(_FILE, "w"), indent=1)

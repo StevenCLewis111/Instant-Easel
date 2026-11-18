@@ -1,5 +1,5 @@
 """
-brush_catalog.py: every brush, pen and drawing tool in Instant Easel's Draw studio, grouped the way the Brushes, Pens & Tools guide shows.
+brush_catalog.py: every brush, pen and drawing tool in Instant Easel Pro's Draw studio, grouped the way the Brushes, Pens & Tools guide shows.
 
 Each tool lists the names it may have in the brush engine (brushes.B). When the engine has one of them, the tile shows a live stroke
 from the real brush and works; when it doesn't yet, the tile shows a drawn preview of what it will do and is marked SOON.

@@ -1,5 +1,5 @@
 """
-main.py: Instant Easel. One menu window, five tabs:
+main.py: Instant Easel Pro. One menu window, five tabs:
   Generate: type what you want, it paints it (and says what it understood)
   Train:    images to learn from (it guesses what each shows; you confirm)
   Words:    teach it what your words mean
@@ -20,7 +20,7 @@ import theme as T
 import paint_window, features, edit as E, draw_studio, prefs, settings_pages as SP
 import crash, skin, ui_art as UA, learning_areas as LA, image_pages as IP
 
-APP_NAME = "Instant Easel"
+APP_NAME = "Instant Easel Pro"
 DESIGN = (1560, 920)
 EDGE = 20                       # gap between the window's edge and the app's outer border, the same all the way round (design pixels)            # the size the app is designed at; any other window size zooms the whole UI by the same factor
 ZMIN, ZMAX = 0.4, 3.0
@@ -186,7 +186,7 @@ class InstantEasel(tk.Tk):
             except Exception:
                 try: ctypes.windll.user32.SetProcessDPIAware()
                 except Exception: pass
-            try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("InstantEaselPro.App")   # the taskbar shows Instant Easel's icon, not Python's
+            try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("InstantEaselPro.App")   # the taskbar shows Instant Easel Pro's icon, not Python's
             except Exception: pass
         super().__init__(); self.withdraw()                           # never seen half-built: shown once everything is laid out (show_window)
         self._hide()
@@ -227,6 +227,9 @@ class InstantEasel(tk.Tk):
             import numpy as _np
             lg = Image.open(paths.ui("Header", "title-logo.png")); _al = _np.asarray(lg)[..., 3] > 40
             _ys, _xs = _np.nonzero(_al); self.logo_src = lg.crop((int(_xs.min()), int(_ys.min()), int(_xs.max()) + 1, int(_ys.max()) + 1))   # painted area only
+            badge = T.paint_words("PRO", max(12, int(self.logo_src.height * 0.26)), (255, 214, 0))                   # this is Instant Easel Pro
+            big = Image.new("RGBA", (self.logo_src.width + badge.width // 3, self.logo_src.height + badge.height // 4)); big.alpha_composite(self.logo_src.convert("RGBA"))
+            big.alpha_composite(badge, (big.width - badge.width, big.height - badge.height)); self.logo_src = big
             self.logo = ImageTk.PhotoImage(self.logo_src.resize((517, 150), Image.LANCZOS))     # resized to the tab row's width once it's laid out
             self.logo_lbl = tk.Label(top, image=self.logo, bg=top["bg"], bd=0, padx=0, pady=0, highlightthickness=0)
             self.logo_lbl.grid(row=0, column=1, pady=(7, 12))                                  # the brush tip sits 7 px under the top border
@@ -251,7 +254,7 @@ class InstantEasel(tk.Tk):
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
-                 "AI Models": SP.AIModelsPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "AI Models": SP.AIModelsPage, "AI Storage": SP.AIStoragePage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.edit = dict(original=None, proxy=None, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM), listeners=[])   # shared by the Edit tools
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
@@ -579,7 +582,7 @@ class InstantEasel(tk.Tk):
         if getattr(self, "_asking", False): return                                            # a quit prompt is already up (e.g. Close pressed again on the taskbar)
         if prefs.get("confirm_exit"):
             self._asking = True
-            try: answer = T.popup(self, "QUIT INSTANT EASEL?", "Anything you haven't saved will be lost.", (("Quit", "danger"), ("Cancel", "normal")))
+            try: answer = T.popup(self, "QUIT INSTANT EASEL PRO?", "Anything you haven't saved will be lost.", (("Quit", "danger"), ("Cancel", "normal")))
             finally: self._asking = False
             if answer != "Quit": return
         crash.clean_exit()                                                                    # a normal quit: nothing to recover next time
@@ -623,7 +626,7 @@ class InstantEasel(tk.Tk):
         folder = crash.recovery_dir(); has_draw = draw_studio.DrawStudio.has_recovery(folder); ed_file = os.path.join(folder, "editing.json")
         if not has_draw and not os.path.exists(ed_file): return
         what = " and ".join(x for x in (("your drawing" if has_draw else ""), ("your editing" if os.path.exists(ed_file) else "")) if x)
-        if T.popup(self, "INSTANT EASEL CLOSED UNEXPECTEDLY", f"It saved {what} a minute or less before it closed.\nRestore it?",
+        if T.popup(self, "INSTANT EASEL PRO CLOSED UNEXPECTEDLY", f"It saved {what} a minute or less before it closed.\nRestore it?",
                    (("Restore", "normal"), ("Discard", "danger"))) != "Restore":
             shutil.rmtree(folder, ignore_errors=True); return
         try:
@@ -1101,7 +1104,7 @@ class AboutPage(Page):
         T.Text(w, "Type it, see it painted. Teach it your style. Free, offline, your own.", muted=True).pack(pady=(2, 10))
         box = T.Panel(w, pad=12, inner=True); box.pack(padx=40)
         for line in ("Made by Steven Lewis, built with Claude.",
-                     "Painting engine, brushes, styles, editing, drawing studio and learning: written for Instant Easel.",
+                     "Painting engine, brushes, styles, editing, drawing studio and learning: written for Instant Easel Pro.",
                      "Learned from open source: LocalAI (MIT) and Pixelle-Video (Apache 2.0); ideas only from OpenMontage and guizang-ppt-skill (AGPL).",
                      "Fonts: Courier Prime and EB Garamond (SIL Open Font License).",
                      "Images you teach it are measured, then deleted. Only what it learned is kept."):
@@ -1198,7 +1201,7 @@ def _cant_start(err_text):
         r = tk.Tk(); r.withdraw()
         try: r.iconbitmap(default=icon_file("icon.ico"))
         except Exception: pass
-        mb.showerror(APP_NAME, "Instant Easel couldn't start.\n\n" + err_text + "\n\nThe details are in instant_easel_errors.log next to the app. "
+        mb.showerror(APP_NAME, "Instant Easel Pro couldn't start.\n\n" + err_text + "\n\nThe details are in instant_easel_errors.log next to the app. "
                      "If it fails again, the next start uses safe mode (window, start page and splash settings reset).", parent=r)
         r.destroy()
     except Exception: pass

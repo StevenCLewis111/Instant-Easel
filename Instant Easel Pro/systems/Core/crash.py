@@ -1,5 +1,5 @@
 """
-crash.py: Instant Easel's crash logging, crash recovery and crash protection (nothing is sent anywhere; it's all files beside the app).
+crash.py: Instant Easel Pro's crash logging, crash recovery and crash protection (nothing is sent anywhere; it's all files beside the app).
 
   instant_easel_errors.log    every Python error, with its full traceback (kept under ~1 MB: the older half rolls to .1.log)
   instant_easel_crash.log     hard crashes Python can't catch (a fault inside Tk, numpy or Pillow): the stack of every thread

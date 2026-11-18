@@ -1,5 +1,5 @@
 """
-edit.py: Instant Easel's Edit adjustments (Lightroom-style). Every value runs -100..100 (0 = no change) unless noted.
+edit.py: Instant Easel Pro's Edit adjustments (Lightroom-style). Every value runs -100..100 (0 = no change) unless noted.
     from edit import apply, DEFAULTS
     out = apply(img, dict(DEFAULTS, exposure=20, shadows=30, saturation=15), filt="warm film")
 Order (as photo editors do): exposure > white balance > tone (contrast, highlights, shadows, whites, blacks, brightness)
