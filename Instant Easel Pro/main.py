@@ -358,10 +358,10 @@ class InstantEasel(tk.Tk):
             lbl = getattr(self, name, None)
             if lbl is None:
                 lbl = tk.Label(master, bd=0, highlightthickness=0, padx=0, pady=0, bg=T.PALETTE["panel"]); setattr(self, name, lbl)
-                if master is self.frame: lbl.place(x=self._hl, y=self._hl, width=W, height=H)
+                if master is self.frame: lbl.place(x=self._hl, y=self._hl, width=W, height=H, bordermode="outside")   # from the frame's edge, inside its green border
                 else: lbl.place(x=0, y=0, relwidth=1, relheight=1)
                 lbl.lower()
-            if master is self.frame: lbl.place_configure(width=W, height=H)
+            if master is self.frame: lbl.place_configure(x=self._hl, y=self._hl, width=W, height=H, bordermode="outside")
             x, y, ww, wh = self._hbox(master) if master is not self.frame else (0, 0, W, H)
             ph = ImageTk.PhotoImage(band.crop((x, y, x + max(1, ww), y + max(1, wh)))); lbl.configure(image=ph); lbl._ph = ph
         lp = getattr(self, "_logo_pil", None)
