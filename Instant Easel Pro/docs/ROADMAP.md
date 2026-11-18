@@ -10,10 +10,10 @@ Generated from `features.py` (the same list the app's menus use).
 | 3 | Text to Image | AI Images | 🟡 partial |
 | 4 | Image to Image | AI Images | 🟡 partial |
 | 5 | Image Learning | AI Training | 🟡 partial |
-| 6 | Inpainting | AI Images | ⬜ planned |
+| 6 | Inpainting | AI Images | 🟡 partial |
 | 7 | AI Tools | Editing | ⬜ planned |
 | 10 | Prompt to Edit | AI Images | ⬜ planned |
-| 11 | Sketch to Image | AI Images | ⬜ planned |
+| 11 | Sketch to Image | AI Images | 🟡 partial |
 | 12 | Image Prompting | AI Images | ⬜ planned |
 | 13 | Multi-Image Fusion | AI Images | ⬜ planned |
 | 14 | Pose to Image | AI Images | ⬜ planned |
@@ -38,8 +38,12 @@ Type what you want; the image model paints it.
 
 - Your words go through the core text model first, which turns them into a clear picture description
 - Pick which of your image models (Cartoon, Fashion, Nature...) to switch on
-- Size, how many, seed
-- Save / download
+- Size, how many, quality
+- Leave out (what you don't want in it)
+- Follow my words: loosely, normal, closely
+- Seed: random or a number; every result shows its seed with Use this seed, to change one thing at a time
+- The words, seed and settings saved inside each PNG
+- Remembers the last settings
 
 *Note:* Download the image engine once (on this page or Settings > AI Models). Every picture goes into your Images folder.
 
@@ -48,6 +52,8 @@ Repaint any picture, guided by words.
 
 - Start from a picture (opens your Images folder)
 - How much to change it
+- Works at the picture's own shape
+- Leave out, follow my words, seed (as Text to Image)
 - Your image models
 
 *Note:* Uses the same image engine as Text to Image.
@@ -86,13 +92,16 @@ Reuse the structure and composition of an image.
 
 *Note:* True depth estimation needs a small offline AI model (optional add-on). Without it, depth is estimated from brightness, blur and position.
 
-### Sketch to Image  (⬜ planned)
+### Sketch to Image  (🟡 partial)
 Turn a sketch, line drawing or child's drawing into art.
 
-- Upload a sketch or draw one on the canvas
-- Fills enclosed shapes with color, then paints them in a medium
-- Keep lines on/off
-- Color hints by word
+- Use my latest drawing (from the Drawing tab) or choose any sketch
+- Style: painting, watercolor, oil, cartoon, storybook, photo, pencil
+- Drawing: keep my lines, balanced, free
+- Optional words for what it is ('a red dragon on a hill')
+- Leave out, follow my words, seed
+
+*Note:* Uses the same image engine as Text to Image.
 
 ### Pose to Image  (⬜ planned)
 People in specific poses.
@@ -101,13 +110,16 @@ People in specific poses.
 - Pose presets: standing, sitting, walking, pointing, embracing
 - The figure painter draws the pose in the scene
 
-### Inpainting  (⬜ planned)
+### Inpainting  (🟡 partial)
 Edit part of an image or remove unwanted things.
 
-- Brush a mask over the area
-- Remove: fill from the surroundings
-- Replace: paint the area to match words
-- Mask feathering
+- Brush over the area (left-drag), rub out (right-drag), brush size, clear
+- Remove: leave the words empty and it fills from the surroundings
+- Replace: say what goes there
+- New part: blend in, repaint, fully new
+- Soft edges; the rest of the picture stays exactly as it was, at full size
+
+*Note:* Uses the same image engine as Text to Image.
 
 ### Image Prompting  (⬜ planned)
 Carry the style and subject feel of a reference image into a creation.

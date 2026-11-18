@@ -22,6 +22,12 @@ SD15 = dict(label="Stable Diffusion 1.5", repo="Comfy-Org/stable-diffusion-v1-5-
 ROOT = paths.ai("my-models"); RUNTIME = os.path.join(ROOT, "runtime", "stable-diffusion.cpp"); IMAGE = os.path.join(ROOT, "image")
 NEGATIVE = "blurry, low quality, deformed, extra fingers, watermark, text, signature"
 SIZES = {"Square 512 x 512": (512, 512), "Tall 512 x 768": (512, 768), "Wide 768 x 512": (768, 512)}
+GUIDANCE = {"Loosely": 5.0, "Normal": 7.0, "Closely": 9.5}            # how closely the picture follows the words (cfg scale)
+last = dict(seed=None)                                                   # the seed of the last paint() (picture i used seed + i)
+
+def fit_size(im, long_side=768):
+    """a working size with the picture's own shape: the long side long_side, both sides multiples of 64 (what the engine needs)"""
+    k = long_side / max(im.size); return max(256, round(im.width * k / 64) * 64), max(256, round(im.height * k / 64) * 64)
 
 _state = dict(state=None, detail="", progress=0.0); _proc = dict(p=None); _lock = threading.Lock(); _help = {}
 
@@ -134,7 +140,8 @@ def _flags():
     for flag, modes in (("--vae-tiling", ("Balanced", "Safe")), ("--clip-on-cpu", ("Safe",)), ("--vae-on-cpu", ("Safe",)), ("--offload-to-cpu", ("Safe",))):
         if mode in modes and flag in h: low.append(flag)                       # Safe: parts of the work on the processor, so it can't run out of card memory
     return dict(low=low, width="-W" if re.search(r"(^|\s)-W[,\s]", h) or not h else "--width", height="-H" if re.search(r"(^|\s)-H[,\s]", h) or not h else "--height",
-                negative="-n" if re.search(r"(^|\s)-n[,\s]", h) or not h else "--negative-prompt", mode="--mode" in h and "img2img" in h)
+                negative="-n" if re.search(r"(^|\s)-n[,\s]", h) or not h else "--negative-prompt", mode="--mode" in h and "img2img" in h,
+                mask="--mask" in h)
 
 def image_model_bits(name):
     """(text added to the prompt, the add-on folder) for one of your image models; ("", None) if it has no trained add-on yet"""
@@ -148,18 +155,24 @@ def image_model_bits(name):
     return f", {trig} <lora:{stem}:{strength}>", lora
 
 def paint(prompt, n=1, size="Square 512 x 512", steps=20, cfg=7.0, seed=None, negative=NEGATIVE, image_model="", init_image=None,
-          strength=0.6, on_progress=None, stop=None):
-    """paint n pictures; each is saved into Images as soon as it's done. -> list of saved paths"""
+          strength=0.6, mask=None, finish=None, hint=None, on_progress=None, stop=None):
+    """paint n pictures; each is saved into Images as soon as it's done. -> list of saved paths
+    size: a name from SIZES or (w, h).  mask: a black-and-white picture, white = repaint (inpainting, with init_image).
+    finish(picture) -> picture: a last step before saving (inpainting puts the new part back into the full-size original)"""
     from PIL import Image
     import prefs
     exe, model = engine_exe(), model_file()
     if not exe or not model: raise RuntimeError("the image engine isn't downloaded yet (Settings > AI Models > AI Images)")
-    w, h = SIZES.get(size, (512, 512)); extra, lora_dir = image_model_bits(image_model); f = _flags()
-    base_seed = random.randint(0, 2 ** 31 - 2) if seed is None else int(seed); out = []
+    w, h = size if isinstance(size, tuple) else SIZES.get(size, (512, 512)); extra, lora_dir = image_model_bits(image_model); f = _flags()
+    base_seed = random.randint(0, 2 ** 31 - 2) if seed is None else int(seed); out = []; last["seed"] = base_seed
     tmp = os.path.join(ROOT, "image-work"); os.makedirs(tmp, exist_ok=True)
     init_path = None
     if init_image is not None:
-        init_path = os.path.join(tmp, "start.png"); im = init_image.convert("RGB"); im.thumbnail((w, h)); im = im.resize((w, h)); im.save(init_path)
+        init_path = os.path.join(tmp, "start.png"); im = init_image.convert("RGB").resize((w, h), Image.LANCZOS); im.save(init_path)
+    mask_path = None
+    if mask is not None:
+        if not f["mask"]: raise RuntimeError("this image engine version can't do inpainting (no --mask option); download the engine again")
+        mask_path = os.path.join(tmp, "mask.png"); mask.convert("L").resize((w, h), Image.LANCZOS).save(mask_path)
     with _lock:
         try:
             for i in range(n):
@@ -172,6 +185,7 @@ def paint(prompt, n=1, size="Square 512 x 512", steps=20, cfg=7.0, seed=None, ne
                 cmd += f["low"]
                 if init_path:
                     cmd += (["--mode", "img2img"] if f["mode"] else []) + ["-i", init_path, "--strength", str(strength)]
+                    if mask_path: cmd += ["--mask", mask_path]
                 _set("painting", f"Painting {i + 1} of {n}…", i / n)
                 log = open(paths.log_file("image_engine.log"), "a", encoding="utf-8", errors="replace")
                 log.write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} {' '.join(cmd)}\n"); log.flush()
@@ -194,7 +208,11 @@ def paint(prompt, n=1, size="Square 512 x 512", steps=20, cfg=7.0, seed=None, ne
                 if stop is not None and stop.is_set(): break
                 if p.returncode != 0 or not os.path.exists(dest):
                     raise RuntimeError("the image engine stopped with an error (details in logs/image_engine.log)")
-                out.append(prefs.new_image(Image.open(dest).copy(), prompt))
+                pic = Image.open(dest).copy()
+                if finish: pic = finish(pic)
+                meta = dict(words=prompt, leave_out=negative, seed=str(base_seed + i), steps=str(steps), follow=str(cfg), model=image_model or "",
+                            size=f"{w}x{h}", made_by="Instant Easel Pro")
+                out.append(prefs.new_image(pic, hint or prompt, meta=meta))
                 if on_progress: on_progress((i + 1) / n, f"Saved {i + 1} of {n} to Images")
         finally:
             _set(None, "")

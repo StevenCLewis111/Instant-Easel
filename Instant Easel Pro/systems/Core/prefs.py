@@ -86,12 +86,12 @@ def save_folder(): return work_folder("images")                     # pictures y
 def _slug(text, n=40):
     import re; t = re.sub(r"[^A-Za-z0-9]+", "-", str(text)).strip("-").lower(); return t[:n].rstrip("-")
 
-def new_image(img, hint=""):
+def new_image(img, hint="", meta=None):
     """save a picture something made straight into Images (named by date and time, plus a hint like the request)"""
     name = next_name(); stem, e = os.path.splitext(name); h = _slug(hint)
     path = os.path.join(save_folder(), f"{stem}-{h}{e}" if h else name); k = 2
     while os.path.exists(path): path = os.path.join(save_folder(), f"{stem}-{h}-{k}{e}" if h else f"{stem}-{k}{e}"); k += 1
-    return save_image(img, path)
+    return save_image(img, path, meta)
 
 def new_text(kind, text, hint="", ext=".md"):
     """save text (a chat, some code) into Chats or Code"""
@@ -106,12 +106,31 @@ def next_name(n=1):
     now = datetime.datetime.now()
     return get("name_pattern").format(date=now.strftime("%Y-%m-%d"), time=now.strftime("%H%M%S"), n=n) + ext()
 
-def save_image(img, path):
-    """save in the chosen format and quality (JPEG has no transparency, so it's flattened)"""
+def save_image(img, path, meta=None):
+    """save in the chosen format and quality (JPEG has no transparency, so it's flattened). meta: words kept inside a PNG
+    (the words and seed it was painted from), read back with picture_info()"""
     fmt = {".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP"}.get(os.path.splitext(path)[1].lower(), "PNG")
     if fmt == "JPEG" and img.mode != "RGB": img = img.convert("RGB")
-    img.save(path, fmt, quality=int(get("jpeg_quality")))
+    kw = {}
+    if meta and fmt == "PNG":
+        from PIL.PngImagePlugin import PngInfo
+        info = PngInfo(); [info.add_text(f"instant-easel:{k}", str(v)) for k, v in meta.items()]; kw["pnginfo"] = info
+    img.save(path, fmt, quality=int(get("jpeg_quality")), **kw)
     return path
+
+def picture_info(path):
+    """the words, seed and settings a picture was painted from ({} if it wasn't painted here, or isn't a PNG)"""
+    try:
+        from PIL import Image
+        with Image.open(path) as im: return {k.split(":", 1)[1]: v for k, v in (getattr(im, "text", None) or {}).items() if k.startswith("instant-easel:")}
+    except Exception: return {}
+
+def latest_picture():
+    """the newest picture in the Images folder (None if there isn't one)"""
+    try:
+        d = save_folder(); fs = [os.path.join(d, f) for f in os.listdir(d) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp"))]
+        return max(fs, key=os.path.getmtime) if fs else None
+    except Exception: return None
 
 def open_folder(path):
     os.makedirs(path, exist_ok=True)
