@@ -28,12 +28,8 @@ Generated from `features.py` (the same list the app's menus use).
 | 25 | Loops & GIFs | AI Videos | ⬜ planned |
 | 26 | Video Edit | AI Videos | ⬜ planned |
 | 27 | Video Settings | AI Videos | ⬜ planned |
-| 30 | New Chat | AI Chat | ⬜ planned |
-| 31 | Chat History | AI Chat | ⬜ planned |
-| 32 | Chat Settings | AI Chat | ⬜ planned |
 | 33 | Code Editor | AI Coding | ⬜ planned |
 | 34 | Run | AI Coding | ⬜ planned |
-| 35 | Snippets | AI Coding | ⬜ planned |
 
 ## AI Images: Make new images
 
@@ -201,32 +197,37 @@ Shared panel for every Video tool (like Image settings).
 
 *Note:* MP4/WebM export needs a small video encoder bundled with the app (ffmpeg); GIF needs nothing extra.
 
-## AI Chat: Talk with it (future)
+## AI Chat: Talk with it
 
-### New Chat  (⬜ planned)
-Placeholder.
+### Chats  (✅ built)
+Conversations with memory: your rules, each chat's memory, a running summary, notes, a library and the web.
 
+- Your rules (every chat) and each chat's memory, always loaded
+- Older messages compressed into a summary, still searchable
+- 'remember: ...' keeps a note
+- Library of your documents
+- Web search: off, when needed, always
+- Save answers to your chats folder
 
-### Chat History  (⬜ planned)
-Placeholder.
+## AI Coding: Code with it
 
+### Projects  (✅ built)
+Coding projects with layered memory, so a small model can handle a big project over many sessions.
 
-### Chat Settings  (⬜ planned)
-Placeholder.
-
-
-## AI Coding: Code tools (future)
+- Your rules (every project), per user
+- Project memory: what it does, rules, never-do, what to look for, commands
+- Running summary + every message searchable
+- Notes it keeps; memory updates you approve
+- Project library: your code and docs, indexed
+- Web search when it needs current information
+- Save code to your code folder
 
 ### Code Editor  (⬜ planned)
-Placeholder.
+Edit the project's files with the AI beside you.
 
 
 ### Run  (⬜ planned)
-Placeholder.
-
-
-### Snippets  (⬜ planned)
-Placeholder.
+Run the code and feed errors back to the AI.
 
 
 ## AI Training: Teach it

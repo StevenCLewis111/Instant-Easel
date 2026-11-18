@@ -61,15 +61,18 @@ MENUS = [
                  "Self-check after rendering: black or broken frames, silent or clipping audio, 'slideshow risk' (too little motion)"],
         notes="MP4/WebM export needs a small video encoder bundled with the app (ffmpeg); GIF needs nothing extra."),
  ]),
- ("AI Chat", "Talk with it (future)", [
-   dict(name="New Chat", status="planned", order=30, desc="Placeholder.", options=[], blank=True),
-   dict(name="Chat History", status="planned", order=31, desc="Placeholder.", options=[], blank=True),
-   dict(name="Chat Settings", status="planned", order=32, desc="Placeholder.", options=[], blank=True),
+ ("AI Chat", "Talk with it", [
+   dict(name="Chats", status="built", order=0, desc="Conversations with memory: your rules, each chat's memory, a running summary, notes, a library and the web.",
+        options=["Your rules (every chat) and each chat's memory, always loaded", "Older messages compressed into a summary, still searchable",
+                 "'remember: ...' keeps a note", "Library of your documents", "Web search: off, when needed, always", "Save answers to your chats folder"]),
  ]),
- ("AI Coding", "Code tools (future)", [
-   dict(name="Code Editor", status="planned", order=33, desc="Placeholder.", options=[], blank=True),
-   dict(name="Run", status="planned", order=34, desc="Placeholder.", options=[], blank=True),
-   dict(name="Snippets", status="planned", order=35, desc="Placeholder.", options=[], blank=True),
+ ("AI Coding", "Code with it", [
+   dict(name="Projects", status="built", order=0, desc="Coding projects with layered memory, so a small model can handle a big project over many sessions.",
+        options=["Your rules (every project), per user", "Project memory: what it does, rules, never-do, what to look for, commands",
+                 "Running summary + every message searchable", "Notes it keeps; memory updates you approve", "Project library: your code and docs, indexed",
+                 "Web search when it needs current information", "Save code to your code folder"]),
+   dict(name="Code Editor", status="planned", order=33, desc="Edit the project's files with the AI beside you.", options=[]),
+   dict(name="Run", status="planned", order=34, desc="Run the code and feed errors back to the AI.", options=[]),
  ]),
  ("Editing", "Change an image (any picture, or one it made)", [
    dict(name="Light", status="built", order=1, desc="Lightroom-style light adjustments.",

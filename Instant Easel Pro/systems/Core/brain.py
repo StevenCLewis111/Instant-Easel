@@ -315,6 +315,18 @@ def lookup(tab, text, k=3):
     idx = library_index(tab); idx.sync_folder(library_dir(tab))
     return [(r["source"], r["text"]) for r in idx.search(text, k=k, kinds=("library",))]
 
+def complete(tab, messages, max_tokens=800, temperature=0.7):
+    """one answer for a full list of messages (system first) from the tab's model"""
+    start(tab_model(tab))
+    with _lock:
+        before = _state["detail"]; _set("busy", "Thinking…")
+        try:
+            r = _http("/v1/chat/completions", dict(messages=messages, max_tokens=max_tokens, temperature=temperature, top_p=0.8,
+                                                  chat_template_kwargs=dict(enable_thinking=False)))
+        finally: _set("ready", before)
+    out = r["choices"][0]["message"].get("content") or ""
+    return re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip()
+
 def ask(tab, text, system=None, max_tokens=600, use_library=True):
     start(tab_model(tab))
     sysmsg = system or SYSTEMS.get(tab, CHAT_SYSTEM)

@@ -26,3 +26,9 @@ EXE Build/images/
 EXE Build/videos/
 EXE Build/code/
 EXE Build/chats/
+
+# the AI's own storage (models are gigabytes; memory and libraries are yours): never uploaded
+my-models/
+memory/
+EXE Build/my-models/
+EXE Build/memory/
