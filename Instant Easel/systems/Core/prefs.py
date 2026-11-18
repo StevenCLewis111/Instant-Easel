@@ -11,7 +11,7 @@ def home_dir(): return paths.HOME                                     # your dat
 
 DEFAULTS = {
     # General
-    "save_folder": os.path.join(os.path.expanduser("~"), "Documents", "Instant Easel"),
+    "work_folder": "",                     # "" = the folder of the app you launched (main.py's folder, or the .exe's folder)
     "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-{date}-{time}-{n}",
     "start_tab": "Drawing", "confirm_exit": True,
     # Generation defaults
@@ -67,15 +67,16 @@ def models_folder():
     f = get("models_folder") or os.path.join(home_dir(), "models"); os.makedirs(f, exist_ok=True); return f
 
 # Your work folder: every tab saves into, and opens from, the folder for that kind of thing, so anything one tab makes is easy to
-# pick up in another (an image the chat made is in Images; Videos' "load image" opens Images).
-KINDS = ("Images", "Videos", "Code", "Chats")
+# pick up in another (an image the chat made is in images; Videos' "load image" opens images). It's the folder of the app you
+# launched: main.py's folder when you run the code, the .exe's folder (EXE Build) when you run the .exe. Each app keeps its own.
+KINDS = ("images", "videos", "code", "chats")
 def work_root():
-    f = get("save_folder"); os.makedirs(f, exist_ok=True); return f
+    f = get("work_folder") or paths.HOME; os.makedirs(f, exist_ok=True); return f
 
-def work_folder(kind="Images"):
-    d = os.path.join(work_root(), kind); os.makedirs(d, exist_ok=True); return d
+def work_folder(kind="images"):
+    d = os.path.join(work_root(), kind.lower()); os.makedirs(d, exist_ok=True); return d
 
-def save_folder(): return work_folder("Images")                     # pictures you save or make: the Images folder
+def save_folder(): return work_folder("images")                     # pictures you save or make: the images folder
 
 def _slug(text, n=40):
     import re; t = re.sub(r"[^A-Za-z0-9]+", "-", str(text)).strip("-").lower(); return t[:n].rstrip("-")
@@ -90,7 +91,7 @@ def new_image(img, hint=""):
 def new_text(kind, text, hint="", ext=".md"):
     """save text (a chat, some code) into Chats or Code"""
     now = datetime.datetime.now(); h = _slug(hint) or kind.lower()
-    path = os.path.join(work_folder(kind), f"{now.strftime('%Y-%m-%d-%H%M%S')}-{h}{ext}")
+    path = os.path.join(work_folder(kind), f"{now.strftime('%Y-%m-%d-%H%M%S')}-{h}{ext}")       # kind: "Chats" / "Code" (any case)
     with open(path, "w", encoding="utf-8") as f: f.write(text)
     return path
 

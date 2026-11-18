@@ -37,13 +37,13 @@ uses: change its area in `AREAS` in `systems/Core/ui_art.py`.
 
 `docs/old/` holds the notes from the first, from-scratch version (the hand-written painter), kept for reference.
 
-## Your work (Settings > General > Your work folder)
+## Your work (in the folder of the app you launched: the project folder, or EXE Build for the .exe)
 
 | Folder | What goes in it |
 |---|---|
-| `Images/` | Every picture: drawings you save, AI Images results, edited photos. Every "open a picture" box starts here. |
-| `Videos/` | Videos (when AI Videos is built). |
-| `Code/` | Code from AI Coding (each code block as its own file). |
-| `Chats/` | Chats you save from AI Chat. |
+| `images/` (pictures at the top level) | Every picture: drawings you save, AI Images results, edited photos. Every "open a picture" box starts here. |
+| `videos/` | Videos (when AI Videos is built). |
+| `code/` | Code from AI Coding (each code block as its own file). |
+| `chats/` | Chats you save from AI Chat. |
 
 `systems/AI Images/Image Engine/imaging.py` is the image engine; `systems/AI Images/image_pages.py` is its Text to Image and Image to Image pages.

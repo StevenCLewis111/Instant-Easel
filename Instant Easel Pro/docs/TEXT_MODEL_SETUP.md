@@ -44,7 +44,7 @@ Training the model itself (fine-tuning) needs a graphics card with 12 GB or more
 
 # Your work folder
 
-Settings > General > **Your work folder** holds four folders: **Images**, **Videos**, **Code** and **Chats**. Every tab saves into the matching one and opens from it:
+Your work folder holds four folders: **images**, **videos**, **code** and **chats**. It's the folder of the app you launched: the project folder when you run `main.py`, or `EXE Build` when you run the .exe. Each app keeps its own; Settings > General can point it somewhere else. Every tab saves into the matching one and opens from it:
 
 - The drawing studio and Editing save into and open from Images.
 - AI Images saves every picture into Images.

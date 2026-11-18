@@ -103,7 +103,7 @@ class PaintWindow(tk.Toplevel):
         self.canvas = brushes.Canvas(self.cw, self.ch, paper=self.paper); self.canvas.a = np.asarray(img, dtype=np.float32).copy()
 
     def open_image(self):
-        p = filedialog.askopenfilename(parent=self, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
+        import prefs; p = filedialog.askopenfilename(parent=self, initialdir=prefs.save_folder(), filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
         if p: self.undo_stack.append(self.canvas.a.copy()); self.load_image(Image.open(p)); self.refresh()
 
     def save(self):

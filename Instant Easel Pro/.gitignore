@@ -13,3 +13,16 @@ EXE Build/my-models/
 EXE Build/firefox_profile/
 logs/text_engine.log
 logs/image_engine.log
+
+# your work (made by the app, kept on your PC): pictures at the top of images/, videos/, code/, chats/
+/images/*.png
+/images/*.jpg
+/images/*.jpeg
+/images/*.webp
+/videos/
+/code/
+/chats/
+EXE Build/images/
+EXE Build/videos/
+EXE Build/code/
+EXE Build/chats/

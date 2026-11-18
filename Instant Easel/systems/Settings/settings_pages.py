@@ -44,9 +44,10 @@ class SettingsPage(tk.Frame):
 class GeneralPage(SettingsPage):
     TITLE = "General"; NOTE = "Where your drawings are saved, in what format, and how the app starts and closes."
     def build(self):
-        c = self.row("Your work folder", "Your drawings are saved in its Images folder, and Open starts there too.")
-        self.folder_lbl = T.Text(c, prefs.get("save_folder"), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
-        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
+        c = self.row("Your work folder", "images, videos, code and chats folders inside it. Every tab saves its work there and opens from there. "
+                     "Normally the folder of the app you launched (the project folder, or EXE Build for the .exe).")
+        self.folder_lbl = T.Text(c, prefs.work_root(), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
+        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "App's own folder", self.own).pack(side="left", padx=(6, 0)); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
         self.choice("Undo steps", "undo_steps", ["10", "30", "60", "100"], "More steps use more memory on big canvases.")
@@ -59,8 +60,10 @@ class GeneralPage(SettingsPage):
             import shortcut; path = shortcut.make(); T.banner(self.app, f"SHORTCUT CREATED — {os.path.basename(path)} is on your desktop", "success")
         except Exception as e: T.banner(self.app, f"COULDN'T MAKE THE SHORTCUT — {e}")
     def pick(self):
-        d = filedialog.askdirectory(parent=self.app, initialdir=prefs.get("save_folder"))
-        if d: prefs.set("save_folder", d); self.folder_lbl.configure(text=d)
+        d = filedialog.askdirectory(parent=self.app, initialdir=prefs.work_root())
+        if d: prefs.set("work_folder", d); self.folder_lbl.configure(text=d)
+    def own(self):
+        prefs.set("work_folder", ""); self.folder_lbl.configure(text=prefs.work_root())
 
 
 
