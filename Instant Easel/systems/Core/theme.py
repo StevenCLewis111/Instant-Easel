@@ -565,7 +565,8 @@ class Field(tk.Text):
         super().__init__(master, height=height, wrap="word", font=f(12), relief="flat", padx=10, pady=8, highlightthickness=0 if scroll else 1, insertbackground="white", **kw)
         if scroll:
             self.sb = Scrollbar(self._outer, command=self.yview); self.configure(yscrollcommand=self.sb.set)
-            self.sb.pack(side="right", fill="y", padx=(2, 3), pady=3); tk.Text.pack(self, side="left", fill="both", expand=True)
+            self.sb.pack(side="right", fill="y", padx=6, pady=6); Line(self._outer, vertical=True).pack(side="right", fill="y")   # a border line left of the bar, as in the Draw page's lists
+            tk.Text.pack(self, side="left", fill="both", expand=True)
             wheel_area(self._outer, lambda n: self.sb.can_scroll() and self.yview_scroll(n, "units"))
         self._style(); on_change(self._style)
     def _style(self):

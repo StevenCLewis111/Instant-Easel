@@ -685,8 +685,8 @@ def status_dot(master, status, size):
     return skin.dot(master, DOT_FILL[status], size) if UA.load("skin/dot_ring") is not None else _dot(master, DOT[status], size)
 
 class Section(tk.Frame):
-    """one top tab: a side menu of its tools (status dot on each) and the selected tool's page.
-    Everything is laid out by pack, so nothing is measured or re-placed: the side column is [title] / [buttons, centred] / divider / legend,
+    """one top tab: a side menu of its tools and the selected tool's page (which tools are finished is kept in docs/ROADMAP.md, not shown).
+    Everything is laid out by pack, so nothing is measured or re-placed: the side column is [title] / [buttons, spread evenly to the bottom],
     then a divider, then the page."""
     GAP = 44                                                                                    # space between the Training buttons (design pixels)
     def __init__(self, master, app, menu, tools, built):
@@ -696,16 +696,10 @@ class Section(tk.Frame):
         self.content = themed_frame(self); self.content.pack(side="left", fill="both", expand=True)
         self.pages, self.buttons, self.rows = {}, {}, []
         T.Title(side, menu).pack(pady=(12, 0))                                                   # the tab's name, gold and underlined, level with the page's own title
-        legend = self.legend = themed_frame(side); legend.pack(side="bottom", anchor="w", padx=(12, 0), pady=8)
-        for k in ("built", "partial", "planned"):
-            c = status_dot(legend, k, 12); c.pack(side="left", padx=(0, 3))
-            T.Text(legend, k.upper(), muted=True, font=T.f(8)).pack(side="left", padx=(0, 8))
-        T.Line(side, vertical=False).pack(side="bottom", fill="x")                               # divider above the legend, border to border
         mf = self.menu = themed_frame(side)                                                      # the buttons, centred up and down between the title and that divider
-        mf.pack(fill="y", expand=True, padx=(30, 12), pady=12)                                  # spread out evenly over that whole height
+        mf.pack(fill="y", expand=True, padx=30, pady=12)                                        # spread out evenly down to the bottom; the same gap both sides
         for f in tools:                                                                          # (30px each side of the buttons; the status dot sits in the right-hand space)
             row = themed_frame(mf); row.pack(fill="x", pady=0, expand=True); self.rows.append(row)
-            dot = status_dot(row, f["status"], 18); dot.pack(side="right", padx=(6, 0))
             b = skin.button(T.Button(row, f["name"], lambda n=f["name"]: self.select(n), width=20)); b.pack(side="left", fill="x"); self.buttons[f["name"]] = b
             self.pages[f["name"]] = built[f["name"]](self.content, app) if f["name"] in built else (BlankPage(self.content, app) if f.get("blank") else PlannedPage(self.content, app, f))
         self.create_row = None
