@@ -177,12 +177,18 @@ def _unique(paths):
         if h not in seen: seen.add(h); out.append(p)
     return out
 
+def labels_in(folder):
+    """the starter labels plus every other subject folder in the library (a scraped search word, e.g. "shoe")"""
+    extra = sorted(d for d in (os.listdir(folder) if os.path.isdir(folder) else [])
+                   if os.path.isdir(os.path.join(folder, d)) and d not in LABELS and d not in ("history",) and not d.startswith((".", "_")))
+    return list(LABELS) + extra
+
 def learn_labelled(folder, keep_images=False):
     """folder/<label>/images -> profile.json, one section per subject. Cumulative: each subject blends new images into what
     it learned before (weighted by image count). Pictures already learned are recognised by fingerprint. Afterwards the
     library copies are deleted unless keep_images (the user's originals are never touched). A dated copy goes to history/."""
     prof = load(folder) or {}; prof.setdefault("subjects", {}); seen = set(prof.get("seen", [])); report = {}
-    for label in LABELS:
+    for label in labels_in(folder):
         if label == "scene": continue
         sub = os.path.join(folder, label)
         paths = sorted(p for p in glob.glob(os.path.join(sub, "*")) if p.lower().endswith(EXT))
@@ -210,4 +216,4 @@ def learn_labelled(folder, keep_images=False):
 
 def waiting(folder):
     """images added to the library but not learned yet"""
-    return {lab: len([f for f in glob.glob(os.path.join(folder, lab, "*")) if f.lower().endswith(EXT)]) for lab in LABELS}
+    return {lab: len([f for f in glob.glob(os.path.join(folder, lab, "*")) if f.lower().endswith(EXT)]) for lab in labels_in(folder)}

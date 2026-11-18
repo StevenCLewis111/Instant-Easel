@@ -1371,7 +1371,8 @@ class TrainPage(Page):
         self.close_review()
         v_ = self.review_view = themed_frame(self); self.home.pack_forget(); v_.pack(fill="both", expand=True)
         T.Title(v_, "What does each image show?").pack(pady=(0, 6))
-        T.Text(v_, f"For: {self.target.get()}.{' From: ' + source + '.' if source else ''} Click a label to change my guess, then press Add to library."
+        T.Text(v_, f"For: {self.target.get()}.{' From: ' + source + '.' if source else ''}\n"
+                   + ("Each picture is labelled with the word you searched. " if remove_originals else "Click a label to change my guess. ") + "Then press Add to library."
                    + (" Untick a picture to leave it out." if remove_originals else ""), muted=True).pack()
         bar = themed_frame(v_); bar.pack(side="bottom", pady=(8, 0))                    # buttons stay at the bottom, the list scrolls above them
         box = T.ScrollBox(v_); box.pack(fill="both", expand=True, pady=(10, 0))         # list, divider and scroll bar, boxed in
@@ -1381,8 +1382,11 @@ class TrainPage(Page):
         box.attach(cv); cv.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
         rows = []; self._thumbs = []; box = max(24, int(round(60 * T.Z)))
         for path in ps:
-            try: g, conf, st = learn.guess_label(path)
-            except Exception: g, conf, st = "scene", "unsure", None
+            if remove_originals:                                                         # scraped: its folder is the word you searched, so that's the label
+                g, conf, st = os.path.basename(os.path.dirname(path)), "your search", None
+            else:
+                try: g, conf, st = learn.guess_label(path)
+                except Exception: g, conf, st = "scene", "unsure", None
             r = tk.Frame(inner, bg=v_["bg"]); r.pack(fill="x", pady=3)
             try: th = Image.open(path).convert("RGB"); th.thumbnail((box, box)); ph = ImageTk.PhotoImage(th)
             except Exception: ph = None
@@ -1390,7 +1394,7 @@ class TrainPage(Page):
             lb = tk.Label(r, image=ph, bg=v_["bg"], width=box, height=box) if ph else tk.Label(r, text="?", bg=T.PALETTE["field"], fg=T.PALETTE["muted"])
             lb.pack(side="left")                                                         # every picture in the same size box, so the names line up
             T.Text(r, os.path.basename(path)[:30], width=32, anchor="w").pack(side="left", padx=8)
-            v = tk.StringVar(value=g); T.Choice(r, "shows", list(learn.LABELS), v).pack(side="left")
+            v = tk.StringVar(value=g); T.Choice(r, "shows", list(dict.fromkeys([g] + learn.labels_in(self.folder()))), v).pack(side="left")
             T.Text(r, f"({conf})", muted=True).pack(side="left", padx=6)
             use = tk.BooleanVar(value=True)
             if remove_originals: T.Text(r, "use it", font=T.f(8)).pack(side="left", padx=(12, 4)); T.Toggle(r, use).pack(side="left")
