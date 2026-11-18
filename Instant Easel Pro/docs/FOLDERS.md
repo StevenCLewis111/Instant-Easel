@@ -20,7 +20,7 @@ Start the app with `python main.py` from this folder (or the built `InstantEasel
 | `dev/` | Development tools (brand maker, render / repaint helpers). |
 | `docs/` | Notes, roadmap, research. |
 | `my-library/`, `my-models/` | What the app has learned, and your models. |
-| `build/`, `dist/`, `PaintEngine.spec`, `build_windows.bat` | Building `InstantEasel.exe` (`build_windows.bat` on Windows). |
+| `build/`, `dist/`, `PaintEngine.spec`, `build_windows.bat` | Building `InstantEasel.exe`: GitHub builds it on every push (`.github/workflows/build-windows.yml`, the new exe lands in `dist/`), or run `build_windows.bat` on your own PC. |
 
 Adding a script: put it in the tab folder it belongs to; nothing else to change (the app finds it by name). Moving a picture the app
 uses: change its area in `AREAS` in `systems/Core/ui_art.py`.
