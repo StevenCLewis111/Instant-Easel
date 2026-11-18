@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+# the downloaded text model (several GB): never uploaded; each PC downloads its own
+my-models/text/base/
+
+# made by running the app
+logs/*.log
+.json/instant_easel_settings.json
+build/
