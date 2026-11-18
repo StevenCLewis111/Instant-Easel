@@ -9,7 +9,12 @@ main.py: Instant Easel. One menu window, five tabs:
 import os, sys, threading, queue, shutil, random, json, time
 import tkinter as tk
 from tkinter import filedialog
+# every script lives in a folder under systems/ (sorted by tab): they're all found by name, from any folder
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, BASE)
+for _d, _dirs, _files in os.walk(os.path.join(BASE, "systems")):
+    _dirs[:] = sorted(x for x in _dirs if not x.startswith((".", "__")))
+    if any(f.endswith(".py") for f in _files) and _d not in sys.path: sys.path.insert(1, _d)
+import paths
 from PIL import Image, ImageTk
 import theme as T
 import app as classic, learn, language, landscape, bench, paint_window, img2img, features, edit as E, styles_fx as SFX, draw_studio, prefs, settings_pages as SP, models as MD
@@ -158,16 +163,15 @@ def _outlined(im, color):
     out = im.copy(); out.alpha_composite(ring); return out
 
 def icon_file(name):
-    """the app's icons live in brand/icon/ (older layout: brand/)"""
-    p = os.path.join(BASE, "brand", "icon", name)
-    return p if os.path.exists(p) else os.path.join(BASE, "brand", name)
-def home_dir(): return os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
-bench.TARGET = os.path.join(BASE, "styles", "summit.jpg")
+    """the app's icons: images/UI/App Icon/"""
+    return paths.ui("App Icon", name)
+def home_dir(): return paths.HOME
+bench.TARGET = paths.image("Styles", "summit.jpg")
 SETTINGS = [("time", ["sunset", "night"]), ("clouds", ["few", "normal", "many"]), ("tint", ["none", "golden", "fiery", "pink", "cool"]),
             ("figures", ["0", "1", "2"]), ("pose", ["seated", "standing"]), ("height", ["0.2", "0.5", "0.9"]), ("peaks", ["3", "4", "5", "6"]),
             ("mountains", ["True", "False"]), ("rocks", ["True", "False"]), ("grass", ["True", "False"]), ("canyon", ["True", "False"]),
             ("sun_x", ["0.25", "0.5", "0.75"])]
-PREFS = os.path.join(home_dir(), "instant_easel_theme.json")
+PREFS = paths.json_file("instant_easel_theme.json")
 
 def _typed(key, s):
     d = landscape.DEFAULTS.get(key)
@@ -236,7 +240,7 @@ class InstantEasel(tk.Tk):
         self.logo_lbl = None
         try:
             import numpy as _np
-            lg = Image.open(os.path.join(BASE, "brand", "title-logo.png")); _al = _np.asarray(lg)[..., 3] > 40
+            lg = Image.open(paths.ui("Header", "title-logo.png")); _al = _np.asarray(lg)[..., 3] > 40
             _ys, _xs = _np.nonzero(_al); self.logo_src = lg.crop((int(_xs.min()), int(_ys.min()), int(_xs.max()) + 1, int(_ys.max()) + 1))   # painted area only
             self.logo = ImageTk.PhotoImage(self.logo_src.resize((517, 150), Image.LANCZOS))     # resized to the tab row's width once it's laid out
             self.logo_lbl = tk.Label(top, image=self.logo, bg=top["bg"], bd=0, padx=0, pady=0, highlightthickness=0)
@@ -248,7 +252,7 @@ class InstantEasel(tk.Tk):
         self.mascot_src, self.mascot_lbl = {}, {}
         for f, col, sticky in (("mascot-guy.png", 0, "sw"), ("mascot-girl.png", 2, "se")):          # both look in at the logo
             try:
-                im = Image.open(os.path.join(BASE, "brand", f)).convert("RGBA"); import numpy as _np
+                im = Image.open(paths.ui("Header", f)).convert("RGBA"); import numpy as _np
                 cols = _np.flatnonzero((_np.asarray(im)[..., 3] > 40).any(0))                      # painted columns only: no see-through margin at the sides
                 if len(cols): im = im.crop((int(cols[0]), 0, int(cols[-1]) + 1, im.height))
                 self.mascot_src[col] = im
@@ -271,7 +275,8 @@ class InstantEasel(tk.Tk):
             if self._splash: self._splash.step(i / (len(features.MENUS) + 1), f"LOADING {m.upper()}…")
             self.pages[m] = Section(self.body, self, m, tools, built)
         st = prefs.get("start_tab"); st = prefs.get("last_tab") if st == "Last used" else st
-        self.show(st if st in self.pages else "Images"); self.tabs.active = st if st in self.pages else "Images"; self.tabs._style()
+        st = features.OLD_TAB_NAMES.get(st, st)                                                 # settings saved with the old tab names still work
+        self.show(st if st in self.pages else "AI Images"); self.tabs.active = st if st in self.pages else "AI Images"; self.tabs._style()
         if prefs.get("check_updates_on_start"): self.after(4000, lambda: self.pages["Settings"].pages["Updates"].check())
 
     def _size_mascots(self):
@@ -398,9 +403,9 @@ class InstantEasel(tk.Tk):
         sp = getattr(self, "settings_panel", None)
         if sp: sp.model_choice.choices = sp.models()
         if self.gen["model"].get() not in MD.BUILTIN + MD.names(): self.gen["model"].set("Core (default)")
-        tr = self.pages.get("Training") and self.pages["Training"].pages.get("Learn from Images") if hasattr(self, "pages") else None
+        tr = self.pages.get("AI Training") and self.pages["AI Training"].pages.get("Learn from Images") if hasattr(self, "pages") else None
         if tr: tr.refresh()
-        mp = self.pages.get("Training") and self.pages["Training"].pages.get("Models") if hasattr(self, "pages") else None
+        mp = self.pages.get("AI Training") and self.pages["AI Training"].pages.get("Models") if hasattr(self, "pages") else None
         if mp: mp.show()
 
     def _hist_changed(self):
@@ -614,7 +619,7 @@ class InstantEasel(tk.Tk):
         """every error is logged; a pop-up only for the first of a kind each minute, and never more than one open (a repeating error
         used to stack pop-ups until the app looked frozen)"""
         prefs.log_error(exc, val, tb)
-        try: T.banner(self, f"SOMETHING WENT WRONG — {val or exc.__name__}. The app carried on; details are in instant_easel_errors.log")
+        try: T.banner(self, f"SOMETHING WENT WRONG — {val or exc.__name__}. The app carried on; details are in logs/instant_easel_errors.log")
         except Exception: pass
 
     # ---------------- crash recovery
@@ -625,7 +630,7 @@ class InstantEasel(tk.Tk):
     def _autosave(self):
         """every minute: the drawing and the Editing settings go to the recovery folder (only when they've changed)"""
         try:
-            folder = crash.recovery_dir(); ds = self.pages["Draw"].pages.get("Draw")
+            folder = crash.recovery_dir(); ds = self.pages["Drawing"].pages.get("Draw")
             if ds is not None: ds.autosave(folder)
             ed = self.edit
             if ed.get("original") is not None and ed.get("path"):
@@ -656,7 +661,7 @@ class InstantEasel(tk.Tk):
                     self.edit.update(params=st["params"], filt=st["filt"], geom=g); light.notify(record=False); self.hist_commit("Restored after a crash")
                     self.show("Editing"); self.tabs.active = "Editing"; self.tabs._style(); self.pages["Editing"].select("Light")
             if has_draw:
-                ds = self.pages["Draw"].pages["Draw"]; self.goto("Draw"); self.update_idletasks(); ds.restore(folder)
+                ds = self.pages["Drawing"].pages["Draw"]; self.goto("Drawing"); self.update_idletasks(); ds.restore(folder)
             T.banner(self, f"RESTORED — {what}", "success")
         except Exception:
             prefs.log_error(*sys.exc_info()); T.banner(self, "COULDN'T RESTORE — the saved work couldn't be loaded (details in instant_easel_errors.log)")
@@ -698,12 +703,12 @@ class Section(tk.Frame):
     GAP = 44                                                                                    # space between the Training buttons (design pixels)
     def __init__(self, master, app, menu, tools, built):
         super().__init__(master, bg=master["bg"]); self.app = app; self.menu_name = menu; T.on_change(lambda: self.configure(bg=self.master["bg"]))
-        if menu == "Training" and not any(f["name"] == "Image Scraper" for f in tools):                # Image Scraper sits just above Learn from Images
+        if menu == "AI Training" and not any(f["name"] == "Image Scraper" for f in tools):                # Image Scraper sits just above Learn from Images
             tools = list(tools); at = next((i for i, f in enumerate(tools) if f["name"] == "Learn from Images"), len(tools))
             tools.insert(at, dict(name="Image Scraper", status="built", desc="Find pictures on Google Images to learn from.", options=[], order=0, notes=""))
         side = self.side = themed_frame(self); side.pack(side="left", fill="y")
         T.Line(self, vertical=True).pack(side="left", fill="y")                                  # divider right of the side menu, border to border
-        if menu == "Images": SettingsPanel(self, app).pack(side="right", fill="y", padx=(4, 12), pady=12)    # the picture comes up close (page margin + 4)
+        if menu == "AI Images": SettingsPanel(self, app).pack(side="right", fill="y", padx=(4, 12), pady=12)    # the picture comes up close (page margin + 4)
         self.content = themed_frame(self); self.content.pack(side="left", fill="both", expand=True)
         self.pages, self.buttons, self.rows = {}, {}, []
         T.Title(side, menu).pack(pady=(12, 0))                                                   # the tab's name, gold and underlined, level with the page's own title
@@ -720,7 +725,7 @@ class Section(tk.Frame):
             b = skin.button(T.Button(row, f["name"], lambda n=f["name"]: self.select(n), width=20)); b.pack(side="left", fill="x"); self.buttons[f["name"]] = b
             self.pages[f["name"]] = built[f["name"]](self.content, app) if f["name"] in built else (BlankPage(self.content, app) if f.get("blank") else PlannedPage(self.content, app, f))
         self.create_row = None
-        if menu == "Training":                                                                   # "+ Create a model" joins the block while the Models page is showing
+        if menu == "AI Training":                                                                   # "+ Create a model" joins the block while the Models page is showing
             self.create_row = themed_frame(mf); skin.button(T.Button(self.create_row, "+ Create a model", self._create, width=20)).pack(side="left", fill="x")
         self._gaps(); self.select(tools[0]["name"])
         self.whole = len(tools) == 1 and getattr(self.pages[tools[0]["name"]], "WHOLE", False)
@@ -787,7 +792,7 @@ class SettingsPanel(T.Panel):
     def set_start(self, im):
         self.app.gen["start"] = im; t = im.copy(); t.thumbnail((170, 110)); self.ph = ImageTk.PhotoImage(t)
         self.thumb.configure(image=self.ph, text="", width=170, height=110)
-        i2i = self.app.pages["Images"].pages.get("Image to Image")
+        i2i = self.app.pages["AI Images"].pages.get("Image to Image")
         if i2i: i2i.load(im)
 
     def clear(self):
@@ -795,7 +800,7 @@ class SettingsPanel(T.Panel):
 
     def download_all(self):
         imgs = []
-        for p in self.app.pages["Images"].pages.values(): imgs += getattr(p, "results", []) or ([p.result] if getattr(p, "result", None) is not None else [])
+        for p in self.app.pages["AI Images"].pages.values(): imgs += getattr(p, "results", []) or ([p.result] if getattr(p, "result", None) is not None else [])
         if not imgs: return T.banner(self.app, "NOTHING TO DOWNLOAD YET — create some images first")
         d = filedialog.askdirectory(parent=self.app, title="Choose a folder")
         if d:
@@ -808,7 +813,7 @@ class StyleGallery(tk.Toplevel):
         super().__init__(app); self.app = app; self.title("Art style"); self.configure(bg=T.PALETTE["bg"]); self.transient(app)
         p = T.Panel(self, pad=14); p.pack(fill="both", expand=True, padx=8, pady=8)
         T.Title(p, "Choose an art style").pack(pady=(0, 4)); T.Text(p, "Shown on your starting image (or a sample). Click one.", muted=True).pack(pady=(0, 8))
-        src = app.gen["start"] or Image.open(os.path.join(BASE, "styles", "summit.jpg")).convert("RGB")
+        src = app.gen["start"] or Image.open(paths.image("Styles", "summit.jpg")).convert("RGB")
         self.big = src.copy(); self.big.thumbnail((700, 500))                     # styles render at a real size, then shrink: true previews
         grid = themed_frame(p); grid.pack(); self._ph = []; self.cells = []
         for i, st in enumerate(SFX.STYLES):
@@ -886,7 +891,7 @@ class DrawPage(Page):
         T.Text(self, "Coming here next: the canvas built into this screen, layers, eyedropper, brush presets.", muted=True).pack(pady=18)
 
     def on_last(self):
-        g = self.app.pages["Images"].pages.get("Text to Image"); i = self.app.pages["Images"].pages.get("Image to Image")
+        g = self.app.pages["AI Images"].pages.get("Text to Image"); i = self.app.pages["AI Images"].pages.get("Image to Image")
         img = (i.result if i and i.result is not None else None) or (g.result if g else None)
         if img is None: return T.banner(self.app, "NOTHING YET — create an image first")
         paint_window.PaintWindow(self.app, image=img)
@@ -919,7 +924,7 @@ class EditBase(Page):
         p = filedialog.askopenfilename(parent=self.app, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
         if p: self.set_image(Image.open(p), path=p)
     def last(self):
-        c = self.app.pages["Images"].pages; im = None
+        c = self.app.pages["AI Images"].pages; im = None
         for n in ("Image to Image", "Text to Image"):
             r = getattr(c.get(n), "result", None)
             if r is not None: im = r; break
@@ -1161,7 +1166,7 @@ class GeneratePage(Page):
         prof = MD.profile_for(model)
         start_path = None
         if g["start"] is not None and prof is None:
-            start_path = os.path.join(home_dir(), "_starting_image.png"); g["start"].save(start_path)
+            start_path = paths.saved_images("AI Images", "_starting_image.png"); g["start"].save(start_path)
         self.gen_btn.state("disabled"); self.results = []; self.view.set([], total=n)
         def work():
             try:
@@ -1342,7 +1347,7 @@ class TrainPage(Page):
 
     def open_scraper(self):
         """the Image Scraper page in this same Training menu"""
-        self.app.pages["Training"].select("Image Scraper")
+        self.app.pages["AI Training"].select("Image Scraper")
 
     def add_images(self):
         ps = filedialog.askopenfilenames(parent=self.app, title="Choose images for it to learn from",
@@ -1561,7 +1566,7 @@ class ModelsPage(Page):
         prefs.set("active_model", name); self.app.refresh_models(); self.app.gen["model"].set(name); self.show()
 
     def train(self, name):
-        sec = self.app.pages["Training"]; sec.select("Learn from Images"); sec.pages["Learn from Images"].set_target(name)
+        sec = self.app.pages["AI Training"]; sec.select("Learn from Images"); sec.pages["Learn from Images"].set_target(name)
 
     def rename(self, name):
         win, p = self._dialog("Rename model"); new = tk.StringVar(value=name)
@@ -1634,7 +1639,7 @@ class AboutPage(Page):
         self.wrap = tk.Frame(self, bg=self["bg"]); self.wrap.pack(fill="both", expand=True); T.on_change(lambda: self.wrap.configure(bg=self["bg"]))
         w = self.wrap
         try:
-            lg = Image.open(os.path.join(BASE, "brand", "logo-easel.png")); lg.thumbnail((430, 290)); self.ph = ImageTk.PhotoImage(lg)
+            lg = Image.open(paths.ui("Splash", "logo-easel.png")); lg.thumbnail((430, 290)); self.ph = ImageTk.PhotoImage(lg)
             self.lbl = tk.Label(w, image=self.ph, bg=self["bg"]); self.lbl.pack(pady=(4, 6)); T.on_change(lambda: self.lbl.configure(bg=self["bg"]))
         except Exception: T.Title(w, APP_NAME, big=True).pack()
         T.Text(w, f"VERSION {VERSION}", font=T.f(11)).pack()
@@ -1702,7 +1707,7 @@ class Splash:
         self.root = root; s = self.win = tk.Toplevel(root); s.withdraw(); s.overrideredirect(True); s.configure(bg=T.PALETTE["border"])
         inner = tk.Frame(s, bg=T.PALETTE["panel"], padx=24, pady=18); inner.pack(padx=3, pady=3)
         try:
-            lg = Image.open(os.path.join(BASE, "brand", "logo-easel.png")); lg.thumbnail((460, 310)); s.ph = ImageTk.PhotoImage(lg)
+            lg = Image.open(paths.ui("Splash", "logo-easel.png")); lg.thumbnail((460, 310)); s.ph = ImageTk.PhotoImage(lg)
             tk.Label(inner, image=s.ph, bg=T.PALETTE["panel"]).pack()
         except Exception: tk.Label(inner, text=APP_NAME, font=T.f(22), fg=T.PALETTE["title"], bg=T.PALETTE["panel"]).pack()
         self.bar = tk.Canvas(inner, width=300, height=10, bg=T.PALETTE["field"], highlightthickness=0); self.bar.pack(pady=(12, 4))
