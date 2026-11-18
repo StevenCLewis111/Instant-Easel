@@ -425,9 +425,17 @@ class DrawStudio(tk.Frame):
                                 ("layer_merge", self.merge_down, "Merge down"), ("layer_up", lambda: self.move_layer(1), "Move layer up"),
                                 ("layer_down", lambda: self.move_layer(-1), "Move layer down"), ("layer_del", self.del_layer, "Delete layer")):
             self._panel_button(r, piece, cmd, tip, bs).pack(side="left", expand=True)
-        self.layer_box = frame(fill="x")
-        LV.bind("<Configure>", lambda e: T.defer(self, "layrows", 60, self._fit_layer_rows), add="+")   # as many layer rows as the panel has room for
-        self.layer_box.bind("<MouseWheel>", lambda e: self._lay_scroll(-1 if e.delta > 0 else 1), add="+")
+        # the layer list: its own box, half the panel tall, the painted scroll bar on its right (space kept even with one layer)
+        lbox = self._lay_frame = tk.Frame(LV, bd=0, highlightthickness=1); lbox.pack(fill="x", pady=(2, 4)); lbox.pack_propagate(False)
+        lbox.configure(height=self._apx(220))
+        def lbox_style(): lbox.configure(bg=R["bg"], highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"])
+        lbox_style(); T.on_change(lbox_style)
+        self._lay_sb = T.Scrollbar(lbox, command=self._lay_cmd); self._lay_sb.pack(side="right", fill="y", padx=4, pady=4)
+        T.Line(lbox, vertical=True).pack(side="right", fill="y")
+        self.layer_box = tk.Frame(lbox, bg=R["bg"]); self.layer_box.pack(side="left", fill="both", expand=True, padx=3, pady=3)
+        T.on_change(lambda: self.layer_box.configure(bg=R["bg"]))
+        T.wheel_area(lbox, lambda n: self._lay_scroll(n))                                     # the wheel anywhere over the list scrolls it
+        LV.bind("<Configure>", lambda e: T.defer(self, "layrows", 60, self._fit_layer_rows), add="+")   # the box: half the panel, as many rows as fit
         # ---- blend mode: click for the next one, right-click for the one before
         self.mode = tk.StringVar(value="normal"); bh = 30
         def blend_img(b):
@@ -460,23 +468,25 @@ class DrawStudio(tk.Frame):
                 return AP.photo(("hdr", word, W, h, ar, hv), make)
             return render
         here[0] = CV = self.col_view
+        top_row = frame(fill="x")                                                    # current colour / hex / Pick (filled below)
         # ---- the colour ring: as big as the room left allows
-        wf = frame(fill="both", expand=True); self._wS = self._apx(150)
+        wf = frame(); self._wS = self._apx(150); wf.configure(width=self._wS, height=self._wS)
         self.wheel = tk.Canvas(wf, width=self._wS, height=self._wS, bg=R["bg"], highlightthickness=0, cursor="hand2"); self.wheel.place(relx=0.5, rely=0.5, anchor="center")
         T.on_change(lambda: self.wheel.configure(bg=R["bg"]))
         def fit_wheel():
-            need = self._apx(118); room = wf.winfo_height()
+            others = sum(g.winfo_reqheight() for g in self._col_groups if g is not wf); gaps = self._apx(10) * (len(self._col_groups) + 1)
+            room = CV.winfo_height() - others - gaps; need = self._apx(118)
             if self._pal_auto:                                                    # palettes give way to the ring when the panel is short
                 pal_h = self._apx(46)
                 if self._pal_open and room < need: return self._set_palettes(False)
                 if not self._pal_open and room - pal_h >= need: return self._set_palettes(True)
-            S = max(60, min(wf.winfo_width(), wf.winfo_height(), self._apx(IW)) - 2)
-            if S != self._wS: self._wS = S; self.wheel.configure(width=S, height=S); self._draw_wheel()
-        wf.bind("<Configure>", lambda e: T.defer(self, "wheel", 30, fit_wheel), add="+")
+            S = max(60, min(room, self._apx(IW)) - 2)
+            if S != self._wS: self._wS = S; self.wheel.configure(width=S, height=S); wf.configure(width=S, height=S); self._draw_wheel()
+        CV.bind("<Configure>", lambda e: T.defer(self, "wheel", 30, fit_wheel), add="+"); self._fit_wheel = fit_wheel
         self.wheel.bind("<Button-1>", self._wheel_pick); self.wheel.bind("<B1-Motion>", self._wheel_pick); self._wheel_target = None
         self.wheel.bind("<ButtonRelease-1>", lambda e: (setattr(self, "_wheel_target", None), self._remember()))
         # ---- current colour, hex, Pick
-        r = frame(fill="x", pady=(2, 3)); sw_w, hx_w = 62, 86; pk_w = IW - sw_w - hx_w - 8
+        r = top_row; sw_w, hx_w = 62, 86; pk_w = IW - sw_w - hx_w - 8
         self.swatch = self._art(self._art_label(r, cursor=""), lambda b: AP.photo(("cur", self.color, self._apx(sw_w), self._apx(32)),
                                 lambda: AP.swatch(self.color, self._apx(sw_w), self._apx(32))), hover=False); self.swatch.pack(side="left")
         self.hexv = tk.StringVar(value="#C45C2C"); hb = AP.ValueBox(r, self.hexv, hx_w, 30, chars=8); hb.pack(side="left", padx=4)
@@ -498,17 +508,19 @@ class DrawStudio(tk.Frame):
                                lambda: AP.shade(AP.swatch(c, self._apx(cw), self._apx(h)), 1.15) if b._hover else AP.swatch(c, self._apx(cw), self._apx(h))))
                 lb.pack(side="left", padx=1); lb.bind("<Button-1>", lambda e, c=c: (self.set_color(c), self._remember()))
             return row
-        swatches(CV, BASIC_COLORS, 24)
+        basic = swatches(CV, BASIC_COLORS, 24)
         # palettes: the header opens / closes them. On their own they close when the panel is short (so the colour ring keeps its
         # room) and open again when there's space (big mode); clicking the header decides from then on
         self._pal_open, self._pal_auto = True, True
-        ph_ = self._art(self._art_label(CV), header("PALETTES", 24, arrow=lambda: "▾" if self._pal_open else "▸")); ph_.pack(pady=(4, 1))
-        self._pal_box = frame(fill="x"); self._pal_hdr = ph_
+        pal_group = frame(fill="x")                                                   # the palettes header and its colours, one group
+        ph_ = self._art(self._art_label(pal_group), header("PALETTES", 24, arrow=lambda: "▾" if self._pal_open else "▸")); ph_.pack(pady=(0, 1))
+        self._pal_box = frame(pal_group, fill="x"); self._pal_hdr = ph_
         for pair in (("Warm", "Cool"), ("Pastel", "Earth")): swatches(self._pal_box, PALETTES[pair[0]] + PALETTES[pair[1]], 20)
         ph_.bind("<Button-1>", lambda e: (setattr(self, "_pal_auto", False), self._set_palettes(not self._pal_open)))
         self._tip(ph_, "Show / hide the palettes")
         # ---- history: the recent colours, shown / hidden with the HISTORY button
-        self.hist_row = frame(fill="x", pady=(2, 0))
+        hist_group = frame(fill="x")                                                  # the HISTORY button and the recent colours, one group
+        self.hist_row = frame(hist_group, fill="x", pady=(2, 0))
         def hist_img(b):
             W, H = self._apx(IW), self._apx(34); hv = b._hover
             def make():                                                        # the blank bar stretched to size, the icon, the word
@@ -519,9 +531,12 @@ class DrawStudio(tk.Frame):
                 im.alpha_composite(AP.fit("history_icon", ic, ic), (x0, (H - ic) // 2))
                 return AP.text(im, "HISTORY", x0 + ic + gap, H // 2, px, anchor="lm")
             return AP.photo(("hist2", W, H, hv), make)
-        hb2 = self._art(self._art_label(CV), hist_img); hb2.pack(side="bottom", pady=(3, 0)); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
+        hb2 = self._art(self._art_label(hist_group), hist_img); hb2.pack(side="bottom", pady=(3, 0)); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
         self._tip(hb2, "Show / hide the colours you used last")
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
+        self._col_groups = [top_row, wf, basic, pal_group, hist_group]                  # evenly spaced down the panel (each takes an equal share of the room)
+        for g in self._col_groups: g.pack_forget()
+        for g in self._col_groups: g.pack(expand=True)                                   # (each centred in its share)
         self._right_view(prefs.get("draw_right_view") if prefs.get("draw_right_view") in ("Color", "Layers") else "Color")
 
     @staticmethod
@@ -581,17 +596,22 @@ class DrawStudio(tk.Frame):
 
     def _rows(self): return getattr(self, "_lay_rows", 4)                          # layer rows shown (as many as fit, see _fit_layer_rows)
     def _lay_scroll(self, d):
-        self._lay_off = max(0, min(max(0, len(self.layers) - self._rows()), self._lay_off + d)); self._layers_ui()
+        self._lay_off = max(0, min(max(0, len(self.layers) + 1 - self._rows()), self._lay_off + d))   # (+1: the Background row)
+        self._lay_free = True
+        try: self._layers_ui()                                                     # scrolling moves freely (the chosen layer may scroll out of view)
+        finally: self._lay_free = False
 
     def _layers_ui_art(self):
         """layer rows: green-framed = the layer you're painting on; the ball shows / hides it; as many rows as fit (the wheel scrolls more)"""
         for w in self.layer_box.winfo_children(): w.destroy()
         n = len(self.layers); top_first = list(range(n - 1, -1, -1)); pos = top_first.index(self.li)
-        if pos < self._lay_off: self._lay_off = pos
-        k = self._rows()
-        if pos >= self._lay_off + k: self._lay_off = pos - k + 1
-        self._lay_off = max(0, min(self._lay_off, max(0, n - k)))
-        IW, RH = self._IW, 26
+        k = self._rows(); total = n + 1                                                # every layer, then the Background row
+        if not getattr(self, "_lay_free", False):                                   # a layer was chosen / added: bring it into view
+            if pos < self._lay_off: self._lay_off = pos
+            if pos >= self._lay_off + k: self._lay_off = pos - k + 1
+        self._lay_off = max(0, min(self._lay_off, max(0, total - k)))
+        if getattr(self, "_lay_sb", None) is not None: self._lay_sb.set(self._lay_off / total, min(1.0, (self._lay_off + k) / total))
+        IW, RH = self._IW - 34, 26                                                    # (room for the list's scroll bar)
         for i in top_first[self._lay_off:self._lay_off + k]:
             L = self.layers[i]; sel = i == self.li; info = (L.name, L.visible, int(L.opacity * 100), L.mode, sel)
             def render(b, info=info):
@@ -608,7 +628,7 @@ class DrawStudio(tk.Frame):
         def bg_row(b):
             W, H = self._apx(IW), self._apx(RH)
             return AP.photo(("bgrow", W, H), lambda: AP.text(AP.bar("bar_dark", W, H, 0.4).copy(), "Background", int(H * 0.5), H // 2, int(H * 0.44), anchor="lm"))
-        self._art(self._art_label(self.layer_box, cursor=""), bg_row, hover=False).pack(pady=1)
+        if self._lay_off + k > n: self._art(self._art_label(self.layer_box, cursor=""), bg_row, hover=False).pack(pady=1)   # scrolled to the bottom
         L = self.cur; self._in_layers_ui = True
         try: self.mode.set(L.mode)
         finally: self._in_layers_ui = False
@@ -770,12 +790,18 @@ class DrawStudio(tk.Frame):
         (self.col_view if name == "Color" else self.lay_view).pack(fill="both", expand=True); prefs.set("draw_right_view", name)
 
     def _fit_layer_rows(self):
-        """the Layers view shows as many layer rows as fit under its buttons, blend and opacity"""
-        try: room = self.lay_view.winfo_height() - (self.layer_box.winfo_y() + self.layer_box.winfo_height()) + self.layer_box.winfo_height()
+        """the layer list's box is half the Layers view tall; it shows as many rows as fit, the rest scroll"""
+        try: H = max(self._apx(80), self.lay_view.winfo_height() // 2)
         except tk.TclError: return
-        below = sum(w.winfo_height() + 6 for w in self.lay_view.pack_slaves() if w is not self.layer_box and w.winfo_y() > self.layer_box.winfo_y())
-        n = max(4, min(20, (room - below) // max(1, self._apx(28))))
+        if abs(self._lay_frame.winfo_height() - H) > 2: self._lay_frame.configure(height=H)
+        n = max(2, (H - self._apx(10)) // max(1, self._apx(26) + 2))
         if n != getattr(self, "_lay_rows", 4): self._lay_rows = n; self._layers_ui()
+
+    def _lay_cmd(self, *a):
+        """the layer list's scroll bar"""
+        total = len(self.layers) + 1
+        if a[0] == "moveto": self._lay_off = int(round(float(a[1]) * total)); self._lay_scroll(0)
+        elif a[0] == "scroll": self._lay_scroll(int(a[1]) * (self._rows() if a[2] == "pages" else 1))
 
     # ---------------- Brush Options
     def _left_view(self, name):
