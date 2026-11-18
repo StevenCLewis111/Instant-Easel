@@ -125,7 +125,8 @@ def draw(w, state=None, ring=None):
     W, H = cw + 2 * px, f.metrics("linespace") + 2 * py
     ph = picture(sk["text"], W, H, pt, sk["state"], sk["ring"], sk["piece"])
     if sk.get("ph") is ph: return                                              # already showing it: no relayout
-    try: w.configure(image=ph); sk["ph"] = ph
+    under = getattr(w, "_under", None)                                         # sits on a picture (the header): the button with that picture behind it
+    try: w.configure(image=under(w, ph) if under else ph); sk["ph"] = ph
     except tk.TclError: pass
 
 def button(w, text=None, chars=None, taller=2, piece="rainbow"):
