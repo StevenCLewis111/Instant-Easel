@@ -1,6 +1,7 @@
 # The text model's add-ons (on top of requirements.txt). Install with:  python -m pip install -r requirements-ai.txt
-# With an NVIDIA graphics card, install torch from PyTorch's own index FIRST so it can use the card (see docs/TEXT_MODEL_SETUP.md):
-#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+# Install torch for your graphics card FIRST so the model can use it (see docs/TEXT_MODEL_SETUP.md):
+#   Intel Arc:  python -m pip install torch --index-url https://download.pytorch.org/whl/xpu
+#   NVIDIA:     python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 torch
 transformers>=4.51
 peft

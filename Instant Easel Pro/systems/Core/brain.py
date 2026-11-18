@@ -2,7 +2,8 @@
 brain.py: Instant Easel's English text model: one base model shared by every tab, plus what each tab has learned, kept apart.
 
     The base model      Qwen3 (Apache 2.0), downloaded once into my-models/text/base/<name> the first time you ask for it.
-                        A graphics card with 8 GB or more gets Qwen3-4B-Instruct-2507; otherwise the smaller Qwen3-1.7B.
+                        A graphics card with 8 GB or more gets Qwen3-4B-Instruct-2507; otherwise the smaller Qwen3-1.7B. NVIDIA cards
+                        are used through CUDA, Intel Arc cards through PyTorch's XPU build; with neither it runs on the processor.
                         It is never changed by training, so no tab can change what another tab knows.
     Each tab's memory   my-models/text/tabs/<Tab_Name>/
                           examples.jsonl   everything you taught that tab (text you wrote -> what it should mean)
@@ -40,13 +41,25 @@ def libs_ok():
     except Exception: return False
 
 def gpu():
-    """(name, memory in GB) of an NVIDIA graphics card torch can use, or None"""
+    """(name, memory in GB, torch device) of the graphics card to use, or None. NVIDIA cards work through CUDA; Intel Arc cards
+    through PyTorch's XPU build. With more than one (an Arc card plus the processor's built-in graphics) the one with the most
+    memory of its own is used"""
+    try: import torch
+    except Exception: return None
+    found = []
     try:
-        import torch
         if torch.cuda.is_available():
-            p = torch.cuda.get_device_properties(0); return p.name, p.total_memory / 1e9
+            for i in range(torch.cuda.device_count()):
+                p = torch.cuda.get_device_properties(i); found.append((p.name, p.total_memory / 1e9, f"cuda:{i}"))
     except Exception: pass
-    return None
+    try:
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            for i in range(torch.xpu.device_count()):
+                p = torch.xpu.get_device_properties(i); found.append((p.name, p.total_memory / 1e9, f"xpu:{i}"))
+    except Exception: pass
+    if not found: return None
+    dedicated = [f for f in found if not any(w in f[0].lower() for w in ("uhd", "iris", "integrated"))]   # an Arc / GeForce card before built-in graphics
+    return max(dedicated or found, key=lambda f: f[1])
 
 def choice():
     """which model: the setting if you picked one, else by your graphics card"""
@@ -110,13 +123,13 @@ def load(key=None):
         _set("loading", f"Loading {MODELS[key]['name']}…", model=MODELS[key]["name"])
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        _device = "cuda" if gpu() else "cpu"
+        g = gpu(); _device = g[2] if g else "cpu"
         _tok = AutoTokenizer.from_pretrained(d)
         _model = AutoModelForCausalLM.from_pretrained(d, dtype=torch.bfloat16).to(_device)            # half the memory of full precision
         _model.eval(); _adapters.clear()
         for tab in tabs():
             if os.path.exists(os.path.join(_adapter_dir(tab), "adapter_config.json")): _load_adapter(tab)
-        _set("ready", f"{MODELS[key]['name']} ready ({'graphics card' if _device == 'cuda' else 'processor'}).")
+        _set("ready", f"{MODELS[key]['name']} ready ({'graphics card: ' + g[0] if g else 'processor'}).")
         return True
 
 def load_async(on_done=None):
@@ -322,7 +335,7 @@ def train(tab, epochs=3, progress=None, rank=8):
             return dict(examples=len(ex), steps=steps)
         finally:
             for p in _model.parameters(): p.requires_grad = False
-            _set("ready", f"{_state.get('model') or 'The text model'} ready ({'graphics card' if _device == 'cuda' else 'processor'}).")
+            _set("ready", f"{_state.get('model') or 'The text model'} ready ({'processor' if _device == 'cpu' else 'graphics card'}).")
 
 def train_async(tab, on_done=None, progress=None):
     def work():

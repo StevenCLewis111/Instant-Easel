@@ -24,7 +24,15 @@ Run these one at a time (each takes a few minutes the first time):
 python -m pip install -r requirements.txt
 ```
 
-**Only if you have an NVIDIA graphics card** (it lets the model use the card; much faster, and training needs it):
+**Then the graphics-card part, for your card only** (this lets the model run on the card: much faster, and training needs it).
+
+*Intel Arc (your A380):* first update the graphics driver from Intel
+(https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html, or the Intel Graphics Software
+app > Driver), restart, then:
+```
+python -m pip install torch --index-url https://download.pytorch.org/whl/xpu
+```
+*NVIDIA:*
 ```
 python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
@@ -34,8 +42,12 @@ Then, for everyone:
 python -m pip install -r requirements-ai.txt
 ```
 
-Intel Arc and AMD graphics cards aren't supported by this kind of model yet: the model runs on your processor instead (it works,
-just slower, and training is very slow).
+To check it found your card, run:
+```
+python -c "import torch; print(torch.xpu.is_available() if hasattr(torch, 'xpu') else False, torch.cuda.is_available())"
+```
+With the Arc card it should print `True False`. If it prints `False False`, update the driver, restart, and run the Intel line again.
+Intel Arc support needs Windows 11.
 
 ## 5. Start the app and download the model
 ```
@@ -43,7 +55,8 @@ python main.py
 ```
 Go to **Settings > Text Model**.
 - The second line under MODEL says which graphics card it found (or that it's using the processor).
-- **Model size** `auto` picks for you: the 4B model with an NVIDIA card of 8 GB or more, otherwise the 1.7B.
+- **Model size** `auto` picks for you: the 4B model with a graphics card of 8 GB or more, otherwise the 1.7B. Your Arc A380 has 6 GB, so it gets
+  the 1.7B (about 4 GB to download), which runs and trains on the card.
 - Press **Download the model** and wait until it says *downloaded* (4-8 GB; the percentage counts up).
 
 The .exe in `EXE Build` doesn't include the text model (it would be several GB). To use the text model, start the app with

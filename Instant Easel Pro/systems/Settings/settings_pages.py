@@ -189,7 +189,7 @@ class TextModelPage(SettingsPage):
         T.Text(self.body, "MODEL", font=T.f(10)).pack(anchor="w")
         self.st = T.Text(self.body, "Checking…", font=T.f(9)); self.st.configure(wraplength=820); self.st.pack(anchor="w", pady=(2, 6))
         self.size = self.choice("Model size", "text_model", ["auto", "large", "small"],
-                                "auto: the 4B model if you have a graphics card with 8 GB or more, else the 1.7B.   large: Qwen3 4B Instruct (about 8 GB "
+                                "auto: the 4B model with a graphics card of 8 GB or more, else the 1.7B (an Arc A380 with 6 GB gets the 1.7B).   large: Qwen3 4B Instruct (about 8 GB "
                                 "download).   small: Qwen3 1.7B (about 4 GB).", after=self._poll)
         self.btns = self.buttons(("Download the model", self.download, "normal"), ("Load it now", self.load, "normal"),
                                  ("Open its folder", lambda: prefs.open_folder(os.path.dirname(brain.TABS_DIR)), "normal"))
@@ -216,7 +216,8 @@ class TextModelPage(SettingsPage):
         """the model's state, every second while this page is open"""
         def work():
             st = self.brain.status(); g = self.brain.gpu()
-            hw = f"Graphics card: {g[0]} ({g[1]:.0f} GB)" if g else "No NVIDIA graphics card found: the model runs on the processor (slower; training is very slow)."
+            hw = (f"Graphics card: {g[0]} ({g[1]:.0f} GB)" if g else "No usable graphics card found: the model runs on the processor (slower; training is very slow). "
+                  "Intel Arc and NVIDIA cards need the matching PyTorch: see docs/TEXT_MODEL_SETUP.md.")
             pct = f"  {st.get('progress', 0) * 100:.0f}%" if st["state"] == "downloading" else ""
             self.app.q.put(lambda: self.st.configure(text=f"{st['detail']}{pct}\n{hw}"))
         if self.winfo_exists():
