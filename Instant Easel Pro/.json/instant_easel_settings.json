@@ -21,11 +21,12 @@
  "window_mode": "Maximized",
  "remember_window": true,
  "window_geometry": "1256x880+551+52",
- "last_tab": "Editing",
+ "last_tab": "AI Training",
  "keep_training_copies": false,
  "active_model": "Core (default)",
  "use_gpu": true,
  "models_folder": "",
+ "text_model": "auto",
  "check_updates_on_start": false,
  "seeded_alpine_moods": true,
  "_launch_maximized_v1": true
