@@ -251,9 +251,33 @@ class _Painted:
             if ex or ey:
                 from PIL import Image
                 big = Image.new("RGBA", (im.width + 2 * ex, im.height + 2 * ey)); big.paste(im, (ex, ey)); im = big
+            if getattr(self, "_bar", False): im = _on_bar(im, self)
             from PIL import ImageTk
             self._ph = ImageTk.PhotoImage(im); tk.Label.configure(self, image=self._ph); self._shown_once = True
         except tk.TclError: pass
+
+_BAR_RED = {}
+def bar_art():
+    """the painted bar the HISTORY button uses (images/UI/Color Wheel Menu/bar_blank.png); None if it isn't there"""
+    try:
+        import ui_art as UA; return UA.load("panel/bar_blank")
+    except Exception: return None
+
+def _on_bar(words, w):
+    """the words picture laid on the painted HISTORY bar, sized to the button: hover brighter, off greyed, danger red"""
+    import art_panel as AP
+    from PIL import Image, ImageOps
+    W, H = words.width, max(words.height, int(round(30 * Z)))
+    base = AP.bar("bar_blank", W, H, 0.3)
+    if getattr(w, "kind", "") == "danger":
+        key = (W, H)
+        if key not in _BAR_RED:
+            if len(_BAR_RED) > 200: _BAR_RED.clear()
+            red = ImageOps.colorize(base.convert("L"), (60, 0, 10), (255, 150, 160), mid=(215, 40, 60)).convert("RGBA"); red.putalpha(base.getchannel("A")); _BAR_RED[key] = red
+        base = _BAR_RED[key]
+    if not getattr(w, "enabled", True): base = AP.shade(ImageOps.grayscale(base.convert("RGB")).convert("RGBA"), 0.6); base.putalpha(AP.bar("bar_blank", W, H, 0.3).getchannel("A"))
+    elif getattr(w, "hover", False): base = AP.shade(base, 1.15)
+    out = base.copy(); out.alpha_composite(words, (0, (H - words.height) // 2)); return out
 
 class Title(_Painted, tk.Label):
     def __init__(self, master, text, big=False, **kw):
@@ -274,6 +298,8 @@ class Button(_Painted, tk.Label):
         self.bind("<Button-1>", lambda e: self.invoke()); self.bind("<Enter>", lambda e: self._set_hover(True)); self.bind("<Leave>", lambda e: self._set_hover(False))
         self.bind("<FocusIn>", lambda e: self._style()); self.bind("<FocusOut>", lambda e: self._style())
         self.bind("<Return>", lambda e: self.invoke()); self.bind("<space>", lambda e: self.invoke())
+        self._bar = PAINT_TEXT and bar_art() is not None                          # drawn on the painted HISTORY bar
+        if self._bar: self.configure(highlightthickness=0)                        # the bar brightens on hover instead of a green ring
         self._style(); on_change(self._style); self._paint_init(MONO)
     def _set_hover(self, h): self.hover = h; self._style()
     def _style(self):
@@ -281,7 +307,8 @@ class Button(_Painted, tk.Label):
         bg = PALETTE[hi] if (self.hover and self.enabled) else PALETTE[key]
         focused = self.focus_get() is self if self.winfo_exists() else False
         ring = PALETTE["border"] if (self.hover or focused) and self.enabled else self.master["bg"]
-        self.configure(bg=bg if self.enabled else "#2a2f3c", fg="white" if self.enabled else "#6c7080", highlightbackground=ring, highlightcolor=ring)
+        if getattr(self, "_bar", False): bg = self.master["bg"]                   # round the painted bar's ends: the page shows through
+        self.configure(bg=bg if self.enabled or self._bar else "#2a2f3c", fg="white" if self.enabled else "#6c7080", highlightbackground=ring, highlightcolor=ring)
     def invoke(self):
         if self.enabled and self.command: self.command()
     def state(self, s):
@@ -528,7 +555,11 @@ class Choice(_Painted, tk.Label):
     """click to cycle through choices, shown as a blue setting button: 'CLOUDS: MANY'"""
     def __init__(self, master, label, choices, variable):
         super().__init__(master, font=MONO_S, padx=12, pady=6, cursor="hand2", takefocus=1, highlightthickness=2)
-        self.label = label; self.choices = choices; self.var = variable
+        self.label = label; self.choices = choices; self.var = variable; self.hover = False
+        self._bar = PAINT_TEXT and bar_art() is not None                          # drawn on the painted HISTORY bar
+        if self._bar:
+            self.configure(highlightthickness=0)
+            self.bind("<Enter>", lambda e: (setattr(self, "hover", True), self._repaint()), add="+"); self.bind("<Leave>", lambda e: (setattr(self, "hover", False), self._repaint()), add="+")
         self.bind("<Button-1>", self.next); self.bind("<Return>", self.next); self.bind("<Button-3>", self.prev)
         variable.trace_add("write", lambda *a: self._style()); self._style(); on_change(self._style); self._paint_init(MONO_S)
     def next(self, e=None):
@@ -536,7 +567,7 @@ class Choice(_Painted, tk.Label):
     def prev(self, e=None):
         c = self.choices; v = self.var.get(); self.var.set(c[(c.index(v) - 1) % len(c)] if v in c else c[0])
     def _style(self):
-        v = self.var.get() or "—"; self.configure(text=(f"{self.label.upper()}: " if self.label else "") + f"{str(v).upper()}  ▸", bg=PALETTE["button"], fg="white",
+        v = self.var.get() or "—"; self.configure(text=(f"{self.label.upper()}: " if self.label else "") + f"{str(v).upper()}  ▸", bg=self.master["bg"] if getattr(self, "_bar", False) else PALETTE["button"], fg="white",
                                                  highlightbackground=self.master["bg"], highlightcolor=PALETTE["border"])
 
 class Hints(tk.Frame):
@@ -596,7 +627,15 @@ def _show_banner(widget, text, kind, seconds):
     room = max(200, top.winfo_width() - int(80 * Z))
     b.configure(text=" ".join(str(text).split()), bg=fill, highlightbackground=edge, highlightcolor=edge, wraplength=room,
                 font=BANNER_FONT, padx=14, pady=6, highlightthickness=2)            # set every time, so it's always at the window's current size
-    b.place(in_=top, relx=0.5, rely=1.0, y=-max(4, int(round(12 * Z))), anchor="s"); b.tkraise()
+    panel = getattr(top, "body", None)                                         # the main window: just above the page panel's bottom border, a small gap clear of it
+    try:
+        if panel is None or not panel.winfo_ismapped(): raise tk.TclError
+        hl = int(panel.cget("highlightthickness")); bottom = panel.winfo_rooty() - top.winfo_rooty() + panel.winfo_height() - hl
+        x = panel.winfo_rootx() - top.winfo_rootx() + panel.winfo_width() // 2
+        b.place(in_=top, x=x, y=bottom - max(4, int(round(8 * Z))), relx=0, rely=0, anchor="s")
+    except tk.TclError:
+        b.place(in_=top, relx=0.5, rely=1.0, x=0, y=-max(4, int(round(12 * Z))), anchor="s")
+    b.tkraise()
     if getattr(top, "_banner_job", None) is not None:
         try: top.after_cancel(top._banner_job)
         except tk.TclError: pass
