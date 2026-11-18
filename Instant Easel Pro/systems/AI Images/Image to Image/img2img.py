@@ -46,6 +46,7 @@ def _palette_match(a, ref_roles):
 def render(image, prompt="", strength=0.7, medium="oil", palette="keep", profile=None, seed=7):
     """-> (painted PIL image, list of notes about what was applied)"""
     notes = []; opts, understood, unknown = language.understand(prompt or "")
+    if prompt and language.ai_available(): opts, understood = language.ai_refine(prompt, opts, understood)      # the text model, when it's there
     medium = opts.get("medium", medium)
     import styles_fx as SF
     medium = {v: k for k, v in SF.MEDIUM.items()}.get(medium, medium)                    # "oil" -> "Oil Painting"

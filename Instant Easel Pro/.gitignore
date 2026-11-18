@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# the downloaded text model (several GB): never uploaded; each PC downloads its own
+my-models/text/base/

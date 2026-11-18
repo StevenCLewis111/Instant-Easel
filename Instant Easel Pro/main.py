@@ -267,7 +267,7 @@ class InstantEasel(tk.Tk):
                  "Words": WordsPage, "Theme": ThemePage, "Classic Tools": PaintPage, "Draw": draw_studio.DrawStudio, "Models": ModelsPage,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
                  "General": SP.GeneralPage, "Generation Defaults": SP.GenDefaultsPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage,
-                 "Privacy & Data": SP.PrivacyPage, "AI Models": SP.AIModelsPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "Privacy & Data": SP.PrivacyPage, "AI Models": SP.AIModelsPage, "Text Model": SP.TextModelPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.edit = dict(original=None, proxy=None, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM), listeners=[])   # shared by the Edit tools
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
@@ -1170,6 +1170,11 @@ class GeneratePage(Page):
         self.gen_btn.state("disabled"); self.results = []; self.view.set([], total=n)
         def work():
             try:
+                if language.ai_available():                                                   # the text model reads the words too
+                    self.app.q.put(lambda: self.stat.configure(text="READING YOUR WORDS WITH THE TEXT MODEL…"))
+                    o2, u2 = language.ai_refine(text, opts, understood)
+                    if o2 != opts:
+                        opts.update(o2); self.app.q.put(lambda u2=u2: self.und.configure(text=", ".join(u2), fg="#4fdc7a"))
                 for i in range(n):
                     self.app.q.put(lambda i=i: self.stat.configure(text=f"PAINTING {i + 1} OF {n}…  (ABOUT 20 SECONDS EACH)"))
                     o = dict(opts, seed=self.seed + i * 101)
@@ -1354,12 +1359,14 @@ class TrainPage(Page):
                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
         if ps: self.review(ps)
 
-    def review(self, ps):
-        """'What does each image show?': opens right here in Learn from Images (in place of its normal screen)"""
+    def review(self, ps, remove_originals=False, source=""):
+        """'What does each image show?': opens right here in Learn from Images (in place of its normal screen). remove_originals: the
+        pictures came from the Image Scraper, so once they're in the library the scraped files are deleted (nothing left behind)"""
         self.close_review()
         v_ = self.review_view = themed_frame(self); self.home.pack_forget(); v_.pack(fill="both", expand=True)
         T.Title(v_, "What does each image show?").pack(pady=(0, 6))
-        T.Text(v_, f"For: {self.target.get()}. Click a label to change my guess, then press Add to library.", muted=True).pack()
+        T.Text(v_, f"For: {self.target.get()}.{' From: ' + source + '.' if source else ''} Click a label to change my guess, then press Add to library."
+                   + (" Untick a picture to leave it out." if remove_originals else ""), muted=True).pack()
         bar = themed_frame(v_); bar.pack(side="bottom", pady=(8, 0))                    # buttons stay at the bottom, the list scrolls above them
         box = T.ScrollBox(v_); box.pack(fill="both", expand=True, pady=(10, 0))         # list, divider and scroll bar, boxed in
         cv = tk.Canvas(box.body, bg=v_["bg"], highlightthickness=0); inner = tk.Frame(cv, bg=v_["bg"])
@@ -1378,13 +1385,22 @@ class TrainPage(Page):
             lb.pack(side="left")                                                         # every picture in the same size box, so the names line up
             T.Text(r, os.path.basename(path)[:30], width=32, anchor="w").pack(side="left", padx=8)
             v = tk.StringVar(value=g); T.Choice(r, "shows", list(learn.LABELS), v).pack(side="left")
-            T.Text(r, f"({conf})", muted=True).pack(side="left", padx=6); rows.append((path, v, g, st))
+            T.Text(r, f"({conf})", muted=True).pack(side="left", padx=6)
+            use = tk.BooleanVar(value=True)
+            if remove_originals: T.Text(r, "use it", font=T.f(8)).pack(side="left", padx=(12, 4)); T.Toggle(r, use).pack(side="left")
+            rows.append((path, v, g, st, use))
         def commit():
-            fixed = 0
-            for path, v, guess, st in rows:
-                d = os.path.join(self.folder(), v.get()); os.makedirs(d, exist_ok=True); shutil.copy(path, d)
-                if st is not None and v.get() != guess: MD.record_correction(learn.stat_vector(st), v.get()); fixed += 1   # the Core learns from your correction
-            self.close_review(); self.refresh(); T.banner(self.app, f"ADDED — {len(rows)} images are waiting to be learned; press Learn", "success")
+            fixed = added = dropped = 0
+            for path, v, guess, st, use in rows:
+                if use.get():
+                    d = os.path.join(self.folder(), v.get()); os.makedirs(d, exist_ok=True); shutil.copy(path, d); added += 1
+                    if st is not None and v.get() != guess: MD.record_correction(learn.stat_vector(st), v.get()); fixed += 1   # the Core learns from your correction
+                else: dropped += 1
+                if remove_originals:                                                              # scraped: the file goes either way (kept ones are in the library now)
+                    try: os.remove(path)
+                    except OSError: pass
+            self.close_review(); self.refresh()
+            T.banner(self.app, f"ADDED — {added} images are waiting to be learned; press Learn" + (f" ({dropped} left out and deleted)" if dropped else ""), "success")
             if fixed: self.msg.configure(text=f"THANKS: {fixed} CORRECTION(S) SAVED TO THE CORE. EVERY MODEL'S GUESSES IMPROVE.")
         T.Button(bar, "Add to library", commit).pack(side="left", padx=8); T.Button(bar, "Close", self.close_review, kind="danger").pack(side="left")
         return v_
@@ -1424,6 +1440,7 @@ class ScraperPage(Page):
         self.start_btn = T.Button(r, "Start", self.start, width=12); self.start_btn.pack(side="left", padx=8)
         self.stop_btn = T.Button(r, "Stop", self.stop, width=12, kind="danger"); self.stop_btn.pack(side="left", padx=8); self.stop_btn.state("disabled")
         T.Button(r, "Open images folder", self.open_folder, width=20).pack(side="left", padx=8)
+        T.Button(r, "Review & learn", self.send_to_learning, width=16).pack(side="left", padx=8)
         T.Hints(self, [("TAB", "next button"), ("ENTER", "press")]).pack(side="bottom", pady=4)
         self.log_box = T.Field(self, height=10); self.log_box.pack(fill="both", expand=True)
         self.log_box.bind("<Key>", lambda e: None if (e.state & 4 and e.keysym.lower() in ("c", "a")) else "break")   # read-only (copy still works)
@@ -1447,6 +1464,18 @@ class ScraperPage(Page):
 
     def running(self, on):
         self.start_btn.state("disabled" if on else "!disabled"); self.stop_btn.state("!disabled" if on else "disabled")
+
+    def send_to_learning(self):
+        """every picture the scraper saved -> Learn from Images' review (you check them; the ones you keep go to the library, and the
+        scraped files are deleted either way)"""
+        g = self._grabber()
+        if g is None: return
+        exts = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+        ps = sorted(os.path.join(d, f) for d, _, fs in os.walk(g.OUTPUT_DIR) for f in fs if f.lower().endswith(exts))
+        if not ps: return T.banner(self.app, "NOTHING TO REVIEW — the scraper hasn't saved any pictures yet")
+        words = sorted({os.path.basename(os.path.dirname(p)) for p in ps})
+        self.app.goto("AI Training", "Learn from Images"); tp = self.app.pages["AI Training"].pages["Learn from Images"]
+        tp.review(ps[:300], remove_originals=True, source="Image Scraper (" + ", ".join(words[:6]) + ("…" if len(words) > 6 else "") + ")")
 
     def start(self):
         if self.thread is not None and self.thread.is_alive(): return
@@ -1614,8 +1643,14 @@ class WordsPage(Page):
         self.list.insert("1.0", "\n".join(f"{w}  →  {m}" for w, m in tw.items()) or "(none yet)")
 
     def do_test(self):
-        o, u, k = language.understand(self.test.get(), home_dir())
-        self.res.configure(text=f"UNDERSTOOD: {', '.join(u) or 'nothing'}\nSETTINGS:   {o}\nUNKNOWN:    {', '.join(k) or 'none'}", fg="#4fdc7a")
+        text = self.test.get(); o, u, k = language.understand(text, home_dir())
+        show = lambda o, u, k, note="": self.res.configure(text=f"UNDERSTOOD: {', '.join(u) or 'nothing'}\nSETTINGS:   {o}\nUNKNOWN:    {', '.join(k) or 'none'}{note}", fg="#4fdc7a")
+        show(o, u, k)
+        def work():                                                                           # then the text model's reading, if it's there
+            if not language.ai_available(): return
+            self.app.q.put(lambda: show(o, u, k, "\n(the text model is reading it…)"))
+            o2, u2 = language.ai_refine(text, o, u); self.app.q.put(lambda: show(o2, u2, k))
+        threading.Thread(target=work, daemon=True).start()
 
 # ---------------------------------------------------------------- Paint
 class PaintPage(Page):

@@ -179,6 +179,68 @@ class AIModelsPage(SettingsPage):
         p = filedialog.askopenfilename(parent=self.app, filetypes=[("Model files", "*.gguf *.safetensors"), ("All files", "*.*")])
         if p: shutil.copy(p, prefs.models_folder()); self.refresh()
 
+# ---------------------------------------------------------------- the text model (systems/Core/brain.py)
+LEARNING_TABS = ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training"]
+class TextModelPage(SettingsPage):
+    TITLE = "Text Model"; NOTE = ("The English model that reads what you type. One base model is shared by every tab; each tab keeps its own memory "
+                                 "(what you teach it, and a small add-on trained from that), so tabs never mix unless you send learning across.")
+    def build(self):
+        import brain; self.brain = brain
+        T.Text(self.body, "MODEL", font=T.f(10)).pack(anchor="w")
+        self.st = T.Text(self.body, "Checking…", font=T.f(9)); self.st.configure(wraplength=820); self.st.pack(anchor="w", pady=(2, 6))
+        self.size = self.choice("Model size", "text_model", ["auto", "large", "small"],
+                                "auto: the 4B model if you have a graphics card with 8 GB or more, else the 1.7B.   large: Qwen3 4B Instruct (about 8 GB "
+                                "download).   small: Qwen3 1.7B (about 4 GB).", after=self._poll)
+        self.btns = self.buttons(("Download the model", self.download, "normal"), ("Load it now", self.load, "normal"),
+                                 ("Open its folder", lambda: prefs.open_folder(os.path.dirname(brain.TABS_DIR)), "normal"))
+        T.Text(self.body, "WHAT EACH TAB HAS LEARNED", font=T.f(10)).pack(anchor="w", pady=(14, 4))
+        self.tabs = _frame(self.body); self.tabs.pack(anchor="w", fill="x")
+        T.Text(self.body, "SEND LEARNING TO ANOTHER TAB", font=T.f(10)).pack(anchor="w", pady=(14, 4))
+        r = _frame(self.body); r.pack(anchor="w")
+        self.src = tk.StringVar(value=LEARNING_TABS[0]); self.dst = tk.StringVar(value=LEARNING_TABS[2])
+        T.Text(r, "FROM", font=T.f(9)).pack(side="left"); T.Choice(r, "", LEARNING_TABS, self.src).pack(side="left", padx=6)
+        T.Text(r, "TO", font=T.f(9)).pack(side="left", padx=(8, 0)); T.Choice(r, "", LEARNING_TABS, self.dst).pack(side="left", padx=6)
+        T.Button(r, "Send", self.send).pack(side="left", padx=8)
+        T.Text(self.body, "   Copies what the first tab learned (its examples, and its trained add-on if it has one) into the second. Nothing else changes.",
+               muted=True, font=T.f(8)).pack(anchor="w")
+        self._rows(); self._poll()
+    def _rows(self):
+        for w in self.tabs.winfo_children(): w.destroy()
+        for tab in LEARNING_TABS:
+            i = self.brain.info(tab); r = _frame(self.tabs); r.pack(anchor="w", fill="x", pady=2)
+            trained = f"trained on {i['trained_on']} ({i['trained_when'][:16].replace('T', ' ')})" if i["adapter"] else "not trained yet"
+            T.Text(r, f"{tab:<12} {i['examples']:>4} things taught   {trained}", font=T.f(9)).pack(side="left")
+            T.Button(r, "Train", lambda t=tab: self.train(t)).pack(side="left", padx=(12, 4))
+            T.Button(r, "Forget", lambda t=tab: self.forget(t), kind="danger").pack(side="left")
+    def _poll(self):
+        """the model's state, every second while this page is open"""
+        def work():
+            st = self.brain.status(); g = self.brain.gpu()
+            hw = f"Graphics card: {g[0]} ({g[1]:.0f} GB)" if g else "No NVIDIA graphics card found: the model runs on the processor (slower; training is very slow)."
+            pct = f"  {st.get('progress', 0) * 100:.0f}%" if st["state"] == "downloading" else ""
+            self.app.q.put(lambda: self.st.configure(text=f"{st['detail']}{pct}\n{hw}"))
+        if self.winfo_exists():
+            threading.Thread(target=work, daemon=True).start()
+            if self.winfo_ismapped(): self.after(1000, self._poll)
+            else: self.after(3000, self._poll)
+    def _done(self, ok, msg, title):
+        self.app.q.put(lambda: (T.banner(self.app, f"{title} — {msg}", "success" if ok else "error"), self._rows()))
+    def download(self): self.brain.download(on_done=lambda ok, m: self._done(ok, m, "DOWNLOADED" if ok else "DOWNLOAD FAILED"))
+    def load(self): self.brain.load_async(on_done=lambda ok, m: self._done(ok, "the text model is ready" if ok else m, "LOADED" if ok else "COULDN'T LOAD"))
+    def train(self, tab):
+        if not self.brain.examples(tab): return T.banner(self.app, f"NOTHING TO LEARN YET — teach {tab} something first")
+        T.banner(self.app, f"TRAINING {tab.upper()} — this runs in the background; the status above shows how far it is", "success")
+        self.brain.train_async(tab, on_done=lambda ok, m: self._done(ok, m, "TRAINED" if ok else "TRAINING FAILED"))
+    def forget(self, tab):
+        if T.popup(self.app, f"FORGET WHAT {tab.upper()} LEARNED?", "Its examples and trained add-on are deleted. Other tabs and the base model are kept.",
+                   (("Forget", "danger"), ("Cancel", "normal"))) == "Forget":
+            self.brain.forget(tab); self._rows(); T.banner(self.app, f"FORGOTTEN — {tab}", "success")
+    def send(self):
+        a, b = self.src.get(), self.dst.get()
+        if a == b: return T.banner(self.app, "PICK TWO DIFFERENT TABS")
+        r = self.brain.transfer(a, b); self._rows()
+        T.banner(self.app, f"SENT — {r['examples']} examples{' and the trained add-on' if r['adapter'] else ''} from {a} to {b}", "success")
+
 # ---------------------------------------------------------------- Updates
 REPO = "StevenCLewis111/books"
 class UpdatesPage(SettingsPage):

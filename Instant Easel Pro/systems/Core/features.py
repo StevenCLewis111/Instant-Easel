@@ -138,6 +138,8 @@ MENUS = [
         options=["Your PC: processor, memory, graphics card", "Use the graphics card (Vulkan)", "Models folder", "Catalog: Gemma 4 E4B, SDXL-class, FLUX.1 [schnell] with size and license; found / not installed",
                  "Add a model file", "Next: the built-in runner that loads and uses the models; downloads"],
         notes="Author's direction: native first; model files loaded by the app itself, no separate programs."),
+   dict(name="Text Model", status="built", order=0, desc="The English model that reads what you type: download, size, what each tab learned, train, send learning across.",
+        options=["Download Qwen3 (4B with an 8 GB+ graphics card, else 1.7B)", "Each tab's memory and its trained add-on", "Train a tab", "Send learning from one tab to another", "Forget a tab"]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=["Anywhere", "Text to Image", "Image to Image", "Draw studio", "Editing"]),
    dict(name="Backup & Reset", status="built", order=0, desc="Export / import settings, theme, words and learned style; reset all settings.", options=["Export backup", "Import backup", "Reset all settings"]),

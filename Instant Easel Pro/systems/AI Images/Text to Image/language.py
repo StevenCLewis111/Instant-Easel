@@ -156,10 +156,40 @@ def load_vocab(folder=None, model_folder=None):
             except Exception: pass
     return v
 
-def teach(phrase, meaning, folder=None):
-    """teach a word or phrase: teach('golden hour', {'time': 'sunset', 'tint': 'golden'})"""
+def teach(phrase, meaning, folder=None, tab=None):
+    """teach a word or phrase: teach('golden hour', {'time': 'sunset', 'tint': 'golden'}). It's also added to the text model's memory
+    for that tab (AI Images unless another tab is named), so the model learns it too"""
     p = _vocab_path(folder); learned = json.load(open(p)) if os.path.exists(p) else {}
     learned[phrase.lower().strip()] = meaning; json.dump(learned, open(p, "w"), indent=1)
+    try: import brain; brain.teach(tab or AI_TAB, phrase.lower().strip(), meaning, source="Teach a word")
+    except Exception: pass
+
+# ---------------------------------------------------------------- the text model (systems/Core/brain.py)
+# The word rules above always run first (instant, and they never guess). When the text model is downloaded it then reads the same
+# words and adds whatever the rules couldn't place, so any English works. Each tab has its own memory; this is the AI Images one.
+AI_TAB = "AI Images"
+AI_SCHEMA = {"time": ["sunset", "night"], "clouds": ["few", "normal", "many"], "tint": ["none", "golden", "fiery", "pink", "cool"],
+             "figures": [0, 1, 2], "pose": ["seated", "standing"], "height": "number 0..1", "peaks": [3, 4, 5, 6],
+             "mountains": [True, False], "rocks": [True, False], "grass": [True, False], "canyon": [True, False], "sun_x": "number 0..1",
+             "medium": ["oil", "watercolor", "pastel", "ink sketch"], "caption": "text"}
+
+def ai_available():
+    """True when the text model can be used (its add-ons installed and the model downloaded). Slow the first time: call off the
+    window's thread"""
+    try: import brain; return brain.status()["state"] in ("installed", "ready")
+    except Exception: return False
+
+def ai_refine(text, opts, understood, tab=AI_TAB):
+    """the text model's reading of `text`, added to what the rules found (the rules win where both say something).
+    -> (opts, understood). Unchanged if the model isn't available or fails"""
+    try:
+        import brain
+        got = brain.read_settings(tab, text, AI_SCHEMA)
+    except Exception: return opts, understood
+    opts = dict(opts); understood = list(understood)
+    for k, v in got.items():
+        if k not in opts: opts[k] = v; understood.append(f"{k.replace('_', ' ')}: {v} (AI)")
+    return opts, understood
 
 def taught_words(folder=None):
     p = _vocab_path(folder); return json.load(open(p)) if os.path.exists(p) else {}

@@ -4,6 +4,7 @@ Start the app with `python main.py` from this folder (or the built `InstantEasel
 
 | Folder | What's in it |
 |---|---|
+| `requirements.txt`, `requirements-ai.txt` | Add-ons to install (`requirements-ai.txt` is for the text model). |
 | `main.py` | The app's window, its tabs and pages. Finds every script under `systems/` by itself. |
 | `systems/` | The scripts, sorted by tab: `Core/` (shared by every tab), `Drawing/`, `AI Images/`, `AI Training/`, `Editing/`, `Settings/`. Each tab folder has a sub-folder per part of that tab where it helps (e.g. `AI Images/Engine`, `AI Training/Image Scraper`). |
 | `systems/Core/paths.py` | The one place that knows where pictures, fonts, settings and logs are. Scripts ask it instead of building paths themselves. |
@@ -19,7 +20,7 @@ Start the app with `python main.py` from this folder (or the built `InstantEasel
 | `tests/` | Tests. Each one writes its results into the main log. `full_app_test.py` checks every tab and page; `evaluate.py` scores the painting engine. The `ui_*_test.py` files are from an older version and are kept for reference. |
 | `dev/` | Development tools (brand maker, render / repaint helpers). |
 | `docs/` | Notes, roadmap, research. |
-| `my-library/`, `my-models/` | What the app has learned, and your models. |
+| `my-library/`, `my-models/` | What the app has learned, and your models. `my-models/text/` holds the text model (downloaded on your PC, never uploaded) and each tab's text memory. See `docs/TEXT_MODEL_SETUP.md`. |
 | `build/`, `EXE Build/`, `PaintEngine.spec`, `build_windows.bat` | Building `InstantEasel.exe`: GitHub builds it on every push (`.github/workflows/build-windows.yml`, the new exe lands in `EXE Build/`), or run `build_windows.bat` on your own PC. |
 
 Adding a script: put it in the tab folder it belongs to; nothing else to change (the app finds it by name). Moving a picture the app

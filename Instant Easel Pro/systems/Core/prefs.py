@@ -25,7 +25,7 @@ DEFAULTS = {
     # Privacy & data
     "keep_training_copies": False, "active_model": "Core (default)",
     # AI models
-    "use_gpu": True, "models_folder": "",
+    "use_gpu": True, "models_folder": "", "text_model": "auto",
     # Updates
     "check_updates_on_start": False,
 }
