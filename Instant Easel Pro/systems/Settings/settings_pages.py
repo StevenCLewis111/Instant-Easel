@@ -51,7 +51,7 @@ class GeneralPage(SettingsPage):
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
         self.entry("File names", "name_pattern", note="{date}, {time} and {n} (number) are filled in. Example: instant-easel-2026-11-15-163000-1.png")
-        self.choice("Open on start", "start_tab", ["Drawing", "AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Editing", "Settings", "Last used"])
+        self.choice("Open on start", "start_tab", ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Drawing", "Editing", "Settings", "Last used"])
         self.toggle("Confirm before quitting", "confirm_exit")
         self.buttons(("Create desktop shortcut", self.shortcut, "normal"))
     def shortcut(self):

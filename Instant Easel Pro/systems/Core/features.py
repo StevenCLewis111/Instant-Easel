@@ -133,7 +133,7 @@ MENUS = [
  ]),
 ]
 
-TAB_ORDER = ["Drawing", "AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Editing", "Settings"]   # the tabs, left to right
+TAB_ORDER = ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Drawing", "Editing", "Settings"]   # the tabs, left to right
 MENUS = sorted(MENUS, key=lambda m: TAB_ORDER.index(m[0]) if m[0] in TAB_ORDER else len(TAB_ORDER))
 OLD_TAB_NAMES = {"Images": "AI Images", "Videos": "AI Videos", "Chat": "AI Chat", "Code": "AI Coding", "Training": "AI Training", "Draw": "Drawing"}
 

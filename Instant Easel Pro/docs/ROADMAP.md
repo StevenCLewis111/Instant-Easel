@@ -35,22 +35,6 @@ Generated from `features.py` (the same list the app's menus use).
 | 34 | Run | AI Coding | ⬜ planned |
 | 35 | Snippets | AI Coding | ⬜ planned |
 
-## Drawing: Draw and paint by hand (the whole page is the drawing studio)
-
-### Draw  (✅ built)
-A full drawing studio: paint by hand on a blank page, the last created image, or any picture.
-
-- Toolbar: Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror symmetry
-- Brush library: all 45 brushes as live stroke previews, grouped; brush properties: size (1-300), opacity, preview stroke
-- Brush library sections (brush_catalog.py): Brushes, Pens, Blending, Blurring, Sharpen, Special Effects, Stamps & Icons, Layers & FX Brushes, Texture Brushes, More brushes; tools not built yet show a drawn preview marked SOON
-- Next: Blending (smudge, blend, soften, mix), Blurring (gaussian, motion, radial, zoom), Sharpen (unsharp mask, high pass, edge enhance, detail), Special Effects (dodge, burn, saturation, hue shift, noise, pixelate), Stamps (25 icons), FX (glow, outline, shadow, inner shadow, outer glow, neon), Textures (canvas, fabric, brick, metal, paper, clouds)
-- Layers: add, duplicate, delete, merge down, move up/down, show/hide, layer opacity, blend modes (normal, multiply, screen, overlay)
-- Color: hue ring + saturation/brightness square, hex code, color history, eyedropper
-- Canvas: zoom with the wheel, pan with the right mouse button; only the visible part is redrawn
-- New, Open, Use last created, Save, Send to Editing
-- Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y
-- Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails
-
 ## AI Images: Make new images
 
 ### Text to Image  (🟡 partial)
@@ -270,6 +254,22 @@ Find pictures on Google Images to learn from.
 ### Pictures  (✅ built)
 The active image model's pictures and their review.
 
+
+## Drawing: Draw and paint by hand (the whole page is the drawing studio)
+
+### Draw  (✅ built)
+A full drawing studio: paint by hand on a blank page, the last created image, or any picture.
+
+- Toolbar: Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror symmetry
+- Brush library: all 45 brushes as live stroke previews, grouped; brush properties: size (1-300), opacity, preview stroke
+- Brush library sections (brush_catalog.py): Brushes, Pens, Blending, Blurring, Sharpen, Special Effects, Stamps & Icons, Layers & FX Brushes, Texture Brushes, More brushes; tools not built yet show a drawn preview marked SOON
+- Next: Blending (smudge, blend, soften, mix), Blurring (gaussian, motion, radial, zoom), Sharpen (unsharp mask, high pass, edge enhance, detail), Special Effects (dodge, burn, saturation, hue shift, noise, pixelate), Stamps (25 icons), FX (glow, outline, shadow, inner shadow, outer glow, neon), Textures (canvas, fabric, brick, metal, paper, clouds)
+- Layers: add, duplicate, delete, merge down, move up/down, show/hide, layer opacity, blend modes (normal, multiply, screen, overlay)
+- Color: hue ring + saturation/brightness square, hex code, color history, eyedropper
+- Canvas: zoom with the wheel, pan with the right mouse button; only the visible part is redrawn
+- New, Open, Use last created, Save, Send to Editing
+- Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y
+- Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails
 
 ## Editing: Change an image (any picture, or one it made)
 
