@@ -289,12 +289,20 @@ def read_settings(tab, text, schema):
     except Exception: return {}
 
 # ---------------------------------------------------------------- training a tab
-def train(tab, epochs=3, progress=None, rank=8):
-    """bake a tab's examples into its own small adapter (LoRA). The base model and the other tabs don't change. progress(fraction, text)"""
+def train(tab, epochs=3, progress=None, rank=8, lr=2e-4, holdout=0.0, dedupe=True):
+    """bake a tab's examples into its own small adapter (LoRA). The base model and the other tabs don't change. progress(fraction, text)
+    lr: learning speed. holdout: a share of the examples (e.g. 0.1) kept back to check it; training stops early once the check gets
+    worse (it has started memorising). dedupe: the same example taught twice counts once."""
     import torch
     from peft import LoraConfig, get_peft_model
     ex = examples(tab)
     if not ex: raise RuntimeError(f"{tab} has nothing to learn from yet — teach it first")
+    if dedupe:
+        seen, uniq = set(), []
+        for e in ex:
+            k = (e["text"].strip().lower(), json.dumps(e["answer"], sort_keys=True))
+            if k not in seen: seen.add(k); uniq.append(e)
+        ex = uniq
     global _model
     with _lock:
         if _model is None: load()
@@ -307,7 +315,7 @@ def train(tab, epochs=3, progress=None, rank=8):
             else: _model = get_peft_model(_model, cfg, adapter_name=tmp)
             _model.set_adapter(tmp)
             for n_, p in _model.named_parameters(): p.requires_grad = f".{tmp}." in n_      # only this tab's new adapter learns
-            opt = torch.optim.AdamW([p for p in _model.parameters() if p.requires_grad], lr=2e-4)
+            opt = torch.optim.AdamW([p for p in _model.parameters() if p.requires_grad], lr=lr)
             schema = json.load(open(_schema_file(tab))) if os.path.exists(_schema_file(tab)) else None
             def pair(e):                                                             # the same wording the app uses when it asks
                 if isinstance(e["answer"], dict):
@@ -318,27 +326,43 @@ def train(tab, epochs=3, progress=None, rank=8):
                 p_ids = _tok(prompt)["input_ids"]; a_ids = _tok(ans + _tok.eos_token)["input_ids"] if _tok.eos_token else _tok(ans)["input_ids"]
                 ids = torch.tensor([p_ids + a_ids], device=_device); labels = ids.clone(); labels[0, :len(p_ids)] = -100   # learn only the answer
                 return ids, labels
-            data = [pair(e) for e in ex]; steps = epochs * len(data); done = 0; _model.train()
+            data = [pair(e) for e in ex]; check = []
+            if holdout and len(data) >= 10:                                          # kept back to check it (never trained on)
+                import random; order = list(range(len(data))); random.Random(0).shuffle(order); k = max(1, int(round(len(data) * holdout)))
+                check = [data[i] for i in order[:k]]; data = [data[i] for i in order[k:]]
+            def check_loss():
+                with torch.no_grad(): return sum(_model(input_ids=i, labels=l).loss.item() for i, l in check) / len(check)
+            steps = epochs * len(data); done = 0; _model.train(); best = None; stopped = 0
             for ep in range(epochs):
                 for ids, labels in data:
                     loss = _model(input_ids=ids, labels=labels).loss; loss.backward(); opt.step(); opt.zero_grad(); done += 1
                     _set("busy", f"Training {tab}… {done}/{steps}", done / steps)
                     if progress: progress(done / steps, f"step {done} of {steps}, loss {loss.item():.3f}")
+                if check:
+                    _model.eval(); cl = check_loss(); _model.train()
+                    if progress: progress(done / steps, f"pass {ep + 1}: check score {cl:.3f} (lower is better)")
+                    if best is not None and cl > best: stopped = ep + 1; break               # worse on the held-back examples: stop here
+                    best = cl if best is None else min(best, cl)
             _model.eval()
             out = os.path.join(_tab_dir(tab), "adapter_new"); shutil.rmtree(out, ignore_errors=True)
             _model.save_pretrained(out, selected_adapters=[tmp])
             src = os.path.join(out, tmp) if os.path.isdir(os.path.join(out, tmp)) else out
             shutil.rmtree(_adapter_dir(tab), ignore_errors=True); shutil.move(src, _adapter_dir(tab)); shutil.rmtree(out, ignore_errors=True)
             _model.delete_adapter(tmp)
-            json.dump(dict(examples=len(ex), when=datetime.datetime.now().isoformat(timespec="seconds"), epochs=epochs), open(os.path.join(_tab_dir(tab), "trained.json"), "w"))
+            json.dump(dict(examples=len(examples(tab)), when=datetime.datetime.now().isoformat(timespec="seconds"), epochs=epochs, lr=lr, rank=rank,
+                           check=len(check), check_loss=best, stopped_after=stopped), open(os.path.join(_tab_dir(tab), "trained.json"), "w"))
             _load_adapter(tab, reload=True)
-            return dict(examples=len(ex), steps=steps)
+            return dict(examples=len(ex), steps=steps, check_loss=best, stopped_after=stopped)
         finally:
             for p in _model.parameters(): p.requires_grad = False
             _set("ready", f"{_state.get('model') or 'The text model'} ready ({'processor' if _device == 'cpu' else 'graphics card'}).")
 
-def train_async(tab, on_done=None, progress=None):
+def train_async(tab, on_done=None, progress=None, **settings):
+    """settings: epochs, rank, lr, holdout, dedupe (see train)"""
     def work():
-        try: r = train(tab, progress=progress); on_done and on_done(True, f"{tab}: learned from {r['examples']} examples")
+        try:
+            r = train(tab, progress=progress, **settings)
+            msg = f"{tab}: learned from {r['examples']} examples" + (f"; stopped after pass {r['stopped_after']} (it had started memorising)" if r.get("stopped_after") else "")
+            on_done and on_done(True, msg)
         except Exception as e: _set("error" if _model is None else "ready", str(e)); on_done and on_done(False, str(e))
     threading.Thread(target=work, name=f"train {tab}", daemon=True).start()

@@ -18,7 +18,7 @@ import paths
 from PIL import Image, ImageTk
 import theme as T
 import app as classic, learn, language, landscape, bench, paint_window, img2img, features, edit as E, styles_fx as SFX, draw_studio, prefs, settings_pages as SP, models as MD
-import crash, skin, ui_art as UA
+import crash, skin, ui_art as UA, learning_areas as LA
 
 APP_NAME = "Instant Easel"
 DESIGN = (1560, 920)
@@ -264,7 +264,7 @@ class InstantEasel(tk.Tk):
         self.after_idle(self._size_mascots); T.on_change(lambda: self.mascot_src and self.after_idle(self._size_mascots))   # outline follows the theme colour
 
         built = {"Text to Image": GeneratePage, "Image to Image": Img2ImgPage, "Learn from Images": TrainPage, "Image Scraper": ScraperPage,
-                 "Words": WordsPage, "Theme": ThemePage, "Classic Tools": PaintPage, "Draw": draw_studio.DrawStudio, "Models": ModelsPage,
+                 "Words": WordsPage, **LA.page_classes(), "Theme": ThemePage, "Classic Tools": PaintPage, "Draw": draw_studio.DrawStudio, "Models": ModelsPage,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
                  "General": SP.GeneralPage, "Generation Defaults": SP.GenDefaultsPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage,
                  "Privacy & Data": SP.PrivacyPage, "AI Models": SP.AIModelsPage, "Text Model": SP.TextModelPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
@@ -701,6 +701,7 @@ DOT_FILL = {"built": "green", "partial": "blue", "planned": "grey"}          # t
 def status_dot(master, status, size):
     """a status dot: the painted ring (skin/dot_ring.png) filled in, or the drawn dot if that picture is missing"""
     return skin.dot(master, DOT_FILL[status], size) if UA.load("skin/dot_ring") is not None else _dot(master, DOT[status], size)
+LA.DOT = status_dot                                                                              # the learning areas use the same dots
 
 class Section(tk.Frame):
     """one top tab: a side menu of its tools (status dot on each) and the selected tool's page.
@@ -709,14 +710,12 @@ class Section(tk.Frame):
     GAP = 44                                                                                    # space between the Training buttons (design pixels)
     def __init__(self, master, app, menu, tools, built):
         super().__init__(master, bg=master["bg"]); self.app = app; self.menu_name = menu; T.on_change(lambda: self.configure(bg=self.master["bg"]))
-        if menu == "AI Training" and not any(f["name"] == "Image Scraper" for f in tools):                # Image Scraper sits just above Learn from Images
-            tools = list(tools); at = next((i for i, f in enumerate(tools) if f["name"] == "Learn from Images"), len(tools))
-            tools.insert(at, dict(name="Image Scraper", status="built", desc="Find pictures on Google Images to learn from.", options=[], order=0, notes=""))
         side = self.side = themed_frame(self); side.pack(side="left", fill="y")
         T.Line(self, vertical=True).pack(side="left", fill="y")                                  # divider right of the side menu, border to border
         if menu == "AI Images": SettingsPanel(self, app).pack(side="right", fill="y", padx=(4, 12), pady=12)    # the picture comes up close (page margin + 4)
         self.content = themed_frame(self); self.content.pack(side="left", fill="both", expand=True)
         self.pages, self.buttons, self.rows = {}, {}, []
+        self.parents = {f["name"]: f.get("parent") for f in tools if f.get("hidden")}         # pages opened from inside another page (no button of their own)
         T.Title(side, menu).pack(pady=(12, 0))                                                   # the tab's name, gold and underlined, level with the page's own title
         legend = self.legend = themed_frame(side); legend.pack(side="bottom", anchor="w", padx=(12, 0), pady=8)
         for k in ("built", "partial", "planned"):
@@ -726,6 +725,8 @@ class Section(tk.Frame):
         mf = self.menu = themed_frame(side)                                                      # the buttons, centred up and down between the title and that divider
         mf.pack(fill="y", expand=True, padx=(30, 12), pady=12)                                  # spread out evenly over that whole height
         for f in tools:                                                                          # (30px each side of the buttons; the status dot sits in the right-hand space)
+            if f.get("hidden"):
+                self.pages[f["name"]] = built[f["name"]](self.content, app) if f["name"] in built else PlannedPage(self.content, app, f); continue
             row = themed_frame(mf); row.pack(fill="x", pady=0, expand=True); self.rows.append(row)
             dot = status_dot(row, f["status"], 18); dot.pack(side="right", padx=(6, 0))
             b = skin.button(T.Button(row, f["name"], lambda n=f["name"]: self.select(n), width=20)); b.pack(side="left", fill="x"); self.buttons[f["name"]] = b
@@ -734,6 +735,7 @@ class Section(tk.Frame):
         if menu == "AI Training":                                                                   # "+ Create a model" joins the block while the Models page is showing
             self.create_row = themed_frame(mf); skin.button(T.Button(self.create_row, "+ Create a model", self._create, width=20)).pack(side="left", fill="x")
         self._gaps(); self.select(tools[0]["name"])
+        tools = [f for f in tools if not f.get("hidden")]
         self.whole = len(tools) == 1 and getattr(self.pages[tools[0]["name"]], "WHOLE", False)
         if self.whole:                                                                           # one page that is the whole tab (Draw): no side menu
             for w in (side, self.winfo_children()[1]): w.pack_forget()
@@ -760,7 +762,8 @@ class Section(tk.Frame):
             for p in self.pages.values():
                 if p is not page: p.pack_forget()
             self.current = name
-        for n, b in self.buttons.items(): b.configure(relief="flat"); b.kind = "normal"; skin.select(b, n == name)
+        lit = self.parents.get(name) or name                                                    # an inner page lights up the button it was opened from
+        for n, b in self.buttons.items(): b.configure(relief="flat"); b.kind = "normal"; skin.select(b, n == lit)
 
 STYLES = SFX.STYLES; ASPECTS = ["2:3", "3:2", "1:1", "16:9", "9:16", "original"]
 
@@ -1402,7 +1405,11 @@ class TrainPage(Page):
         def commit():
             fixed = added = dropped = 0
             for path, v, guess, st, use in rows:
-                if use.get():
+                small = False
+                if LA.get("Image Learning", "skip_small"):                                               # Image Learning > Clean > Skip tiny pictures
+                    try: small = min(Image.open(path).size) < 256
+                    except Exception: small = False
+                if use.get() and not small:
                     d = os.path.join(self.folder(), v.get()); os.makedirs(d, exist_ok=True); shutil.copy(path, d); added += 1
                     if st is not None and v.get() != guess: MD.record_correction(learn.stat_vector(st), v.get()); fixed += 1   # the Core learns from your correction
                 else: dropped += 1
@@ -1500,6 +1507,8 @@ class ScraperPage(Page):
         try: os.makedirs(g.OUTPUT_DIR, exist_ok=True)
         except Exception as e: return T.banner(self.app, f"CAN'T MAKE THE FOLDER — {g.OUTPUT_DIR}: {e}")
         self.stop_event.clear(); self.running(True); self._had_error = False
+        try: g.IMAGES_PER_WORD = int(LA.get("Image Learning", "per_word"))                        # Image Learning > Collect > Pictures per word
+        except (TypeError, ValueError): pass
         grabber = g.Grabber(words, self.log, self.stop_event)
         def work():
             try: grabber.run()
