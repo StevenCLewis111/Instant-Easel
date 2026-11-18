@@ -188,6 +188,7 @@ class AIModelsPage(SettingsPage):
         T.Button(r, "Download recommended", lambda: self._dl_text(None), width=20).pack(side="left", padx=4)
         T.Button(r, "Add manually", lambda: self._add_text("custom-core", "core_model"), width=13).pack(side="left", padx=4)
         T.Button(r, "Start", self._start, width=7).pack(side="left", padx=4); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
+        self._speed(r, "speed_text", restart=True)
         self.core_note = T.Text(self.body, "", muted=True, font=T.f(9)); self.core_note.pack(anchor="w", padx=(30, 0))
         self.state = T.Text(self.body, "", font=T.f(10)); self.state.pack(anchor="w", padx=(30, 0))
         self.card = T.Text(self.body, "Your graphics card: checking…", muted=True, font=T.f(9)); self.card.pack(anchor="w", padx=(30, 0))
@@ -200,7 +201,10 @@ class AIModelsPage(SettingsPage):
                                           "coder7b": (coder["label"] + " (recommended)", coder["note"] + " The best free coding model that fits your card."),
                                           "custom-AI_Coding": ("Your own model file", "A .gguf coding model you added with Add manually.")},
                    rec=lambda: self._dl_text("coder7b", select=("model_AI_Coding", "coder7b")), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"))
-        self._slot("AI Images", "built", IMAGE_MODELS, rec=self._dl_images, add=self._add_image, folder=imaging.IMAGE)
+        self._slot("AI Images", "built", IMAGE_MODELS, rec=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image")
+        T.Text(self.body, "SPEED: Fast puts everything on the graphics card (quickest; a big model can run out of room and crash). Safe puts more on the "
+               "processor and uses less memory: slower, but big models work. Balanced is the right split for each model.", muted=True, font=T.f(8),
+               wraplength=900).pack(anchor="w", pady=(8, 0))
         self._slot("AI Videos", "planned", VIDEO_MODELS, rec=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
         threading.Thread(target=self._find_card, daemon=True).start()
         self._tick()
@@ -211,7 +215,14 @@ class AIModelsPage(SettingsPage):
         if LA.DOT: LA.DOT(r, status, 14).pack(side="left", padx=(0, 8))
         T.Text(r, name, font=T.f(10), width=10, anchor="w").pack(side="left"); return r
 
-    def _slot(self, tab, status, choices, rec, add, folder=None):
+    def _speed(self, r, key, restart=False):
+        v = tk.StringVar(value=prefs.get(key) or "Balanced"); T.Choice(r, "speed", ["Fast", "Balanced", "Safe"], v).pack(side="left", padx=(8, 0))
+        def changed(*a):
+            prefs.set(key, v.get())
+            if restart and self.brain.ready(): self.brain.stop(); T.banner(self.app, f"SPEED: {v.get().upper()} — the model starts that way next time it's used", "success")
+        v.trace_add("write", changed)
+
+    def _slot(self, tab, status, choices, rec, add, folder=None, speed=None):
         key = "model_" + tab.replace(" ", "_"); cur = prefs.get(key) if prefs.get(key) in choices else list(choices)[0]
         r = self._row(tab.upper(), status)
         v = tk.StringVar(value=choices[cur][0]); ch = T.Choice(r, "", [c[0] for c in choices.values()], v); ch.pack(side="left", padx=(8, 8))
@@ -222,6 +233,7 @@ class AIModelsPage(SettingsPage):
         T.Button(r, "Download recommended", rec, width=20).pack(side="left", padx=4)
         T.Button(r, "Add manually", add, width=13).pack(side="left", padx=4)
         if folder: T.Button(r, "Open folder", lambda: prefs.open_folder(folder), width=11).pack(side="left", padx=4)
+        if speed: self._speed(r, speed)
 
     def _select(self, key, value):
         prefs.set(key, value); pair = getattr(self, "slot_vars", {}).get(key)

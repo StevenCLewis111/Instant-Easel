@@ -130,7 +130,10 @@ def _flags():
                                             creationflags=0x08000000 if sys.platform == "win32" else 0).stdout
         except Exception: _help["text"] = ""
     h = _help["text"]
-    return dict(width="-W" if re.search(r"(^|\s)-W[,\s]", h) or not h else "--width", height="-H" if re.search(r"(^|\s)-H[,\s]", h) or not h else "--height",
+    mode = _prefs().get("speed_image") or "Balanced"; low = []
+    for flag, modes in (("--vae-tiling", ("Balanced", "Safe")), ("--clip-on-cpu", ("Safe",)), ("--vae-on-cpu", ("Safe",)), ("--offload-to-cpu", ("Safe",))):
+        if mode in modes and flag in h: low.append(flag)                       # Safe: parts of the work on the processor, so it can't run out of card memory
+    return dict(low=low, width="-W" if re.search(r"(^|\s)-W[,\s]", h) or not h else "--width", height="-H" if re.search(r"(^|\s)-H[,\s]", h) or not h else "--height",
                 negative="-n" if re.search(r"(^|\s)-n[,\s]", h) or not h else "--negative-prompt", mode="--mode" in h and "img2img" in h)
 
 def image_model_bits(name):
@@ -166,6 +169,7 @@ def paint(prompt, n=1, size="Square 512 x 512", steps=20, cfg=7.0, seed=None, ne
                 cmd = [exe, "-m", model, "-p", prompt + extra, f["negative"], negative, f["width"], str(w), f["height"], str(h),
                        "--steps", str(steps), "--cfg-scale", str(cfg), "-s", str(base_seed + i), "--sampling-method", "euler_a", "-o", dest]
                 if lora_dir: cmd += ["--lora-model-dir", lora_dir]
+                cmd += f["low"]
                 if init_path:
                     cmd += (["--mode", "img2img"] if f["mode"] else []) + ["-i", init_path, "--strength", str(strength)]
                 _set("painting", f"Painting {i + 1} of {n}…", i / n)

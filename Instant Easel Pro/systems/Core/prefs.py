@@ -24,7 +24,7 @@ DEFAULTS = {
     "keep_training_copies": False,
     # AI models: one core text model for every AI tab; a tab can add its own model (Settings > AI Models)
     "ai_drive": "", "ai_budgets": {},       # Settings > AI Storage: where the AI keeps everything, and each AI's portion (GB)
-    "core_model": "4b", "model_AI_Coding": "core", "model_AI_Images": "sd15", "model_AI_Videos": "none", "image_model": "",
+    "core_model": "4b", "speed_text": "Balanced", "speed_image": "Balanced",   # Fast / Balanced / Safe (Settings > AI Models) "model_AI_Coding": "core", "model_AI_Images": "sd15", "model_AI_Videos": "none", "image_model": "",
     "use_gpu": True, "models_folder": "",
     # Updates
     "check_updates_on_start": False,

@@ -235,18 +235,22 @@ def start(key=None):
         if ready() and _server["key"] == key: return
         stop(); exe, f, s = server_exe(), model_file(key), spec(key)
         if not exe or not f: raise RuntimeError(f"{s['label']} isn't downloaded yet (Settings > AI Models)")
-        for layers in (s["layers"], 0):                                              # the graphics card first; the processor if that fails
+        mode = _prefs().get("speed_text") or "Balanced"                            # Fast / Balanced / Safe
+        first = {"Fast": 99, "Balanced": s["layers"], "Safe": min(s["layers"], 12)}.get(mode, s["layers"])
+        ctx = "4096" if mode == "Safe" else "8192"                                 # Safe: a shorter memory too, so it needs less room
+        for layers in dict.fromkeys((first, 0)):                                   # the graphics card first; the processor if that fails
             _set("loading", f"Starting {s['label']}{' on the processor' if not layers else ''}…", 0.0, s["label"])
             port = _free_port(); log = open(paths.log_file("text_engine.log"), "a", encoding="utf-8", errors="replace")
-            log.write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} {s['label']} layers={layers} ===\n"); log.flush()
-            cmd = [exe, "-m", f, "-ngl", str(layers), "-c", "8192", "--jinja", "--host", "127.0.0.1", "--port", str(port)]
+            log.write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} {s['label']} {mode} layers={layers} context={ctx} ===\n"); log.flush()
+            cmd = [exe, "-m", f, "-ngl", str(layers), "-c", ctx, "--jinja", "--host", "127.0.0.1", "--port", str(port)]
             p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=os.path.dirname(exe),
                                  creationflags=0x08000000 if sys.platform == "win32" else 0)
             _server.update(proc=p, port=port, key=key); t0 = time.time()
             while time.time() - t0 < 300 and p.poll() is None:
                 try:
                     if _http("/health", timeout=5).get("status") == "ok":
-                        _set("ready", f"{s['label']} ready ({'graphics card' if layers else 'processor'}).", 1.0, s["label"]); return
+                        where = "processor" if not layers else ("graphics card" if layers >= 99 else "graphics card + processor")
+                        _set("ready", f"{s['label']} ready ({where}, {mode}).", 1.0, s["label"]); return
                 except (urllib.error.URLError, ConnectionError, OSError, ValueError): pass
                 time.sleep(0.5)
             stop()
