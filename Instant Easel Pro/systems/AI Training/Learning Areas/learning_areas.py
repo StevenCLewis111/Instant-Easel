@@ -400,8 +400,7 @@ class Dialog(tk.Toplevel):
         for label in (a, b):
             if label is None: continue
             T.Text(p, label.upper()).pack(anchor="w")
-            t = tk.Text(p, width=60, height=5 if b else 3, bg=T.PALETTE["field"], fg=T.PALETTE["text"], insertbackground=T.PALETTE["text"],
-                        relief="flat", font=T.f(10), wrap="word", highlightthickness=1, highlightbackground=T.PALETTE["border"])
+            t = T.Field(p, height=5 if b else 3, scroll=True, width=60); t.configure(font=T.f(10))
             t.pack(fill="both", expand=True, pady=(2, 8)); self.boxes.append(t)
         r = tk.Frame(p, bg=p["bg"]); r.pack()
         T.Button(r, "OK", self.ok).pack(side="left", padx=6); T.Button(r, "Cancel", self.destroy, kind="danger").pack(side="left")

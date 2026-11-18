@@ -1101,14 +1101,14 @@ class ScraperPage(Page):
         super().__init__(master, app); self.thread = None; self.stop_event = threading.Event()
         T.Title(self, "Image scraper").pack(pady=(0, 6))
         self.intro = T.Text(self, "Keywords, one per line (up to 20). Pictures are saved to the images folder, one folder per keyword.", muted=True); self.intro.pack()
-        self.words = T.Field(self, height=8); self.words.pack(fill="x", pady=(10, 0))
+        self.words = T.Field(self, height=8, scroll=True); self.words.pack(fill="x", pady=(10, 0))
         r = themed_frame(self); r.pack(pady=12)
         self.start_btn = T.Button(r, "Start", self.start, width=12); self.start_btn.pack(side="left", padx=8)
         self.stop_btn = T.Button(r, "Stop", self.stop, width=12, kind="danger"); self.stop_btn.pack(side="left", padx=8); self.stop_btn.state("disabled")
         T.Button(r, "Open images folder", self.open_folder, width=20).pack(side="left", padx=8)
         T.Button(r, "Review & add", self.send_to_learning, width=16).pack(side="left", padx=8)
         T.Hints(self, [("TAB", "next button"), ("ENTER", "press")]).pack(side="bottom", pady=4)
-        self.log_box = T.Field(self, height=10); self.log_box.pack(fill="both", expand=True)
+        self.log_box = T.Field(self, height=10, scroll=True); self.log_box.pack(fill="both", expand=True)
         self.log_box.bind("<Key>", lambda e: None if (e.state & 4 and e.keysym.lower() in ("c", "a")) else "break")   # read-only (copy still works)
 
     def _grabber(self):

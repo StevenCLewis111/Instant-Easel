@@ -266,7 +266,7 @@ def bar_art():
 def _on_bar(words, w):
     """the words picture laid on the painted HISTORY bar, sized to the button: hover brighter, off greyed, danger red"""
     import art_panel as AP
-    from PIL import Image, ImageOps
+    from PIL import ImageOps
     W, H = words.width, max(words.height, int(round(30 * Z)))
     base = AP.bar("bar_blank", W, H, 0.3)
     if getattr(w, "kind", "") == "danger":
@@ -340,10 +340,26 @@ class HueSlider(tk.Canvas):
         """the track runs between these x positions, inset by the knob's radius so the knob never goes past the edge"""
         p = (self.KNOB + 2) * Z; return p, max(p + 1, self.w - p)
     def _drag(self, e):
-        a, b = self._ends(); self.value = min(1, max(0, (e.x - a) / (b - a))); self._draw()
+        a, b = self._ends()
+        if _art() is not None: K = 2 * (self.KNOB + 2) * Z; a, b = K / 2, max(K / 2 + 1, self.w - K / 2)       # (the painted knob's travel)
+        self.value = min(1, max(0, (e.x - a) / (b - a))); self._draw()
         if self.command: self.command(self.value)
     def _draw(self):
         z = Z; self.w = int(self.dw * z); self.configure(bg=self.master["bg"], width=self.w, height=int(26 * z)); self.delete("all")
+        ap = _art()
+        if ap is not None:                                                       # the painted slider's track shape, in rainbow, with its knob
+            H = int(26 * z); K = int(2 * (self.KNOB + 2) * z); v = round(self.value, 3); W = self.w
+            def make():
+                from PIL import Image
+                import colorsys as _cs
+                th = max(6, int(K * 0.46)); ty = (H - th) // 2; shape = ap.bar("slider_track", W, th, 0.5)
+                a0, b0 = K / 2, max(K / 2 + 1, W - K / 2); row = bytearray()
+                for x in range(W):
+                    r, g, bb = _cs.hsv_to_rgb(min(1, max(0, (x - a0) / (b0 - a0))), 0.85, 0.95); row += bytes((int(r * 255), int(g * 255), int(bb * 255)))
+                rain = Image.frombytes("RGB", (W, 1), bytes(row)).resize((W, th)).convert("RGBA"); rain.putalpha(shape.getchannel("A"))
+                out = Image.new("RGBA", (W, H)); out.alpha_composite(rain, (0, ty))
+                out.alpha_composite(ap.fit("slider_knob", K, K), (int(v * (W - K)), (H - K) // 2)); return out
+            self._ph = ap.photo(("hue", W, H, v, K), make); self.create_image(0, 0, image=self._ph, anchor="nw"); return
         a, b = self._ends(); step = max(2, int(2 * z))
         for x in range(int(a), int(b) + 1, step): self.create_line(x, 9 * z, x, 19 * z, fill=hue_hex((x - a) / (b - a), 0.85, 0.92), width=step)
         k = a + self.value * (b - a); r = self.KNOB * z; self.create_oval(k - r, 4 * z, k + r, 22 * z, fill="white", outline="#ddd")
@@ -540,10 +556,28 @@ class Tabs(tk.Frame):
                         highlightbackground=PALETTE["border"] if act else self.master["bg"], highlightcolor=PALETTE["border"])
 
 class Field(tk.Text):
-    def __init__(self, master, height=4, **kw):
-        super().__init__(master, height=height, wrap="word", font=f(12), relief="flat", padx=10, pady=8, highlightthickness=1, insertbackground="white", **kw)
+    """a typing box. scroll=True: with the painted scroll bar (the Draw page's) at its right, inside the same green border;
+    pack / grid / place it as usual (they place the box and its bar together)"""
+    def __init__(self, master, height=4, scroll=False, **kw):
+        self._outer = None
+        if scroll:
+            self._outer = tk.Frame(master, bd=0, highlightthickness=1); master = self._outer
+        super().__init__(master, height=height, wrap="word", font=f(12), relief="flat", padx=10, pady=8, highlightthickness=0 if scroll else 1, insertbackground="white", **kw)
+        if scroll:
+            self.sb = Scrollbar(self._outer, command=self.yview); self.configure(yscrollcommand=self.sb.set)
+            self.sb.pack(side="right", fill="y", padx=(2, 3), pady=3); tk.Text.pack(self, side="left", fill="both", expand=True)
+            wheel_area(self._outer, lambda n: self.sb.can_scroll() and self.yview_scroll(n, "units"))
         self._style(); on_change(self._style)
-    def _style(self): self.configure(bg=PALETTE["field"], fg="white", highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
+    def _style(self):
+        self.configure(bg=PALETTE["field"], fg="white", highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
+        if self._outer is not None: self._outer.configure(bg=PALETTE["field"], highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
+    def pack(self, *a, **k): return (self._outer.pack if self._outer is not None else super().pack)(*a, **k)
+    def grid(self, *a, **k): return (self._outer.grid if self._outer is not None else super().grid)(*a, **k)
+    def place(self, *a, **k): return (self._outer.place if self._outer is not None else super().place)(*a, **k)
+    def pack_forget(self): return (self._outer.pack_forget if self._outer is not None else super().pack_forget)()
+    def grid_forget(self): return (self._outer.grid_forget if self._outer is not None else super().grid_forget)()
+    def winfo_manager(self): return (self._outer.winfo_manager if self._outer is not None else super().winfo_manager)()
+    pack_configure, grid_configure, place_configure = pack, grid, place
 
 class Entry(tk.Entry):
     def __init__(self, master, textvariable=None, width=30, **kw):

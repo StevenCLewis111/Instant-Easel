@@ -192,8 +192,7 @@ class Editor(tk.Toplevel):
         p = T.Panel(self, pad=14); p.pack(fill="both", expand=True, padx=8, pady=8)
         T.Title(p, title).pack(pady=(0, 4))
         if guide: g = T.Text(p, guide, muted=True, font=T.f(9)); g.configure(wraplength=640); g.pack(pady=(0, 6))
-        self.box = tk.Text(p, width=80, height=22, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat", font=T.f(10), wrap="word",
-                           highlightthickness=1, highlightbackground=T.PALETTE["border"], undo=True)
+        self.box = T.Field(p, height=22, scroll=True, width=80, undo=True); self.box.configure(font=T.f(10))
         self.box.pack(fill="both", expand=True); self.box.insert("1.0", text)
         self.count = T.Text(p, "", muted=True, font=T.f(8)); self.count.pack(anchor="e")
         self.box.bind("<KeyRelease>", lambda e: self._count()); self._count()
