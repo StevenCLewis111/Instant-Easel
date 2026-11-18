@@ -145,8 +145,8 @@ def button(w, text=None, chars=None, taller=2, piece="rainbow"):
     w._style = style; style(); T.on_change(style, zoom=True); return w
 
 def tabs(row):
-    """every tab of a T.Tabs row: the open tab bright with its ring (round the tab's own shape), the others a little darker,
-    brighter under the mouse"""
+    """every tab of a T.Tabs row: the open tab bright with its ring (round the tab's own shape), the others a little darker;
+    under the mouse a tab brightens and gets the ring too (as the Draw page's buttons do)"""
     if not available(): return row
     for n, b in row.btns.items():
         _take_over(b, n, None); b._hover = False
@@ -158,7 +158,7 @@ def tabs(row):
         for n, b in row.btns.items():
             if b.cget("bg") != row.master["bg"]: b.configure(bg=row.master["bg"])
             if int(b.cget("highlightthickness")): b.tk.call(b._w, "configure", "-highlightthickness", 0)
-            draw(b, "hover" if b._hover else ("normal" if n == row.active else "dim"), ring=n == row.active)
+            draw(b, "hover" if b._hover else ("normal" if n == row.active else "dim"), ring=n == row.active or b._hover)   # ring under the mouse, and kept on the open tab
     row._style = restyle; restyle(); T.on_change(restyle, zoom=True); return row
 
 # ---------------------------------------------------------------- status dots
