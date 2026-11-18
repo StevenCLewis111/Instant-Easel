@@ -5,18 +5,12 @@ status: "built" | "partial" | "planned"     order: recommended build order (1 = 
 """
 MENUS = [
  ("AI Images", "Make new images", [
-   dict(name="Text to Image", status="partial", order=3, desc="Type what you want; it paints it.",
-        options=["Prompt box with 'what I understood' and unknown words (built)",
-                 "SHARED IMAGE SETTINGS PANEL, right side of Images, used by every Create tool (built):",
-                 "   Model: Core (default) / My learned style (built); trained models appear here once Training > Models exists",
-                 "   Art style: 19 styles in a thumbnail gallery (built): Painterly, Realism, Oil Painting, Watercolor, Pastel, Pencil Sketch, Black and White, Cartoon, Anime, Comic Book, Pop Art, Street Art, Pixel Art, Abstract, Impressionist, Stained Glass, Woodblock Print, Neon, Low Poly; style words in the prompt pick them too",
-                 "   Aspect ratio: 2:3, 3:2, 1:1, 16:9, 9:16, original, painted at that shape (built)",
-                 "   Next: cover and thumbnail presets: 21:9 wide cover, 4:5 and 3:4 vertical, 1:1 share card, 1280x720 thumbnail, 6x9 in book cover; 'make all sizes' from one image",
-                 "   How many: 1, 4 (2x2) or 9 (3x3), click one to choose it (built)",
-                 "   Starting image: upload / clear; guides colors in Text to Image, is the picture in Image to Image (built)",
-                 "   Download all (built); Save per image (built)", "New variation (built)", "Next: your saved styles in Art style; trained models in Model"]),
-   dict(name="Image to Image", status="built", order=0, desc="Repaint any picture, guided by words.",
-        options=["Strength", "Art style, model, aspect, how many: from the shared Image settings panel", "Palette: keep, warm, night", "Mood words, night re-lighting, captions"]),
+   dict(name="Text to Image", status="planned", order=3, desc="Type what you want; the image model paints it.",
+        options=["Your words go through the core text model first, which turns them into a clear picture description",
+                 "Pick which of your image models (Cartoon, Fashion, Nature...) to switch on", "Size, how many, seed", "Save / download"],
+        notes="Needs an image model: Settings > AI Models > AI Images (Stable Diffusion 1.5 recommended for a 6 GB card). Being built next."),
+   dict(name="Image to Image", status="planned", order=4, desc="Repaint any picture, guided by words.",
+        options=["Start from a picture", "How much to change it", "Your image models"], notes="Needs the image engine (being built next)."),
    dict(name="Prompt to Edit", status="planned", order=10, desc="Edit an image by describing the change.",
         options=["'make it night', 'warmer', 'more clouds', 'remove the rocks', 'brighter'", "For its own paintings: re-paint with changed settings",
                  "For any picture: maps words to Edit adjustments", "Shows what it changed; one-click undo"]),
@@ -111,27 +105,16 @@ MENUS = [
                  "New, Open, Use last created, Save, Send to Editing", "Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y",
                  "Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails"])]),
  ("AI Training", "Teach it", [
-   dict(name="Models", status="built", order=0, desc="Trained models on a shared Core: create, select, rename, train, versions, delete.",
-        options=["Create: name, focus (Landscapes, Faces, Cartoons, Animals, Night scenes, Architecture, Custom), description; start empty or from another model",
-                 "Select: the model Images paints with (also in Image settings > Model)", "Train: opens Learn from Images aimed at that model",
-                 "Rename; Delete (with confirmation; the Core and other models are untouched)", "Versions: every training session saves one; roll back any time",
-                 "Each model: its own images (deleted after learning), learned style, and words",
-                 "Shared Core: painting knowledge, brushes, styles, words taught to all models, and every label correction (improves every model's guesses)"],
-        notes="A model learns how things look (color, texture, brushwork, light). New kinds of subjects need a painter in the Core, which then serves every model."),
-   dict(name="Image Learning", status="built", order=0, desc="Teach it how things look, step by step: goal, collect, clean, label, settings, train, test.", options=[]),
+   dict(name="Image Learning", status="partial", order=5, desc="Your image models (Cartoon, Fashion, Nature...), each with its own pictures, step by step.", options=[]),
    dict(name="Video Learning", status="planned", order=22, desc="Teach it movement from short clips (needs a 16 GB+ graphics card to train).", options=[]),
-   dict(name="Chat Learning", status="partial", order=23, desc="Teach it how to answer: examples, a check set, training, testing; a library for facts.", options=[]),
-   dict(name="Coding Learning", status="partial", order=24, desc="Teach it to code your way from permitted, clean code and your examples.", options=[]),
+   dict(name="Chat Learning", status="built", order=0, desc="Teach it how to answer: examples, a check set, training, testing; a library for facts.", options=[]),
+   dict(name="Coding Learning", status="built", order=0, desc="Teach it to code your way from permitted, clean code and your examples.", options=[]),
    dict(name="Image Scraper", status="built", order=0, hidden=True, parent="Image Learning", desc="Find pictures on Google Images to learn from.", options=[]),
-   dict(name="Learn from Images", status="built", order=0, hidden=True, parent="Image Learning", desc="Images it learns from (guess + confirm), per subject. Images are deleted after learning.",
-        options=["Add images", "Confirm labels", "Learn", "Cumulative: new learning blends into old, weighted by image count", "Fingerprints stop the same picture being learned twice",
-                 "After learning, the app's copies are deleted (switch 'Keep copies' to keep them); your originals are never touched", "Dated profile versions in history/ (numbers only)"]),
-   dict(name="Words", status="built", order=0, hidden=True, parent="Image Learning", desc="Teach its vocabulary.", options=["Teach a word", "Words you've taught", "Test understanding"]),
+   dict(name="Pictures", status="built", order=0, hidden=True, parent="Image Learning", desc="The active image model's pictures and their review.", options=[]),
  ]),
  ("Settings", "The app itself", [
    dict(name="General", status="built", order=0, desc="Save folder, file format and quality, auto-save, file names, start tab, confirm on quit.",
         options=["Save folder (change / open)", "File format PNG / JPEG / WebP and quality", "Auto-save every result into a dated folder", "File name pattern", "Open on start", "Confirm before quitting"]),
-   dict(name="Generation Defaults", status="built", order=0, desc="What the Image settings start with; fixed or random seed.", options=["Model, art style, aspect, how many", "Seed: random or fixed", "Apply now"]),
    dict(name="Performance", status="built", order=0, desc="Speed vs quality.", options=["Editing preview size", "Image to Image working size", "Draw undo steps"]),
    dict(name="Display", status="built", order=0, desc="Fixed layout with scroll bars, window modes, text size, hints, splash.",
         options=["Fixed layout: panels never move or squeeze; scroll bars when the window is smaller", "Window mode: Windowed / Maximized / Full screen (F11, Esc)",
@@ -139,18 +122,14 @@ MENUS = [
                  "Text size Small / Normal / Large", "Show hints", "Startup splash"]),
    dict(name="Privacy & Data", status="built", order=0, desc="What stays on your PC; storage used; clear learned data; reset words.",
         options=["Works offline statement", "Keep training copies (default off)", "Storage used by category", "Open data folder", "Clear learned data", "Reset taught words", "Local error log"]),
-   dict(name="AI Models", status="partial", order=5, desc="Built-in model runner (no separate programs): hardware, catalog, model files.",
-        options=["Your PC: processor, memory, graphics card", "Use the graphics card (Vulkan)", "Models folder", "Catalog: Gemma 4 E4B, SDXL-class, FLUX.1 [schnell] with size and license; found / not installed",
-                 "Add a model file", "Next: the built-in runner that loads and uses the models; downloads"],
-        notes="Author's direction: native first; model files loaded by the app itself, no separate programs."),
-   dict(name="Text Model", status="built", order=0, desc="The English model that reads what you type: download, size, what each tab learned, train, send learning across.",
-        options=["Download Qwen3 (4B with an 8 GB+ graphics card, else 1.7B)", "Each tab's memory and its trained add-on", "Train a tab", "Send learning from one tab to another", "Forget a tab"]),
+   dict(name="AI Models", status="partial", order=1, desc="The core text model (Qwen3.5 4B or 9B, switchable) and each AI tab's own model.",
+        options=["Core text model: Qwen3.5 4B or 9B, download, start, stop, switch any time", "AI Chat: the core model", "AI Coding: the core model or Qwen2.5 Coder 7B",
+                 "AI Images: Stable Diffusion 1.5 / XL / your own file (engine being built next)", "AI Videos: needs a 16 GB+ graphics card"]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=["Anywhere", "Text to Image", "Image to Image", "Draw studio", "Editing"]),
    dict(name="Backup & Reset", status="built", order=0, desc="Export / import settings, theme, words and learned style; reset all settings.", options=["Export backup", "Import backup", "Reset all settings"]),
    dict(name="Theme", status="built", order=0, desc="Look of the app.", options=["Border color", "Background color", "Panel opacity", "Build a theme from one color (Matching, Complementary, Split, Triadic)", "Reset"]),
    dict(name="About", status="built", order=0, desc="Logo, version, credits and open-source notes.", options=["Easel logo", "Version", "Credits", "Open-source notes and licenses"]),
-   dict(name="Classic Tools", status="built", order=0, desc="Older tools: repaint book scenes, styles.", options=["Book scenes", "Styles"]),
  ]),
 ]
 
@@ -159,26 +138,21 @@ MENUS = sorted(MENUS, key=lambda m: TAB_ORDER.index(m[0]) if m[0] in TAB_ORDER e
 OLD_TAB_NAMES = {"Images": "AI Images", "Videos": "AI Videos", "Chat": "AI Chat", "Code": "AI Coding", "Training": "AI Training", "Draw": "Drawing"}
 
 MODELS_DESIGN = """
-## How models work (design)
+## How the models fit together (design)
 
-**The Core** is shared by every model, and improved by every model:
-- **Language:** the painting vocabulary, and every word taught in any model.
-- **Painting knowledge:** composition, light and depth rules (`KNOWLEDGE.md`), the brushes and the subject painters (sky, mountains, rock, grass, figures…).
-- **Learning methods:** how images are measured (palette, texture, brushwork, light and dark), the label guesser and its corrections, and the test suite.
-- **When any model is trained,** anything general it teaches (new words, corrected guesses, better learning settings) goes into the Core, so every model benefits.
+**One core text model** (Qwen3.5 4B or 9B, switchable in Settings > AI Models) understands you in every AI tab. It runs on this PC
+through llama.cpp, which reaches Intel Arc, AMD and NVIDIA cards through Vulkan.
 
-**A Model** is trained its own way to become its own thing:
-- **Identity:** a name, a focus (faces, cartoons, animals, landscapes, night scenes…), a description and a cover image.
-- **Its own training images,** labeled by subject.
-- **Its own learned style:** palettes, textures, brushwork and light-and-dark structure, learned only from its images.
-- **Its own words,** on top of the Core's (for example, "chibi" means something only in the cartoons model).
-- **Its own defaults:** medium, palette, aspect ratio.
-- **Versions** (like checkpoints): every training saves a version you can roll back to, with its test scores.
+**Each tab can add its own model** on top of the core, for what that tab makes:
+- AI Chat: the core model.
+- AI Coding: the core model, or a coding model (Qwen2.5 Coder 7B).
+- AI Images: an image model (Stable Diffusion 1.5 for a 6 GB card). Your words go through the core model first.
+- AI Videos: a video model (needs a 16 GB+ card).
 
-**In Training > Models:** create, select (the active model), rename or edit, delete (with confirmation), see its images, versions and scores.
-**In Create:** pick which model paints.
-
-**Honest limit:** a model learns *how things look* (color, texture, light, brushwork) from its images. Drawing a new *kind* of subject (animal bodies, cartoon faces) also needs a painter for that subject in the Core, and once it's added, every model can use it.
+**Training** has a side button per area (Image, Video, Chat, Coding), each with the steps that suit it.
+- Image Learning has one more layer: your own image models (Cartoon, Fashion, Nature...). Each is trained on its own pictures, as a
+  small add-on (LoRA) on top of the image model.
+- Chat and Coding learn from examples and a library now. Fine-tuning the model itself needs a 12 GB+ graphics card.
 """
 
 def roadmap_md():

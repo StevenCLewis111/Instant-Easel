@@ -1,91 +1,36 @@
-# Setting up the text model on your PC
+# Setting up the core text model
 
-The text model reads what you type in the app. It's a free, open model (Qwen3, Apache 2.0) that runs on your own PC: nothing is
-sent anywhere. It's several GB, so it isn't stored on GitHub; the app downloads it once into `my-models/text/`.
+The core text model is the English model every AI tab uses. You pick it in **Settings > AI Models**:
 
-You only do steps 1-5 once.
+| Model | Size | On your Intel Arc A380 (6 GB) |
+|---|---|---|
+| **Qwen3.5 4B** (default) | about 3 GB | Fits fully on the graphics card: quick. |
+| **Qwen3.5 9B** | about 5.7 GB | Smarter, but part of it runs on the processor: slower. Needs 16 GB+ of PC memory. |
 
-## 1. Get the latest code
-In your copy of the repo, pull the newest version:
-- **GitHub Desktop:** open the repo, press **Fetch origin**, then **Pull origin**.
-- **Command line:** open a terminal in the repo folder and run `git pull`.
+You can switch between them any time. Both stay downloaded, so you can compare how each runs.
 
-## 2. Make sure Python 3.12 is installed
-Open a terminal (Start menu, type `cmd`, Enter) and run `python --version`. If it doesn't say 3.10 or newer, install Python 3.12
-from https://www.python.org/downloads/ and tick **"Add python.exe to PATH"** on the first screen of the installer.
+## Steps
 
-## 3. Open a terminal in the Instant Easel Pro folder
-In File Explorer, open the `Instant Easel Pro` folder, click the address bar, type `cmd` and press Enter. A terminal opens there.
+1. **Update your graphics driver** (Intel Arc: Intel's driver page, or the Intel Driver & Support Assistant). The engine reaches the card through Vulkan, which comes with the driver.
+2. Open the app and go to **Settings > AI Models**.
+3. Press **Download it**. The first time, this downloads the engine (llama.cpp, about 30–60 MB) and the model you picked. The status line shows progress.
+4. Press **Start it now** (or just use an AI tab; it starts by itself the first time).
+5. To try the other model, switch **Core model** to Qwen3.5 9B and press **Download it** again.
 
-## 4. Install the add-ons
-Run these one at a time (each takes a few minutes the first time):
+Nothing else needs installing: no Python add-ons and no separate programs.
 
-```
-python -m pip install -r requirements.txt
-```
+## If something goes wrong
 
-**Then the graphics-card part, for your card only** (this lets the model run on the card: much faster, and training needs it).
+- **It runs, but slowly:** the status says whether it's on the graphics card or the processor. If it says processor, update the graphics driver and press **Start it now** again.
+- **It won't start:** the details are in `logs/text_engine.log`. Send that file to me.
+- **Download stopped part-way:** press **Download it** again; it carries on where it stopped.
 
-*Intel Arc (your A380):* first update the graphics driver from Intel
-(https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html, or the Intel Graphics Software
-app > Driver), restart, then:
-```
-python -m pip install torch --index-url https://download.pytorch.org/whl/xpu
-```
-*NVIDIA:*
-```
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-```
+## Teaching it
 
-Then, for everyone:
-```
-python -m pip install -r requirements-ai.txt
-```
+**AI Training > Chat Learning** and **Coding Learning**:
 
-To check it found your card, run:
-```
-python -c "import torch; print(torch.xpu.is_available() if hasattr(torch, 'xpu') else False, torch.cuda.is_available())"
-```
-With the Arc card it should print `True False`. If it prints `False False`, update the driver, restart, and run the Intel line again.
-Intel Arc support needs Windows 11.
+- **Teach examples:** a question, plus the answer you want.
+- **Add documents or code to its library:** it looks things up there before answering.
+- **Test it:** ask it questions.
 
-## 5. Start the app and download the model
-```
-python main.py
-```
-Go to **Settings > Text Model**.
-- The second line under MODEL says which graphics card it found (or that it's using the processor).
-- **Model size** `auto` picks for you: the 4B model with a graphics card of 8 GB or more, otherwise the 1.7B. Your Arc A380 has 6 GB, so it gets
-  the 1.7B (about 4 GB to download), which runs and trains on the card.
-- Press **Download the model** and wait until it says *downloaded* (4-8 GB; the percentage counts up).
-
-The .exe in `EXE Build` doesn't include the text model (it would be several GB). To use the text model, start the app with
-`python main.py` as above.
-
-## Using it
-
-**Type anything.** In **AI Images > Text to Image**, type a request in your own words and press Generate. Under *What I understood*,
-items marked **(AI)** came from the text model. The first time, it takes a little while to load.
-
-**Teach it.** **AI Training > Words > Teach a new word or phrase**: what you teach goes into the AI Images tab's memory straight
-away (the model uses it as an example at once).
-
-**Train a tab.** **Settings > Text Model > Train** next to a tab bakes everything that tab was taught into its own small add-on.
-The base model and the other tabs don't change. Training runs in the background; the status line shows how far it is.
-
-**Send learning to another tab.** Settings > Text Model > *Send learning to another tab*: pick From and To, press **Send**.
-Nothing moves between tabs any other way.
-
-**Forget a tab.** **Forget** next to a tab deletes only that tab's memory.
-
-## Learning from scraped pictures
-1. **AI Training > Image Scraper:** type keywords (one per line), press **Start**.
-2. When it's done, press **Review & learn**. Every scraped picture opens in Learn from Images' review.
-3. Check each one: change *shows* if its label is wrong, and switch off **use it** for any picture you don't want.
-4. Press **Add to library**. The pictures you kept go into the learning library; the scraped files are deleted, kept or not.
-5. Press **Learn** in Learn from Images. With **Keep training copies** off, each picture is deleted once it's been learned.
-
-## Where things are
-- `my-models/text/base/`: the downloaded model (never uploaded to GitHub).
-- `my-models/text/tabs/<Tab>/`: each tab's memory (`examples.jsonl`) and its trained add-on (`adapter/`).
-- `systems/Core/brain.py`: the code that runs it.
+Training the model itself (fine-tuning) needs a graphics card with 12 GB or more, so those options are greyed out for now. Examples and the library work today.

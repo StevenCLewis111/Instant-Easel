@@ -62,29 +62,11 @@ class GeneralPage(SettingsPage):
         d = filedialog.askdirectory(parent=self.app, initialdir=prefs.get("save_folder"))
         if d: prefs.set("save_folder", d); self.folder_lbl.configure(text=d)
 
-# ---------------------------------------------------------------- Generation defaults
-class GenDefaultsPage(SettingsPage):
-    TITLE = "Generation Defaults"; NOTE = "What the Image settings panel starts with each time the app opens."
-    def build(self):
-        import styles_fx
-        import models as MD; self.choice("Model", "default_model", MD.BUILTIN + MD.names())
-        self.choice("Art style", "default_style", styles_fx.STYLES)
-        self.choice("Aspect", "default_aspect", ["2:3", "3:2", "1:1", "16:9", "9:16", "original"])
-        self.choice("How many", "default_count", ["1", "4", "9"])
-        self.choice("Seed", "seed_mode", ["random", "fixed"], "Fixed: the same request paints the same picture every time (useful for comparing settings).")
-        self.entry("Fixed seed", "fixed_seed", width=10)
-        self.buttons(("Apply to Image settings now", self.apply, "normal"))
-    def apply(self):
-        g = self.app.gen
-        for k, key in (("model", "default_model"), ("style", "default_style"), ("aspect", "default_aspect"), ("count", "default_count")): g[k].set(prefs.get(key))
-        T.banner(self.app, "APPLIED — Image settings now use your defaults", "success")
-
 # ---------------------------------------------------------------- Performance
 class PerformancePage(SettingsPage):
     TITLE = "Performance"; NOTE = "Trade a little quality for speed on slower PCs."
     def build(self):
         self.choice("Editing preview", "edit_preview", ["Fast", "Normal", "Sharp"], "Size of the live preview while you drag sliders. Saving is always full size.")
-        self.choice("Image to Image size", "i2i_size", ["Fast", "Standard", "Large"], "Working size of the longest side: 1200, 1600 or 2400 px.")
         self.choice("Draw undo steps", "undo_steps", ["10", "30", "60", "100"], "More steps use more memory on big canvases.")
 
 # ---------------------------------------------------------------- Display
@@ -101,149 +83,113 @@ class DisplayPage(SettingsPage):
 
 # ---------------------------------------------------------------- Privacy & data
 class PrivacyPage(SettingsPage):
-    TITLE = "Privacy & Data"; NOTE = ("Instant Easel works offline. Your prompts, pictures and learning stay on this PC. The internet is only used "
-                                      "if you check for updates or download a model.")
+    TITLE = "Privacy & Data"; NOTE = ("Instant Easel works offline. Your prompts, pictures and everything the AI tabs learn stay on this PC. The internet "
+                                      "is only used to download a model, search for training pictures, or check for updates.")
     def build(self):
-        import app as classic
-        self.lib = classic.library_dir()
-        self.toggle("Keep training copies", "keep_training_copies", "Off: images you teach it are measured, then the app's copies are deleted.")
+        import brain; self.lib = paths_data("my-library"); self.tabs = brain.TABS_DIR; self.models = brain.ROOT
+        self.toggle("Keep training copies", "keep_training_copies", "Off: after training, the app's copies of your pictures are deleted.")
         T.Text(self.body, "STORAGE USED", font=T.f(10)).pack(anchor="w", pady=(12, 4)); self.usage = T.Text(self.body, "", font=T.f(9)); self.usage.pack(anchor="w")
         self.buttons(("Refresh", self.refresh, "normal"), ("Open data folder", lambda: prefs.open_folder(prefs.home_dir()), "normal"))
-        self.buttons(("Clear learned data", self.clear_learning, "danger"), ("Reset taught words", self.reset_words, "danger"))
+        self.buttons(("Clear training pictures", self.clear_pictures, "danger"), ("Clear what the AI tabs were taught", self.clear_taught, "danger"))
         self.refresh()
     def refresh(self):
-        rows = [("Learning library (images waiting + learned style)", prefs.folder_size(self.lib)), ("AI model files", prefs.folder_size(prefs.models_folder())),
+        rows = [("Training pictures and image models", prefs.folder_size(self.lib)), ("What the AI tabs were taught", prefs.folder_size(self.tabs)),
+                ("Downloaded AI models", prefs.folder_size(self.models)),
                 ("Saved images", prefs.folder_size(prefs.get("save_folder")) if os.path.isdir(prefs.get("save_folder")) else 0)]
-        for name in ("vocab.json", "instant_easel_settings.json", "instant_easel_theme.json", "instant_easel_errors.log"):
+        for name in ("instant_easel_settings.json", "instant_easel_theme.json", "instant_easel_errors.log"):
             p = _data_file(name); rows.append((name, os.path.getsize(p) if os.path.exists(p) else 0))
-        self.usage.configure(text="\n".join(f"{k:<52} {prefs.human(v):>10}" for k, v in rows))
-    def clear_learning(self):
-        if T.popup(self.app, "CLEAR LEARNED DATA?", "Deletes everything it has learned and any images waiting to be learned.\nThis can't be undone.",
+        self.usage.configure(text="\n".join(f"{k:<44} {prefs.human(v):>10}" for k, v in rows))
+    def clear_pictures(self):
+        if T.popup(self.app, "CLEAR TRAINING PICTURES?", "Deletes every image model and the pictures waiting to be learned.\nThis can't be undone.",
                    (("Clear", "danger"), ("Cancel", "normal"))) == "Clear":
-            shutil.rmtree(self.lib, ignore_errors=True); os.makedirs(self.lib, exist_ok=True); self.refresh(); T.banner(self.app, "LEARNED DATA CLEARED", "success")
-    def reset_words(self):
-        if T.popup(self.app, "RESET TAUGHT WORDS?", "Forgets the words you've taught. Its built-in vocabulary stays.", (("Reset", "danger"), ("Cancel", "normal"))) == "Reset":
-            try: os.remove(_data_file("vocab.json"))
-            except OSError: pass
-            self.refresh(); T.banner(self.app, "TAUGHT WORDS RESET — its built-in vocabulary stays", "success")
+            shutil.rmtree(self.lib, ignore_errors=True); os.makedirs(self.lib, exist_ok=True); self.refresh(); T.banner(self.app, "TRAINING PICTURES CLEARED", "success")
+    def clear_taught(self):
+        if T.popup(self.app, "CLEAR WHAT THE AI TABS WERE TAUGHT?", "Every tab's examples and library are deleted. The models themselves stay.",
+                   (("Clear", "danger"), ("Cancel", "normal"))) == "Clear":
+            shutil.rmtree(self.tabs, ignore_errors=True); self.refresh(); T.banner(self.app, "CLEARED — the AI tabs start fresh", "success")
 
-# ---------------------------------------------------------------- AI models
-CATALOG = [
-    dict(name="Gemma 4 E4B", role="Understanding: any wording, labels and sorts training images, prompt to edit, checks results",
-         size="about 4-6 GB", license="Apache 2.0", pattern="*gemma*4*e4b*.gguf"),
-    dict(name="SDXL-class, 4-8 steps", role="Fast AI image generation (fits a 6 GB graphics card)", size="about 3-7 GB", license="OpenRAIL++", pattern="*sdxl*.gguf"),
-    dict(name="FLUX.1 [schnell]", role="Higher-quality AI image generation (slower on 6 GB; uses system RAM too)", size="about 7-12 GB", license="Apache 2.0", pattern="*flux*schnell*.gguf"),
-]
-def hardware():
-    info = {"Processor": platform.processor() or platform.machine(), "System": f"{platform.system()} {platform.release()}"}
-    try:
-        if sys.platform == "win32":
-            import ctypes
-            class M(ctypes.Structure): _fields_ = [("l", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong), ("avail", ctypes.c_ulonglong),
-                                                   ("tp", ctypes.c_ulonglong), ("ap", ctypes.c_ulonglong), ("tv", ctypes.c_ulonglong), ("av", ctypes.c_ulonglong), ("x", ctypes.c_ulonglong)]
-            m = M(); m.l = ctypes.sizeof(M); ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)); info["Memory"] = prefs.human(m.total)
-            out = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"], capture_output=True, text=True, timeout=8,
-                                 creationflags=0x08000000).stdout.strip()
-            info["Graphics"] = ", ".join(x.strip() for x in out.splitlines() if x.strip()) or "unknown"
-        else:
-            kb = int(open("/proc/meminfo").read().split("MemTotal:")[1].split()[0]); info["Memory"] = prefs.human(kb * 1024)
-            out = subprocess.run(["sh", "-c", "lspci 2>/dev/null | grep -i -E 'vga|3d|display'"], capture_output=True, text=True, timeout=5).stdout.strip()
-            info["Graphics"] = out.split(": ", 1)[-1] if out else "not detected"
-    except Exception: info.setdefault("Graphics", "not detected")
-    return info
+def paths_data(*p):
+    import paths; d = paths.data(*p); os.makedirs(d, exist_ok=True); return d
+
+# ---------------------------------------------------------------- AI models: the core text model + each tab's own model
+IMAGE_MODELS = {"sd15": ("Stable Diffusion 1.5", "Runs on a 6 GB card and can be trained on your pictures there. The image engine is the next thing being built."),
+                "sdxl": ("Stable Diffusion XL", "Sharper pictures, but needs about 8 GB; on a 6 GB card it's slow and can't be trained."),
+                "file": ("A model file you add", "Any .safetensors image model; put it here with Add a model file.")}
+VIDEO_MODELS = {"none": ("None yet", "Making videos needs a video model and a graphics card with 16 GB or more (or a rented one online)."),
+                "wan22": ("Wan 2.2 5B", "The smallest good video model; needs about 16 GB. Saved as your choice for later.")}
 
 class AIModelsPage(SettingsPage):
-    TITLE = "AI Models"; NOTE = ("Built into Instant Easel: model files are loaded by the app itself, no separate programs. "
-                                 "The built-in runner that uses them is the next big build; this page already finds your hardware and model files.")
-    def build(self):
-        T.Text(self.body, "YOUR PC", font=T.f(10)).pack(anchor="w"); self.hw = T.Text(self.body, "Checking…", font=T.f(9)); self.hw.pack(anchor="w", pady=(2, 10))
-        threading.Thread(target=lambda: (lambda h: self.app.q.put(lambda: self.hw.configure(text="\n".join(f"{k:<10} {v}" for k, v in h.items()))))(hardware()), daemon=True).start()
-        self.toggle("Use the graphics card", "use_gpu", "Uses Vulkan, which Intel Arc, AMD and NVIDIA cards all support.")
-        c = self.row("Models folder"); self.mf = T.Text(c, prefs.models_folder(), font=T.f(9)); self.mf.pack(side="left", padx=(0, 8))
-        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "Open", lambda: prefs.open_folder(prefs.models_folder())).pack(side="left", padx=6)
-        T.Text(self.body, "MODEL CATALOG", font=T.f(10)).pack(anchor="w", pady=(12, 4)); self.cat = _frame(self.body); self.cat.pack(anchor="w", fill="x")
-        self.buttons(("Add a model file…", self.add_file, "normal"), ("Refresh", self.refresh, "normal")); self.refresh()
-    def refresh(self):
-        for w in self.cat.winfo_children(): w.destroy()
-        folder = prefs.models_folder()
-        for m in CATALOG:
-            have = [os.path.basename(p) for p in glob.glob(os.path.join(folder, m["pattern"]))]
-            r = T.Panel(self.cat, pad=8, inner=True); r.pack(fill="x", pady=3)
-            T.Text(r, f"{m['name']}   ({m['size']}, {m['license']})", font=T.f(10)).pack(anchor="w")
-            T.Text(r, m["role"], muted=True, font=T.f(9)).pack(anchor="w")
-            T.Text(r, ("FOUND: " + ", ".join(have)) if have else "NOT INSTALLED YET", font=T.f(9)).pack(anchor="w")
-    def pick(self):
-        d = filedialog.askdirectory(parent=self.app, initialdir=prefs.models_folder())
-        if d: prefs.set("models_folder", d); self.mf.configure(text=d); self.refresh()
-    def add_file(self):
-        p = filedialog.askopenfilename(parent=self.app, filetypes=[("Model files", "*.gguf *.safetensors"), ("All files", "*.*")])
-        if p: shutil.copy(p, prefs.models_folder()); self.refresh()
-
-# ---------------------------------------------------------------- the text model (systems/Core/brain.py)
-LEARNING_TABS = ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training"]
-class TextModelPage(SettingsPage):
-    TITLE = "Text Model"; NOTE = ("The English model that reads what you type. One base model is shared by every tab; each tab keeps its own memory "
-                                 "(what you teach it, and a small add-on trained from that), so tabs never mix unless you send learning across.")
+    TITLE = "AI Models"; NOTE = ("One core text model understands you in every AI tab; switch between 4B and 9B any time (both stay downloaded). "
+                                 "A tab can add its own model on top for what it makes. Everything runs on this PC.")
     def build(self):
         import brain; self.brain = brain
-        T.Text(self.body, "MODEL", font=T.f(10)).pack(anchor="w")
-        self.st = T.Text(self.body, "Checking…", font=T.f(9)); self.st.configure(wraplength=820); self.st.pack(anchor="w", pady=(2, 6))
-        self.size = self.choice("Model size", "text_model", ["auto", "large", "small"],
-                                "auto: the 4B model with a graphics card of 8 GB or more, else the 1.7B (an Arc A380 with 6 GB gets the 1.7B).   large: Qwen3 4B Instruct (about 8 GB "
-                                "download).   small: Qwen3 1.7B (about 4 GB).", after=self._poll)
-        self.btns = self.buttons(("Download the model", self.download, "normal"), ("Load it now", self.load, "normal"),
-                                 ("Open its folder", lambda: prefs.open_folder(os.path.dirname(brain.TABS_DIR)), "normal"))
-        T.Text(self.body, "WHAT EACH TAB HAS LEARNED", font=T.f(10)).pack(anchor="w", pady=(14, 4))
-        self.tabs = _frame(self.body); self.tabs.pack(anchor="w", fill="x")
-        T.Text(self.body, "SEND LEARNING TO ANOTHER TAB", font=T.f(10)).pack(anchor="w", pady=(14, 4))
-        r = _frame(self.body); r.pack(anchor="w")
-        self.src = tk.StringVar(value=LEARNING_TABS[0]); self.dst = tk.StringVar(value=LEARNING_TABS[2])
-        T.Text(r, "FROM", font=T.f(9)).pack(side="left"); T.Choice(r, "", LEARNING_TABS, self.src).pack(side="left", padx=6)
-        T.Text(r, "TO", font=T.f(9)).pack(side="left", padx=(8, 0)); T.Choice(r, "", LEARNING_TABS, self.dst).pack(side="left", padx=6)
-        T.Button(r, "Send", self.send).pack(side="left", padx=8)
-        T.Text(self.body, "   Copies what the first tab learned (its examples, and its trained add-on if it has one) into the second. Nothing else changes.",
-               muted=True, font=T.f(8)).pack(anchor="w")
-        self._rows(); self._poll()
-    def _rows(self):
-        for w in self.tabs.winfo_children(): w.destroy()
-        for tab in LEARNING_TABS:
-            i = self.brain.info(tab); r = _frame(self.tabs); r.pack(anchor="w", fill="x", pady=2)
-            trained = f"trained on {i['trained_on']} ({i['trained_when'][:16].replace('T', ' ')})" if i["adapter"] else "not trained yet"
-            T.Text(r, f"{tab:<12} {i['examples']:>4} things taught   {trained}", font=T.f(9)).pack(side="left")
-            T.Button(r, "Train", lambda t=tab: self.train(t)).pack(side="left", padx=(12, 4))
-            T.Button(r, "Forget", lambda t=tab: self.forget(t), kind="danger").pack(side="left")
-    def _poll(self):
-        """the model's state, every second while this page is open"""
-        def work():
-            st = self.brain.status(); g = self.brain.gpu()
-            hw = (f"Graphics card: {g[0]} ({g[1]:.0f} GB)" if g else "No usable graphics card found: the model runs on the processor (slower; training is very slow). "
-                  "Intel Arc and NVIDIA cards need the matching PyTorch: see docs/TEXT_MODEL_SETUP.md.")
-            pct = f"  {st.get('progress', 0) * 100:.0f}%" if st["state"] == "downloading" else ""
-            self.app.q.put(lambda: self.st.configure(text=f"{st['detail']}{pct}\n{hw}"))
-        if self.winfo_exists():
-            threading.Thread(target=work, daemon=True).start()
-            if self.winfo_ismapped(): self.after(1000, self._poll)
-            else: self.after(3000, self._poll)
-    def _done(self, ok, msg, title):
-        self.app.q.put(lambda: (T.banner(self.app, f"{title} — {msg}", "success" if ok else "error"), self._rows()))
-    def download(self): self.brain.download(on_done=lambda ok, m: self._done(ok, m, "DOWNLOADED" if ok else "DOWNLOAD FAILED"))
-    def load(self): self.brain.load_async(on_done=lambda ok, m: self._done(ok, "the text model is ready" if ok else m, "LOADED" if ok else "COULDN'T LOAD"))
-    def train(self, tab):
-        if not self.brain.examples(tab): return T.banner(self.app, f"NOTHING TO LEARN YET — teach {tab} something first")
-        T.banner(self.app, f"TRAINING {tab.upper()} — this runs in the background; the status above shows how far it is", "success")
-        self.brain.train_async(tab, on_done=lambda ok, m: self._done(ok, m, "TRAINED" if ok else "TRAINING FAILED"))
-    def forget(self, tab):
-        if T.popup(self.app, f"FORGET WHAT {tab.upper()} LEARNED?", "Its examples and trained add-on are deleted. Other tabs and the base model are kept.",
-                   (("Forget", "danger"), ("Cancel", "normal"))) == "Forget":
-            self.brain.forget(tab); self._rows(); T.banner(self.app, f"FORGOTTEN — {tab}", "success")
-    def send(self):
-        a, b = self.src.get(), self.dst.get()
-        if a == b: return T.banner(self.app, "PICK TWO DIFFERENT TABS")
-        r = self.brain.transfer(a, b); self._rows()
-        T.banner(self.app, f"SENT — {r['examples']} examples{' and the trained add-on' if r['adapter'] else ''} from {a} to {b}", "success")
+        def head(text): T.Text(self.body, text, font=T.f(11)).pack(anchor="w", pady=(10, 2))
+        head("CORE TEXT MODEL")
+        names = {k: v["label"] for k, v in brain.CORES.items()}; self.core_v = tk.StringVar(value=names[brain.core_key()])
+        c = self.row("Core model")
+        T.Choice(c, "", list(names.values()), self.core_v).pack(side="left")
+        self.core_v.trace_add("write", lambda *a: self._switch({v: k for k, v in names.items()}[self.core_v.get()]))
+        self.core_note = T.Text(self.body, "", muted=True, font=T.f(9)); self.core_note.pack(anchor="w", padx=(20, 0))
+        self.state = T.Text(self.body, "", font=T.f(10)); self.state.pack(anchor="w", pady=(4, 0))
+        self.card = T.Text(self.body, "Your graphics card: checking…", muted=True, font=T.f(9)); self.card.pack(anchor="w")
+        self.buttons(("Download it", lambda: self._download(None), "normal"), ("Start it now", self._start, "normal"),
+                     ("Stop it", self._stop, "danger"), ("Open the models folder", lambda: prefs.open_folder(brain.ROOT), "normal"))
+        head("EACH TAB'S MODEL  (text tabs use the core unless you pick their own)")
+        self.slot_rows = []
+        coder = brain.TAB_MODELS["coder7b"]
+        self._slot("AI Chat", "built", {"core": ("Core text model", "Chat talks to the core model directly. Teach it in AI Training > Chat Learning.")})
+        self._slot("AI Coding", "built", {"core": ("Core text model", "The core model writes and explains code too."),
+                                          "coder7b": (coder["label"], coder["note"])}, text=True)
+        self._slot("AI Images", "partial", IMAGE_MODELS, files=(".safetensors", ".ckpt"), kind="image")
+        self._slot("AI Videos", "planned", VIDEO_MODELS)
+        threading.Thread(target=self._find_card, daemon=True).start()
+        self._tick()
+
+    def _slot(self, tab, status, choices, text=False, files=None, kind=None):
+        import learning_areas as LA
+        key = "model_" + tab.replace(" ", "_"); cur = prefs.get(key) if prefs.get(key) in choices else list(choices)[0]
+        r = _frame(self.body); r.pack(fill="x", anchor="w", pady=(4, 0))
+        if LA.DOT: LA.DOT(r, status, 14).pack(side="left", padx=(0, 8))
+        T.Text(r, tab.upper(), font=T.f(10), width=12, anchor="w").pack(side="left")
+        v = tk.StringVar(value=choices[cur][0]); T.Choice(r, "", [c[0] for c in choices.values()], v).pack(side="left", padx=(8, 8))
+        note = T.Text(self.body, choices[cur][1], muted=True, font=T.f(9)); note.configure(wraplength=820); note.pack(anchor="w", padx=(30, 0))
+        def changed(*a):
+            k = next(k for k, c in choices.items() if c[0] == v.get()); prefs.set(key, k); note.configure(text=choices[k][1])
+        v.trace_add("write", changed)
+        if text: T.Button(r, "Download", lambda: self._download(next(k for k, c in choices.items() if c[0] == v.get())), width=10).pack(side="left", padx=4)
+        if files:
+            T.Button(r, "Add a model file", lambda: self._add_file(kind, files), width=16).pack(side="left", padx=4)
+            T.Button(r, "Open folder", lambda: prefs.open_folder(self._kind_dir(kind)), width=11).pack(side="left", padx=4)
+
+    def _kind_dir(self, kind): d = os.path.join(self.brain.ROOT, kind); os.makedirs(d, exist_ok=True); return d
+    def _add_file(self, kind, exts):
+        p = filedialog.askopenfilename(parent=self.app, title="Choose a model file", filetypes=[("Model files", " ".join("*" + e for e in exts)), ("All files", "*.*")])
+        if p: shutil.copy(p, self._kind_dir(kind)); T.banner(self.app, f"ADDED — {os.path.basename(p)} is in the {kind} models folder", "success")
+
+    def _find_card(self):
+        cards = self.brain.gpu(); txt = "Your graphics card: " + (", ".join(f"{c['name']} ({c['gb']} GB reported)" for c in cards) if cards else "not found (the model runs on the processor)")
+        self.app.q.put(lambda: self.card.winfo_exists() and self.card.configure(text=txt))
+    def _switch(self, key):
+        prefs.set("core_model", key)
+        if self.brain.ready(): self.brain.stop()
+        self._tick(once=True)
+    def _download(self, key):
+        if key == "core": key = None
+        self.brain.download(on_done=lambda ok, m: self.app.q.put(lambda: T.banner(self.app, ("DOWNLOADED — " if ok else "DOWNLOAD FAILED — ") + m, "success" if ok else "error")), key=key)
+        self._tick(once=True)
+    def _start(self):
+        self.brain.load_async(on_done=lambda ok, m: self.app.q.put(lambda: T.banner(self.app, ("READY — " if ok else "COULDN'T START — ") + m, "success" if ok else "error")))
+    def _stop(self): self.brain.stop(); self._tick(once=True)
+    def _tick(self, once=False):
+        if not self.winfo_exists(): return
+        st = self.brain.status(); spec = self.brain.CORES[self.brain.core_key()]
+        self.core_note.configure(text=spec["note"])
+        pct = f" ({st['progress'] * 100:.0f}%)" if st["state"] == "downloading" and st.get("progress") else ""
+        self.state.configure(text=f"STATUS: {st['detail'] or st['state'] or ''}{pct}")
+        if not once: self.after(1000, self._tick)
 
 # ---------------------------------------------------------------- Updates
-REPO = "StevenCLewis111/books"
+REPO = "StevenCLewis111/Instant-Easel"
 class UpdatesPage(SettingsPage):
     TITLE = "Updates"; NOTE = "Checks GitHub for a newer InstantEaselPro.exe. Nothing is downloaded or installed without asking."
     def build(self):
@@ -279,22 +225,22 @@ class ShortcutsPage(SettingsPage):
             for k, what in items: T.Text(self.body, f"   {k:<26} {what}", font=T.f(9)).pack(anchor="w")
 
 # ---------------------------------------------------------------- Backup & reset
-BACKUP_FILES = ["instant_easel_settings.json", "instant_easel_theme.json", "vocab.json"]
+BACKUP_FILES = ["instant_easel_settings.json", "instant_easel_theme.json", "learning_settings.json"]
 
 def _data_file(name):
     """where one of the app's own files lives: .json files in .json/, logs in logs/"""
     import paths
     return paths.json_file(name) if name.endswith(".json") else paths.log_file(name) if name.endswith((".log", ".txt")) else paths.data(name)
 class BackupPage(SettingsPage):
-    TITLE = "Backup & Reset"; NOTE = "Move your setup to another PC: settings, theme, taught words and learned style, in one file (no images)."
+    TITLE = "Backup & Reset"; NOTE = "Move your setup to another PC: settings, theme and what each AI tab was taught, in one file (no pictures or models)."
     def build(self):
         self.buttons(("Export backup…", self.export, "normal"), ("Import backup…", self.restore, "normal"))
         self.msg = T.Text(self.body, "", font=T.f(10)); self.msg.pack(anchor="w", pady=6)
         T.Text(self.body, "RESET", font=T.f(10)).pack(anchor="w", pady=(16, 2))
         self.buttons(("Reset all settings", self.reset, "danger"))
     def _learned(self):
-        import app as classic; lib = classic.library_dir()
-        return [p for p in [os.path.join(lib, "profile.json")] + glob.glob(os.path.join(lib, "history", "*.json")) if os.path.exists(p)], lib
+        import brain; lib = brain.TABS_DIR
+        return glob.glob(os.path.join(lib, "*", "examples.jsonl")), lib
     def export(self):
         p = filedialog.asksaveasfilename(parent=self.app, defaultextension=".zip", initialfile="instant-easel-backup.zip", filetypes=[("Backup", "*.zip")])
         if not p: return
@@ -303,20 +249,20 @@ class BackupPage(SettingsPage):
             for f in BACKUP_FILES:
                 src = _data_file(f)
                 if os.path.exists(src): z.write(src, f)
-            for f in learned: z.write(f, "my-library/" + os.path.relpath(f, lib).replace(os.sep, "/"))
+            for f in learned: z.write(f, "tabs/" + os.path.relpath(f, lib).replace(os.sep, "/"))
         self.msg.configure(text=f"SAVED: {os.path.basename(p)}"); T.banner(self.app, f"EXPORTED — {os.path.basename(p)}", "success")
     def restore(self):
         p = filedialog.askopenfilename(parent=self.app, filetypes=[("Backup", "*.zip")])
         if not p: return
-        import app as classic; lib = classic.library_dir()
+        import brain; lib = brain.TABS_DIR
         with zipfile.ZipFile(p) as z:
             for n in z.namelist():
                 if ".." in n or n.startswith("/"): continue                                       # only our own files, nowhere else
-                dest = os.path.join(lib, n[len("my-library/"):]) if n.startswith("my-library/") else _data_file(os.path.basename(n))
+                dest = os.path.join(lib, n[len("tabs/"):]) if n.startswith("tabs/") else _data_file(os.path.basename(n))
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with z.open(n) as src, open(dest, "wb") as out: out.write(src.read())
         self.msg.configure(text="RESTORED. CLOSE AND REOPEN THE APP TO USE EVERYTHING."); T.banner(self.app, "IMPORTED — close and reopen the app to use everything", "success")
     def reset(self):
-        if T.popup(self.app, "RESET ALL SETTINGS?", "Every setting goes back to its default. Your learning, words and images are kept.",
+        if T.popup(self.app, "RESET ALL SETTINGS?", "Every setting goes back to its default. What the AI tabs learned, your models and your images are kept.",
                    (("Reset", "danger"), ("Cancel", "normal"))) == "Reset":
             prefs.reset_all(); T.banner(self.app, "SETTINGS RESET — close and reopen the app to finish", "success")

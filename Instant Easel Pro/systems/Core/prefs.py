@@ -14,22 +14,21 @@ DEFAULTS = {
     "save_folder": os.path.join(os.path.expanduser("~"), "Pictures", "Instant Easel"),
     "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-{date}-{time}-{n}",
     "start_tab": "AI Images", "confirm_exit": True,
-    # Generation defaults
-    "default_model": "Core (default)", "default_style": "Painterly", "default_aspect": "2:3", "default_count": "1",
     "seed_mode": "random", "fixed_seed": 1234,
     # Performance
-    "edit_preview": "Normal", "i2i_size": "Standard", "undo_steps": 30,
+    "edit_preview": "Normal", "undo_steps": 30,
     # Display
     "text_size": "Normal", "show_hints": True, "show_splash": True,
     "window_mode": "Maximized", "remember_window": True, "window_geometry": "", "last_tab": "AI Images",
     # Privacy & data
-    "keep_training_copies": False, "active_model": "Core (default)",
-    # AI models
-    "use_gpu": True, "models_folder": "", "text_model": "auto",
+    "keep_training_copies": False,
+    # AI models: one core text model for every AI tab; a tab can add its own model (Settings > AI Models)
+    "core_model": "4b", "model_AI_Coding": "core", "model_AI_Images": "sd15", "model_AI_Videos": "none", "image_model": "",
+    "use_gpu": True, "models_folder": "",
     # Updates
     "check_updates_on_start": False,
 }
-SIZES = {"edit_preview": {"Fast": 700, "Normal": 1000, "Sharp": 1400}, "i2i_size": {"Fast": 1200, "Standard": 1600, "Large": 2400},
+SIZES = {"edit_preview": {"Fast": 700, "Normal": 1000, "Sharp": 1400},
          "text_size": {"Small": 0.9, "Normal": 1.0, "Large": 1.15}}
 _FILE = paths.json_file("instant_easel_settings.json"); _data = None; _listeners = []
 

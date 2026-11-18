@@ -17,7 +17,7 @@ for _d, _dirs, _files in os.walk(os.path.join(BASE, "systems")):
 import paths
 from PIL import Image, ImageTk
 import theme as T
-import app as classic, learn, language, landscape, bench, paint_window, img2img, features, edit as E, styles_fx as SFX, draw_studio, prefs, settings_pages as SP, models as MD
+import paint_window, features, edit as E, draw_studio, prefs, settings_pages as SP
 import crash, skin, ui_art as UA, learning_areas as LA
 
 APP_NAME = "Instant Easel"
@@ -166,28 +166,15 @@ def icon_file(name):
     """the app's icons: images/UI/App Icon/"""
     return paths.ui("App Icon", name)
 def home_dir(): return paths.HOME
-bench.TARGET = paths.image("Styles", "summit.jpg")
 SETTINGS = [("time", ["sunset", "night"]), ("clouds", ["few", "normal", "many"]), ("tint", ["none", "golden", "fiery", "pink", "cool"]),
             ("figures", ["0", "1", "2"]), ("pose", ["seated", "standing"]), ("height", ["0.2", "0.5", "0.9"]), ("peaks", ["3", "4", "5", "6"]),
             ("mountains", ["True", "False"]), ("rocks", ["True", "False"]), ("grass", ["True", "False"]), ("canyon", ["True", "False"]),
             ("sun_x", ["0.25", "0.5", "0.75"])]
 PREFS = paths.json_file("instant_easel_theme.json")
 
-def _typed(key, s):
-    d = landscape.DEFAULTS.get(key)
-    if isinstance(d, bool): return s == "True"
-    if isinstance(d, int): return int(s)
-    if isinstance(d, float): return float(s)
-    return s
 
 COL_WRAP = 344                                                               # text width inside a fixed 360 column (design pixels)
 
-def fixed_column(parent, width):
-    """a page's left column at a fixed design width (scaled with the window), so the picture area beside it gets the rest.
-    Its contents wrap to fit instead of pushing it wider."""
-    f = themed_frame(parent); f.pack_propagate(False)
-    size = lambda: f.configure(width=max(1, int(round(width * T.Z))))
-    size(); T.on_change(size, zoom=True); return f
 
 def themed_frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
@@ -221,9 +208,7 @@ class InstantEasel(tk.Tk):
         except Exception: pass
         self._load_theme()                                                       # (before the splash: it's drawn in the theme's colours)
         self._splash = Splash(self) if splash else None
-        self.q = queue.Queue(); T.banner_host(self); self.after(100, self._poll); self.after(500, self._beat); self.after(60000, self._autosave); self._load_theme(); self._start_zoom(); self._seed_models()
-        self.gen = dict(model=tk.StringVar(value=prefs.get("active_model") if prefs.get("active_model") in MD.BUILTIN + MD.names() else prefs.get("default_model")), style=tk.StringVar(value=prefs.get("default_style")),
-                        aspect=tk.StringVar(value=prefs.get("default_aspect")), count=tk.StringVar(value=prefs.get("default_count")), start=None)   # Settings > Generation Defaults
+        self.q = queue.Queue(); T.banner_host(self); self.after(100, self._poll); self.after(500, self._beat); self.after(60000, self._autosave); self._load_theme(); self._start_zoom()
         self.configure(bg=T.PALETTE["bg"]); T.on_change(lambda: self.configure(bg=T.PALETTE["bg"]))
         # zoom layout: the app is designed at DESIGN size; the window can be any size and everything (text, buttons, spacing) scales with it
         self.view_cv = tk.Canvas(self, highlightthickness=0, bg=T.PALETTE["bg"], bd=0)
@@ -263,11 +248,10 @@ class InstantEasel(tk.Tk):
             except Exception: pass
         self.after_idle(self._size_mascots); T.on_change(lambda: self.mascot_src and self.after_idle(self._size_mascots))   # outline follows the theme colour
 
-        built = {"Text to Image": GeneratePage, "Image to Image": Img2ImgPage, "Learn from Images": TrainPage, "Image Scraper": ScraperPage,
-                 "Words": WordsPage, **LA.page_classes(), "Theme": ThemePage, "Classic Tools": PaintPage, "Draw": draw_studio.DrawStudio, "Models": ModelsPage,
+        built = {"Image Scraper": ScraperPage, **LA.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
-                 "General": SP.GeneralPage, "Generation Defaults": SP.GenDefaultsPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage,
-                 "Privacy & Data": SP.PrivacyPage, "AI Models": SP.AIModelsPage, "Text Model": SP.TextModelPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
+                 "AI Models": SP.AIModelsPage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.edit = dict(original=None, proxy=None, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM), listeners=[])   # shared by the Edit tools
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
@@ -400,15 +384,6 @@ class InstantEasel(tk.Tk):
             self.hist_jump(self.hpos - 1)
     def hist_redo(self):
         if hasattr(self, "hist"): self.hist_jump(self.hpos + 1)
-    def refresh_models(self):
-        """keep every model list in step after a model is created, renamed, trained or deleted"""
-        sp = getattr(self, "settings_panel", None)
-        if sp: sp.model_choice.choices = sp.models()
-        if self.gen["model"].get() not in MD.BUILTIN + MD.names(): self.gen["model"].set("Core (default)")
-        tr = self.pages.get("AI Training") and self.pages["AI Training"].pages.get("Learn from Images") if hasattr(self, "pages") else None
-        if tr: tr.refresh()
-        mp = self.pages.get("AI Training") and self.pages["AI Training"].pages.get("Models") if hasattr(self, "pages") else None
-        if mp: mp.show()
 
     def _hist_changed(self):
         h = self.pages.get("Editing") and self.pages["Editing"].pages.get("History") if hasattr(self, "pages") else None
@@ -419,13 +394,6 @@ class InstantEasel(tk.Tk):
         sec = self.pages["Editing"]
         (self.hist_redo if redo else self.hist_undo)()
 
-    def _seed_models(self):
-        """the Alpine Moods model from the design: created once at first launch (if you delete it later, it stays deleted)"""
-        if prefs.get("seeded_alpine_moods"): return
-        try:
-            if not MD.find("Alpine Moods"): MD.create("Alpine Moods", "Landscapes", "Moody alpine light")
-        except Exception: pass
-        prefs.set("seeded_alpine_moods", True)
 
     # ---------------- window modes, the same as Retro TV:
     #   fixed window   the exact windowed size (fixed_window_size), centred, not drag-resizable; title bar has  -  []  X
@@ -712,7 +680,6 @@ class Section(tk.Frame):
         super().__init__(master, bg=master["bg"]); self.app = app; self.menu_name = menu; T.on_change(lambda: self.configure(bg=self.master["bg"]))
         side = self.side = themed_frame(self); side.pack(side="left", fill="y")
         T.Line(self, vertical=True).pack(side="left", fill="y")                                  # divider right of the side menu, border to border
-        if menu == "AI Images": SettingsPanel(self, app).pack(side="right", fill="y", padx=(4, 12), pady=12)    # the picture comes up close (page margin + 4)
         self.content = themed_frame(self); self.content.pack(side="left", fill="both", expand=True)
         self.pages, self.buttons, self.rows = {}, {}, []
         self.parents = {f["name"]: f.get("parent") for f in tools if f.get("hidden")}         # pages opened from inside another page (no button of their own)
@@ -765,111 +732,9 @@ class Section(tk.Frame):
         lit = self.parents.get(name) or name                                                    # an inner page lights up the button it was opened from
         for n, b in self.buttons.items(): b.configure(relief="flat"); b.kind = "normal"; skin.select(b, n == lit)
 
-STYLES = SFX.STYLES; ASPECTS = ["2:3", "3:2", "1:1", "16:9", "9:16", "original"]
 
-class SettingsPanel(T.Panel):
-    """shared image settings for every Create tool: model, art style, aspect ratio, how many, starting image, download all"""
-    def __init__(self, master, app):
-        super().__init__(master, pad=12, inner=True); self.app = app; g = app.gen
-        T.Title(self, "Image settings").pack(pady=(0, 10))
-        self.model_choice = T.Choice(self, "model", self.models(), g["model"]); self.model_choice.pack(fill="x", pady=4); app.settings_panel = self
-        self.style_btn = T.Button(self, "", lambda: StyleGallery(self.app), width=26); self.style_btn.pack(fill="x", pady=4)
-        g["style"].trace_add("write", lambda *a: self.style_btn.configure(text=f"ART STYLE: {g['style'].get().upper()}  ▸")); g["style"].set(g["style"].get())
-        for label, key, choices in (("aspect", "aspect", ASPECTS), ("images", "count", ["1", "4", "9"])):
-            T.Choice(self, label, choices, g[key]).pack(fill="x", pady=4)
-        T.Text(self, "Click to change, right-click back.", muted=True, font=T.f(8)).pack(pady=(2, 12))
-        T.Text(self, "STARTING IMAGE").pack(anchor="w")
-        T.Text(self, "Guides the colors (Text to Image)\nor is the picture (Image to Image).", muted=True, font=T.f(8)).pack(anchor="w")
-        self.thumb = tk.Label(self, text="none", bg=T.PALETTE["field"], fg=T.PALETTE["muted"], font=T.f(10), width=22, height=6); self.thumb.pack(pady=6)
-        r = themed_frame(self); r.pack(); T.Button(r, "Upload", self.upload).pack(side="left"); T.Button(r, "Clear", self.clear, kind="danger").pack(side="left", padx=6)
-        T.Button(self, "Download all", self.download_all, width=18).pack(pady=(16, 0))
 
-    def models(self):
-        return MD.BUILTIN + MD.names()
 
-    def _old_models(self):
-        names = ["Core (default)"]
-        if learn.load(classic.library_dir()): names.append("My learned style")
-        return names                                                                  # models from Training > Models will appear here
-
-    def upload(self):
-        p = filedialog.askopenfilename(parent=self.app, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
-        if p:
-            try: self.set_start(Image.open(p).convert("RGB")); T.banner(self.app, f"UPLOADED — {os.path.basename(p)} is the starting image", "success")
-            except Exception as e: T.banner(self.app, f"CAN'T OPEN THAT PICTURE — {os.path.basename(p)}: {e}")
-
-    def set_start(self, im):
-        self.app.gen["start"] = im; t = im.copy(); t.thumbnail((170, 110)); self.ph = ImageTk.PhotoImage(t)
-        self.thumb.configure(image=self.ph, text="", width=170, height=110)
-        i2i = self.app.pages["AI Images"].pages.get("Image to Image")
-        if i2i: i2i.load(im)
-
-    def clear(self):
-        self.app.gen["start"] = None; self.thumb.configure(image="", text="none", width=22, height=6)
-
-    def download_all(self):
-        imgs = []
-        for p in self.app.pages["AI Images"].pages.values(): imgs += getattr(p, "results", []) or ([p.result] if getattr(p, "result", None) is not None else [])
-        if not imgs: return T.banner(self.app, "NOTHING TO DOWNLOAD YET — create some images first")
-        d = filedialog.askdirectory(parent=self.app, title="Choose a folder")
-        if d:
-            for i, im in enumerate(imgs): im.save(os.path.join(d, f"instant-easel-{i + 1:02d}.png"))
-            T.banner(self.app, f"SAVED — {len(imgs)} images", "success")
-
-class StyleGallery(tk.Toplevel):
-    """pick an art style from thumbnails of every style applied to your starting image (or a sample)"""
-    def __init__(self, app):
-        super().__init__(app); self.app = app; self.title("Art style"); self.configure(bg=T.PALETTE["bg"]); self.transient(app)
-        p = T.Panel(self, pad=14); p.pack(fill="both", expand=True, padx=8, pady=8)
-        T.Title(p, "Choose an art style").pack(pady=(0, 4)); T.Text(p, "Shown on your starting image (or a sample). Click one.", muted=True).pack(pady=(0, 8))
-        src = app.gen["start"] or Image.open(paths.image("Styles", "summit.jpg")).convert("RGB")
-        self.big = src.copy(); self.big.thumbnail((700, 500))                     # styles render at a real size, then shrink: true previews
-        grid = themed_frame(p); grid.pack(); self._ph = []; self.cells = []
-        for i, st in enumerate(SFX.STYLES):
-            cell = themed_frame(grid); cell.grid(row=i // 5, column=i % 5, padx=5, pady=5); sel = st == app.gen["style"].get()
-            lb = tk.Label(cell, text="…", width=24, height=8, bg=T.PALETTE["field"], fg=T.PALETTE["muted"], highlightthickness=3, cursor="hand2",
-                          highlightbackground=T.PALETTE["border"] if sel else p["bg"]); lb.pack()
-            lb.bind("<Button-1>", lambda e, st=st: (self.app.gen["style"].set(st), self.destroy())); T.Text(cell, st.upper(), font=T.f(8)).pack()
-            self.cells.append((st, lb))
-        T.Button(p, "Close", self.destroy, kind="danger").pack(pady=8)
-        self.after(50, self._fill, 0)
-
-    def _fill(self, i):
-        if i >= len(self.cells) or not self.winfo_exists(): return
-        st, lb = self.cells[i]
-        try: th = SFX.apply(self.big, st)
-        except Exception: th = self.big
-        th = th.copy(); th.thumbnail((200, 140)); ph = ImageTk.PhotoImage(th); self._ph.append(ph); lb.configure(image=ph, text="", width=th.width, height=th.height)
-        self.after(10, self._fill, i + 1)
-
-class ResultsGrid(tk.Canvas):
-    """shows 1, 4 or 9 results; click one to choose it (green outline)"""
-    def __init__(self, master, on_pick):
-        super().__init__(master, highlightthickness=1, bd=0, bg=T.PALETTE["field"]); self.on_pick = on_pick; self.imgs = []; self.sel = 0; self._ph = []
-        self._rjob = None; self.bind("<Configure>", lambda e: self._soon()); self.bind("<Button-1>", self.click); self._border(); T.on_change(self._border)
-    def _border(self):
-        """its own border all the way round, in the theme's border colour"""
-        self.configure(bg=T.PALETTE["field"], highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"])
-        self.placeholder = "YOUR PAINTING APPEARS HERE"
-    def _soon(self):
-        if self._rjob is None: self._rjob = self.after(60, lambda: (setattr(self, "_rjob", None), self.draw()))
-    def set(self, imgs, total=None):
-        self.imgs = list(imgs); self.total = total or len(imgs); self.sel = min(self.sel, max(0, len(self.imgs) - 1)); self.draw()
-    def _cells(self):
-        n = max(1, getattr(self, "total", 1)); k = 1 if n == 1 else 2 if n <= 4 else 3; w, h = self.winfo_width(), self.winfo_height()
-        return k, (w - 8) / k, (h - 8) / k
-    def draw(self):
-        self.delete("all"); self._ph = []
-        if not self.imgs: self.create_text(self.winfo_width() / 2, self.winfo_height() / 2, text=self.placeholder, fill=T.PALETTE["muted"], font=T.f(11)); return
-        k, cw, ch = self._cells()
-        for i, im in enumerate(self.imgs):
-            x, y = 4 + (i % k) * cw, 4 + (i // k) * ch; t = im.copy(); t.thumbnail((int(cw - 10), int(ch - 10))); ph = ImageTk.PhotoImage(t); self._ph.append(ph)
-            cx, cy = x + cw / 2, y + ch / 2; self.create_image(cx, cy, image=ph)
-            if len(self.imgs) > 1 and i == self.sel: self.create_rectangle(cx - t.width / 2 - 3, cy - t.height / 2 - 3, cx + t.width / 2 + 3, cy + t.height / 2 + 3, outline=T.PALETTE["border"], width=3)
-    def click(self, e):
-        if len(self.imgs) < 2: return
-        k, cw, ch = self._cells(); i = int((e.y - 4) // ch) * k + int((e.x - 4) // cw)
-        if 0 <= i < len(self.imgs): self.sel = i; self.draw(); self.on_pick(self.imgs[i])
 
 class BlankPage(tk.Frame):
     """an empty page for a tool that's still to come: just open space inside its own border"""
@@ -891,19 +756,6 @@ class PlannedPage(tk.Frame):
         if f.get("notes"):
             n = T.Text(self, "NOTE: " + f["notes"], muted=True); n.configure(wraplength=700); n.pack(pady=12)
 
-class DrawPage(Page):
-    def __init__(self, master, app):
-        super().__init__(master, app)
-        T.Title(self, "Draw").pack(pady=(4, 8)); T.Text(self, "Paint by hand with 45 brushes, on a blank canvas or on your image.", muted=True).pack(pady=(0, 16))
-        T.Button(self, "Open the drawing canvas", lambda: paint_window.PaintWindow(self.app), width=34).pack(pady=6)
-        T.Button(self, "Draw on the last created image", self.on_last, width=34).pack(pady=6)
-        T.Text(self, "Coming here next: the canvas built into this screen, layers, eyedropper, brush presets.", muted=True).pack(pady=18)
-
-    def on_last(self):
-        g = self.app.pages["AI Images"].pages.get("Text to Image"); i = self.app.pages["AI Images"].pages.get("Image to Image")
-        img = (i.result if i and i.result is not None else None) or (g.result if g else None)
-        if img is None: return T.banner(self.app, "NOTHING YET — create an image first")
-        paint_window.PaintWindow(self.app, image=img)
 
 # ---------------------------------------------------------------- Edit: shared image, settings and preview
 class EditBase(Page):
@@ -1133,316 +985,13 @@ class TransformPage(EditBase):
         self.geom(crop=(sx, sy, x, y))
 
 # ---------------------------------------------------------------- Generate
-class GeneratePage(Page):
-    def __init__(self, master, app):
-        super().__init__(master, app); self.result = None; self.unknown = []; self.seed = int(prefs.get("fixed_seed")) if prefs.get("seed_mode") == "fixed" else random.randint(1, 9999)
-        left = fixed_column(self, 360); left.pack(side="left", fill="y", padx=(0, 14))      # fixed width: the picture area gets the rest
-        T.Title(left, "What should I paint?").pack(anchor="w", pady=(0, 6))
-        self.prompt = T.Field(left, height=5, width=1); self.prompt.pack(fill="x")
-        self.prompt.insert("1.0", "two people sitting on a hill at sunset, tall mountains, lots of clouds")
-        self.prompt.bind("<Control-Return>", lambda e: (self.generate(), "break"))
-        T.Text(left, 'Try: "night", "no rocks", "sun on the left", "a man standing", "stormy", "golden hour", or a caption in quotes.',
-               muted=True, wraplength=COL_WRAP).pack(anchor="w", pady=(6, 6))
-        T.Text(left, "Model, art style, aspect and how many: Image settings, right.", muted=True, wraplength=COL_WRAP).pack(anchor="w", pady=(0, 4))
-        r = themed_frame(left); r.pack(anchor="w", pady=(6, 4))
-        self.gen_btn = T.Button(r, "Generate", self.generate, width=12); self.gen_btn.pack(side="left")
-        T.Button(r, "New variation", lambda: self.generate(new_seed=True)).pack(side="left", padx=10)
-        r = themed_frame(left); r.pack(anchor="w", pady=(4, 4))                          # Save sits right under Generate, so it's always in view
-        T.Button(r, "Save", self.save).pack(side="left")
-        T.Button(r, "Paint over by hand", lambda: self.result and paint_window.PaintWindow(self.app, image=self.result)).pack(side="left", padx=10)
-        T.Title(left, "What I understood").pack(anchor="w", pady=(10, 2))
-        self.und = T.Text(left, "—", font=T.f(10), wraplength=COL_WRAP); self.und.pack(anchor="w")
-        T.Title(left, "Words I don't know yet").pack(anchor="w", pady=(10, 2))
-        self.unk = T.Text(left, "—", font=T.f(10), wraplength=COL_WRAP); self.unk.pack(anchor="w")
-        T.Button(left, "Teach me these words", self.teach_unknown).pack(anchor="w", pady=6)
-        T.Hints(left, [("CTRL+ENTER", "generate"), ("ENTER", "press")]).pack(anchor="w", side="bottom", pady=4)
-        self.stat = T.Text(left, "Type a request and press Generate.", muted=True, wraplength=COL_WRAP); self.stat.pack(anchor="w", pady=4)
-        self.results = []; self.view = ResultsGrid(self, self.pick); self.view.pack(side="left", fill="both", expand=True)
 
-    def pick(self, im): self.result = im
-
-    def generate(self, new_seed=False):
-        text = self.prompt.get("1.0", "end").strip()
-        if not text: return
-        if new_seed: self.seed = random.randint(1, 9999)
-        elif prefs.get("seed_mode") == "fixed": self.seed = int(prefs.get("fixed_seed"))
-        g = self.app.gen; n = int(g["count"].get()); aspect = g["aspect"].get(); aspect = "2:3" if aspect == "original" else aspect
-        style = g["style"].get(); model = g["model"].get()
-        opts, understood, unknown = language.understand(text, home_dir(), MD.folder(model) if model not in MD.BUILTIN else None); self.unknown = unknown
-        if g["start"] is not None: understood = understood + ["colors from your starting image"]
-        self.und.configure(text=", ".join(understood) or "nothing specific (I'll paint my default landscape)", fg="#4fdc7a")
-        self.unk.configure(text=", ".join(unknown) or "none", fg="#ff8a65" if unknown else T.PALETTE["muted"])
-        prof = MD.profile_for(model)
-        start_path = None
-        if g["start"] is not None and prof is None:
-            start_path = paths.saved_images("AI Images", "_starting_image.png"); g["start"].save(start_path)
-        self.gen_btn.state("disabled"); self.results = []; self.view.set([], total=n)
-        def work():
-            try:
-                if language.ai_available():                                                   # the text model reads the words too
-                    self.app.q.put(lambda: self.stat.configure(text="READING YOUR WORDS WITH THE TEXT MODEL…"))
-                    o2, u2 = language.ai_refine(text, opts, understood)
-                    if o2 != opts:
-                        opts.update(o2); self.app.q.put(lambda u2=u2: self.und.configure(text=", ".join(u2), fg="#4fdc7a"))
-                for i in range(n):
-                    self.app.q.put(lambda i=i: self.stat.configure(text=f"PAINTING {i + 1} OF {n}…  (ABOUT 20 SECONDS EACH)"))
-                    o = dict(opts, seed=self.seed + i * 101)
-                    out = landscape.render(o, style=prof or start_path, aspect=aspect)
-                    st = opts.get("medium") or style                                                  # a style word in the prompt wins
-                    if st not in ("Painterly", "painterly"): out = SFX.apply(out, st, seed=o["seed"])
-                    self.results.append(out)
-                    self.app.q.put(lambda: self.view.set(self.results, total=n))
-                self.result = self.results[0]; saved = prefs.auto_save(self.results)
-                done = ("Done. Click an image to choose it, then Save." if n > 1 else "Done. Save it, try a new variation, or change the words.") + (f"  (auto-saved {len(saved)})" if saved else "")
-                self.app.q.put(lambda: self.stat.configure(text=done))
-            except Exception as e:
-                msg = str(e); prefs.log_error(*sys.exc_info()); T.banner(self.app, f"PAINTING FAILED — {msg}")
-            finally:
-                self.app.q.put(lambda: self.gen_btn.state("!disabled"))
-        threading.Thread(target=work, daemon=True).start()
-
-    def teach_unknown(self): TeachDialog(self.app, self.unknown[0] if self.unknown else "")
-
-    def save(self):
-        if self.result is None: return
-        p = filedialog.asksaveasfilename(parent=self.app, initialdir=prefs.save_folder(), initialfile=prefs.next_name(), defaultextension=prefs.ext(), filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp")])
-        if p: prefs.save_image(self.result, p); self.stat.configure(text="Saved: " + os.path.basename(p)); T.banner(self.app, f"SAVED — {os.path.basename(p)}", "success")
-
-def crop_to(im, aspect):
-    """centre-crop a picture to an aspect ratio like '16:9'"""
-    a, b = (int(x) for x in aspect.split(":")); w, h = im.size; r = a / b
-    if w / h > r: nw = int(h * r); return im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
-    nh = int(w / r); return im.crop((0, (h - nh) // 2, w, (h - nh) // 2 + nh))
 
 # ---------------------------------------------------------------- Image to Image
-class Img2ImgPage(Page):
-    def __init__(self, master, app):
-        super().__init__(master, app); self.src = None; self.result = None
-        left = themed_frame(self); left.pack(side="left", fill="y", padx=(0, 16))
-        T.Title(left, "Repaint a picture").pack(anchor="w", pady=(0, 8))
-        T.Button(left, "Open a picture", self.open, width=24).pack(anchor="w", pady=(0, 10))
-        T.Text(left, "Words (optional):").pack(anchor="w")
-        self.prompt = tk.StringVar(value=""); e = T.Entry(left, self.prompt, width=40); e.pack(anchor="w", pady=(2, 4)); e.bind("<Return>", lambda ev: self.run())
-        T.Text(left, 'e.g. "golden hour", "night", "watercolor", "stormy",\nor a caption in quotes.', muted=True).pack(anchor="w", pady=(0, 10))
-        T.Text(left, "STRENGTH  (how much it changes)").pack(anchor="w", pady=(6, 2))
-        self.strength = T.PlainSlider(left, value=0.7, width=380); self.strength.pack(anchor="w")
-        self.palette = tk.StringVar(value="keep")
-        r = themed_frame(left); r.pack(anchor="w", pady=10)
-        T.Choice(r, "palette", ["keep", "warm", "night"], self.palette).pack(side="left")
-        T.Text(left, "Art style, model, aspect and how many:\nImage settings, right.", muted=True).pack(anchor="w")
-        self.go = T.Button(left, "Repaint it", self.run, width=16); self.go.pack(anchor="w", pady=12)
-        r = themed_frame(left); r.pack(anchor="w", pady=4)
-        T.Button(r, "Save", self.save).pack(side="left"); T.Button(r, "Paint over by hand", lambda: self.result and paint_window.PaintWindow(self.app, image=self.result)).pack(side="left", padx=10)
-        self.notes = T.Text(left, "", font=T.f(10)); self.notes.configure(wraplength=400); self.notes.pack(anchor="w", pady=8)
-        T.Hints(left, [("ENTER", "repaint"), ("TAB", "next button")]).pack(anchor="w", side="bottom", pady=4)
-        views = themed_frame(self); views.pack(side="left", fill="both", expand=True)
-        views.columnconfigure(0, weight=1, uniform="v"); views.columnconfigure(1, weight=1, uniform="v"); views.rowconfigure(0, weight=1)  # two equal panels
-        self.before = tk.Label(views, text="BEFORE", font=T.f(11), bg=T.PALETTE["field"], fg=T.PALETTE["muted"], width=1, height=1, highlightthickness=1,
-                               highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"]); self.before.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        T.on_change(lambda: self.before.configure(highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"]))
-        self.results = []; self.after_v = ResultsGrid(views, lambda im: setattr(self, "result", im)); self.after_v.placeholder = "AFTER"; self.after_v.grid(row=0, column=1, sticky="nsew")
-        T.on_change(lambda: self.before.configure(bg=T.PALETTE["field"]))
-
-    def _put(self, label, im, attr):
-        label.update_idletasks()                                               # measure after layout, not before
-        label._src = im; w = max(200, label.winfo_width() - 8); h = max(200, label.winfo_height() - 8); t = im.copy(); t.thumbnail((w, h))
-        setattr(self, attr, ImageTk.PhotoImage(t)); label.configure(image=getattr(self, attr), text="")
-        if not getattr(label, "_bound", False):                               # keep the preview sized to its panel
-            label._bound = True; label._rjob = None
-            label.bind("<Configure>", lambda e, l=label, a=attr: l._rjob is None and setattr(l, "_rjob", l.after(60, lambda: (setattr(l, "_rjob", None), self._refit(l, a)))))
-
-    def _refit(self, label, attr):
-        im = getattr(label, "_src", None)
-        if im is None: return
-        w = max(200, label.winfo_width() - 8); h = max(200, label.winfo_height() - 8); t = im.copy(); t.thumbnail((w, h))
-        if getattr(self, attr) and (getattr(self, attr).width(), getattr(self, attr).height()) == t.size: return
-        setattr(self, attr, ImageTk.PhotoImage(t)); label.configure(image=getattr(self, attr))
-
-    def open(self):
-        p = filedialog.askopenfilename(parent=self.app, filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
-        if p: self.load(Image.open(p))
-
-    def load(self, im):
-        self.src = im.convert("RGB"); self._put(self.before, self.src, "_b"); self.notes.configure(text="Picture loaded. Choose a medium and press Repaint it.")
-
-    def run(self):
-        if self.src is None: return T.banner(self.app, "NO PICTURE YET — open a picture (or upload a starting image) first")
-        g = self.app.gen; n = int(g["count"].get()); style = g["style"].get(); medium = "Oil Painting" if style == "Painterly" else style
-        palette = "learned" if g["model"].get() != "Core (default)" and MD.profile_for(g["model"].get()) else self.palette.get(); aspect = g["aspect"].get()
-        prof = MD.profile_for(g["model"].get()) if palette == "learned" else None
-        self.go.state("disabled"); self.notes.configure(text="REPAINTING…"); self.results = []; self.after_v.set([], total=n)
-        src, prompt, strength = self.src, self.prompt.get(), self.strength.value
-        def work():
-            try:
-                for i in range(n):
-                    out, notes = img2img.render(src, prompt, strength, medium, palette, profile=prof, seed=7 + i * 13)
-                    if aspect not in ("original",) and aspect in landscape.SIZES: out = crop_to(out, aspect)
-                    self.results.append(out); self.app.q.put(lambda: self.after_v.set(self.results, total=n))
-                self.result = self.results[0]; saved = prefs.auto_save(self.results)
-                self.app.q.put(lambda: self.notes.configure(text="APPLIED: " + "; ".join(notes) + ("   (click one to choose it)" if n > 1 else "") + (f"   (auto-saved {len(saved)})" if saved else ""), fg="#4fdc7a"))
-            except Exception as e:
-                msg = str(e); prefs.log_error(*sys.exc_info()); T.banner(self.app, f"REPAINT FAILED — {msg}")
-            finally:
-                self.app.q.put(lambda: self.go.state("!disabled"))
-        threading.Thread(target=work, daemon=True).start()
-
-    def save(self):
-        if self.result is None: return
-        p = filedialog.asksaveasfilename(parent=self.app, initialdir=prefs.save_folder(), initialfile=prefs.next_name(), defaultextension=prefs.ext(), filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp")])
-        if p: prefs.save_image(self.result, p); self.notes.configure(text="Saved: " + os.path.basename(p)); T.banner(self.app, f"SAVED — {os.path.basename(p)}", "success")
 
 # ---------------------------------------------------------------- teach a word (themed dialog)
-class TeachDialog(tk.Toplevel):
-    def __init__(self, app, word="", on_done=None):
-        super().__init__(app); self.title("Teach a word"); self.configure(bg=T.PALETTE["bg"]); self.resizable(False, False); self.on_done = on_done
-        p = T.Panel(self, pad=20); p.pack(fill="both", expand=True, padx=10, pady=10)
-        T.Title(p, "Teach a word").pack(pady=(0, 10))
-        r = themed_frame(p); r.pack(pady=4); T.Text(r, "Word or phrase:").pack(side="left")
-        self.word = tk.StringVar(value=word); T.Entry(r, self.word, width=24).pack(side="left", padx=8)
-        sel = app.gen["model"].get(); self.targets = ["All models (Core)"] + ([f"Only {sel}"] if MD.find(sel) else [])
-        r = themed_frame(p); r.pack(pady=(4, 0)); T.Text(r, "TEACH TO").pack(side="left", padx=(0, 8)); self.to = tk.StringVar(value=self.targets[0])
-        T.Choice(r, "", self.targets, self.to).pack(side="left")
-        T.Text(p, "Click a setting to choose what the word means (right-click goes back).", muted=True).pack(pady=(6, 8))
-        grid = themed_frame(p); grid.pack(); self.vars = {}
-        for i, (k, choices) in enumerate(SETTINGS):
-            v = tk.StringVar(value="—"); self.vars[k] = v
-            T.Choice(grid, k.replace("_", " "), ["—"] + choices, v).grid(row=i // 2, column=i % 2, padx=6, pady=4, sticky="ew")
-        r = themed_frame(p); r.pack(pady=14)
-        T.Button(r, "Teach it", self.save).pack(side="left", padx=8); T.Button(r, "Close", self.destroy, kind="danger").pack(side="left", padx=8)
-
-    def save(self):
-        w = self.word.get().strip().lower()
-        meaning = {k: _typed(k, v.get()) for k, v in self.vars.items() if v.get() not in ("", "—")}
-        if not w: return
-        to = self.to.get(); folder = MD.folder(to[5:]) if to.startswith("Only ") else home_dir()
-        language.teach(w, meaning, folder or home_dir()); self.destroy()
-        if self.on_done: self.on_done()
 
 # ---------------------------------------------------------------- Train
-class TrainPage(Page):
-    def __init__(self, master, app):
-        super().__init__(master, app)
-        home = self.home = themed_frame(self); home.pack(fill="both", expand=True)      # the normal screen; the image review takes its place when open
-        self.review_view = None
-        T.Title(home, "Learn from images").pack(pady=(0, 8))
-        r = themed_frame(home); r.pack(pady=(0, 6)); T.Text(r, "TRAINING:", font=T.f(11)).pack(side="left", padx=(0, 8))
-        self.target = tk.StringVar(value=self._default_target()); self.target_choice = T.Choice(r, "", self._targets(), self.target); self.target_choice.pack(side="left")
-        self.target.trace_add("write", lambda *a: self.refresh())
-        T.Text(home, "Show it skies, mountains, rock, grass, people or whole scenes. It guesses what each image shows;\n"
-                     "you confirm or correct it, then press Learn. Each subject learns from its own pictures.\n"
-                     "Your corrections also teach the shared Core, so every model's guesses get better.", muted=True).pack(pady=(4, 12))
-        r = themed_frame(home); r.pack(pady=6)
-        T.Button(r, "Image Scraper", self.open_scraper, width=16).pack(side="left", padx=8)
-        T.Button(r, "Add images to learn from", self.add_images, width=26).pack(side="left", padx=8)
-        T.Button(r, "Learn", self.learn, width=14).pack(side="left", padx=8)
-        r2 = themed_frame(home); r2.pack(pady=(4, 0)); self.keep = tk.BooleanVar(value=prefs.get("keep_training_copies"))
-        T.Text(r2, "Keep copies after learning:").pack(side="left"); T.Toggle(r2, self.keep).pack(side="left", padx=10)
-        T.Text(home, "Off: after learning, the app's copies are deleted. It keeps only what it learned (colors, textures,\n"
-                     "brushwork, light). Your original files are never touched.", muted=True).pack(pady=(4, 0))
-        self.info = T.Text(home, "", font=T.f(11)); self.info.pack(pady=16)
-        self.msg = T.Text(home, "", muted=True); self.msg.pack()
-        T.Hints(home, [("TAB", "next button"), ("ENTER", "press")]).pack(side="bottom", pady=4)
-        self.refresh()
-
-    def _targets(self): return ["My learned style"] + MD.names()
-    def _default_target(self):
-        a = prefs.get("active_model") or ""
-        return a if a in self._targets() else "My learned style"
-    def set_target(self, name):
-        self.target_choice.choices = self._targets(); self.target.set(name if name in self.target_choice.choices else "My learned style")
-    def folder(self): return MD.folder(self.target.get()) or classic.library_dir()
-
-    def refresh(self):
-        self.target_choice.choices = self._targets()
-        lib = self.folder(); prof = learn.load(lib); counts = learn.waiting(lib)
-        have = "   ".join(f"{k.upper()}: {v}" for k, v in counts.items() if v) or "NONE"
-        learned = "   ".join(f"{k.upper()} ({v['images']})" for k, v in (prof or {}).get("subjects", {}).items()) or "NOTHING YET"
-        self.info.configure(text=f"WAITING TO LEARN   {have}\n\nLEARNED FROM       {learned}")
-
-    def open_scraper(self):
-        """the Image Scraper page in this same Training menu"""
-        self.app.pages["AI Training"].select("Image Scraper")
-
-    def add_images(self):
-        ps = filedialog.askopenfilenames(parent=self.app, title="Choose images for it to learn from",
-                                         filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
-        if ps: self.review(ps)
-
-    def review(self, ps, remove_originals=False, source=""):
-        """'What does each image show?': opens right here in Learn from Images (in place of its normal screen). remove_originals: the
-        pictures came from the Image Scraper, so once they're in the library the scraped files are deleted (nothing left behind)"""
-        self.close_review()
-        v_ = self.review_view = themed_frame(self); self.home.pack_forget(); v_.pack(fill="both", expand=True)
-        T.Title(v_, "What does each image show?").pack(pady=(0, 6))
-        T.Text(v_, f"For: {self.target.get()}.{' From: ' + source + '.' if source else ''}\n"
-                   + ("Each picture is labelled with the word you searched. " if remove_originals else "Click a label to change my guess. ") + "Then press Add to library."
-                   + (" Untick a picture to leave it out." if remove_originals else ""), muted=True).pack()
-        bar = themed_frame(v_); bar.pack(side="bottom", pady=(8, 0))                    # buttons stay at the bottom, the list scrolls above them
-        box = T.ScrollBox(v_); box.pack(fill="both", expand=True, pady=(10, 0))         # list, divider and scroll bar, boxed in
-        cv = tk.Canvas(box.body, bg=v_["bg"], highlightthickness=0); inner = tk.Frame(cv, bg=v_["bg"])
-        T.on_change(lambda: (cv.configure(bg=self["bg"]), inner.configure(bg=self["bg"])))
-        inner.bind("<Configure>", lambda e: T.fit_scrollregion(cv)); cv.create_window((0, 0), window=inner, anchor="nw")
-        box.attach(cv); cv.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
-        rows = []; self._thumbs = []; box = max(24, int(round(60 * T.Z)))
-        for path in ps:
-            if remove_originals:                                                         # scraped: its folder is the word you searched, so that's the label
-                g, conf, st = os.path.basename(os.path.dirname(path)), "your search", None
-            else:
-                try: g, conf, st = learn.guess_label(path)
-                except Exception: g, conf, st = "scene", "unsure", None
-            r = tk.Frame(inner, bg=v_["bg"]); r.pack(fill="x", pady=3)
-            try: th = Image.open(path).convert("RGB"); th.thumbnail((box, box)); ph = ImageTk.PhotoImage(th)
-            except Exception: ph = None
-            self._thumbs.append(ph)
-            lb = tk.Label(r, image=ph, bg=v_["bg"], width=box, height=box) if ph else tk.Label(r, text="?", bg=T.PALETTE["field"], fg=T.PALETTE["muted"])
-            lb.pack(side="left")                                                         # every picture in the same size box, so the names line up
-            T.Text(r, os.path.basename(path)[:30], width=32, anchor="w").pack(side="left", padx=8)
-            v = tk.StringVar(value=g); T.Choice(r, "shows", list(dict.fromkeys([g] + learn.labels_in(self.folder()))), v).pack(side="left")
-            T.Text(r, f"({conf})", muted=True).pack(side="left", padx=6)
-            use = tk.BooleanVar(value=True)
-            if remove_originals: T.Text(r, "use it", font=T.f(8)).pack(side="left", padx=(12, 4)); T.Toggle(r, use).pack(side="left")
-            rows.append((path, v, g, st, use))
-        def commit():
-            fixed = added = dropped = 0
-            for path, v, guess, st, use in rows:
-                small = False
-                if LA.get("Image Learning", "skip_small"):                                               # Image Learning > Clean > Skip tiny pictures
-                    try: small = min(Image.open(path).size) < 256
-                    except Exception: small = False
-                if use.get() and not small:
-                    d = os.path.join(self.folder(), v.get()); os.makedirs(d, exist_ok=True); shutil.copy(path, d); added += 1
-                    if st is not None and v.get() != guess: MD.record_correction(learn.stat_vector(st), v.get()); fixed += 1   # the Core learns from your correction
-                else: dropped += 1
-                if remove_originals:                                                              # scraped: the file goes either way (kept ones are in the library now)
-                    try: os.remove(path)
-                    except OSError: pass
-            self.close_review(); self.refresh()
-            T.banner(self.app, f"ADDED — {added} images are waiting to be learned; press Learn" + (f" ({dropped} left out and deleted)" if dropped else ""), "success")
-            if fixed: self.msg.configure(text=f"THANKS: {fixed} CORRECTION(S) SAVED TO THE CORE. EVERY MODEL'S GUESSES IMPROVE.")
-        T.Button(bar, "Add to library", commit).pack(side="left", padx=8); T.Button(bar, "Close", self.close_review, kind="danger").pack(side="left")
-        return v_
-
-    def close_review(self):
-        """back to the normal Learn from Images screen"""
-        if self.review_view is not None:
-            self.review_view.destroy(); self.review_view = None; self._thumbs = []
-            self.home.pack(fill="both", expand=True)
-
-    def learn(self):
-        self.msg.configure(text="LEARNING…"); target = self.target.get(); folder = self.folder()
-        def work():
-            try:
-                keep = self.keep.get(); prof = learn.learn_labelled(folder, keep_images=keep)
-                n = sum(prof.get("_last_report", {}).values())
-                sc = os.path.join(folder, "scene")
-                if os.path.isdir(sc) and any(f.lower().endswith(learn.EXT) for f in os.listdir(sc)): learn.learn(sc, keep_images=keep)
-                if MD.find(target): MD.update(target)
-                ok = True; msg = (f"{target.upper()} LEARNED FROM {n} NEW IMAGES. " + ("COPIES KEPT." if keep else "THE APP'S COPIES WERE DELETED; YOUR ORIGINALS WERE NOT TOUCHED.")
-                       + f"\nPICK '{target.upper()}' AS THE MODEL IN IMAGES.")
-            except Exception as e: ok = False; msg = f"LEARNING FAILED: {e}"; prefs.log_error(*sys.exc_info())
-            T.banner(self.app, (f"LEARNED — {target} learned from {n} new images" if ok else f"LEARNING FAILED — {msg[17:]}"), "success" if ok else "error")
-            self.app.q.put(lambda: (self.msg.configure(text=msg), self.refresh(), self.app.refresh_models()))
-        threading.Thread(target=work, daemon=True).start()
 
 # ---------------------------------------------------------------- Image Scraper
 class ScraperPage(Page):
@@ -1457,7 +1006,7 @@ class ScraperPage(Page):
         self.start_btn = T.Button(r, "Start", self.start, width=12); self.start_btn.pack(side="left", padx=8)
         self.stop_btn = T.Button(r, "Stop", self.stop, width=12, kind="danger"); self.stop_btn.pack(side="left", padx=8); self.stop_btn.state("disabled")
         T.Button(r, "Open images folder", self.open_folder, width=20).pack(side="left", padx=8)
-        T.Button(r, "Review & learn", self.send_to_learning, width=16).pack(side="left", padx=8)
+        T.Button(r, "Review & add", self.send_to_learning, width=16).pack(side="left", padx=8)
         T.Hints(self, [("TAB", "next button"), ("ENTER", "press")]).pack(side="bottom", pady=4)
         self.log_box = T.Field(self, height=10); self.log_box.pack(fill="both", expand=True)
         self.log_box.bind("<Key>", lambda e: None if (e.state & 4 and e.keysym.lower() in ("c", "a")) else "break")   # read-only (copy still works)
@@ -1483,7 +1032,7 @@ class ScraperPage(Page):
         self.start_btn.state("disabled" if on else "!disabled"); self.stop_btn.state("!disabled" if on else "disabled")
 
     def send_to_learning(self):
-        """every picture the scraper saved -> Learn from Images' review (you check them; the ones you keep go to the library, and the
+        """every picture the scraper saved -> the Pictures review for the active image model (you check them; the ones you keep go in, and the
         scraped files are deleted either way)"""
         g = self._grabber()
         if g is None: return
@@ -1491,7 +1040,7 @@ class ScraperPage(Page):
         ps = sorted(os.path.join(d, f) for d, _, fs in os.walk(g.OUTPUT_DIR) for f in fs if f.lower().endswith(exts))
         if not ps: return T.banner(self.app, "NOTHING TO REVIEW — the scraper hasn't saved any pictures yet")
         words = sorted({os.path.basename(os.path.dirname(p)) for p in ps})
-        self.app.goto("AI Training", "Learn from Images"); tp = self.app.pages["AI Training"].pages["Learn from Images"]
+        self.app.goto("AI Training", "Pictures"); tp = self.app.pages["AI Training"].pages["Pictures"]
         tp.review(ps[:300], remove_originals=True, source="Image Scraper (" + ", ".join(words[:6]) + ("…" if len(words) > 6 else "") + ")")
 
     def start(self):
@@ -1532,158 +1081,10 @@ class ScraperPage(Page):
         except Exception as e: T.banner(self.app, f"CAN'T OPEN THE FOLDER — {e}")
 
 # ---------------------------------------------------------------- Models
-class ModelsPage(Page):
-    """create, select, rename, train, roll back and delete trained models, all built on the shared Core"""
-    FULL = True                                                                                 # fills its whole area, so its dividers reach the panel's borders
-    def __init__(self, master, app):
-        super().__init__(master, app)
-        self.columnconfigure(0, weight=1); self.rowconfigure(3, weight=1)
-        T.Title(self, "Models").grid(row=0, column=0, pady=(12, 0))
-        intro = self.intro = T.Text(self, "Each model learns its own style from its own images. They all share the Core: the painting knowledge, brushes, styles,\n"
-                     "your words taught to all models, and every correction you make. Select a model to paint with it in Images.", muted=True)
-        intro.configure(justify="center"); intro.grid(row=1, column=0, pady=(4, 20))
-        T.Line(self, vertical=False).grid(row=2, column=0, sticky="ew")                          # divider under the header, edge to edge
-        self.cv = tk.Canvas(self, bg=self["bg"], highlightthickness=0); self.cv.grid(row=3, column=0, sticky="nsew"); T.on_change(lambda: self.cv.configure(bg=self["bg"]))
-        gut = self.gut = themed_frame(self); gut.grid(row=0, column=1, rowspan=4, sticky="ns")   # right gutter: a divider, then the scroll bar top to bottom (the page border boxes it in)
-        T.Line(gut, vertical=True).pack(side="left", fill="y")
-        sbf = themed_frame(gut); sbf.pack(side="left", fill="y")
-        sb = self.sb = T.Scrollbar(sbf, command=self.cv.yview); sb.pack(fill="y", expand=True, padx=T.ScrollBox.GAP, pady=T.ScrollBox.GAP)   # top to bottom, same gap all round
-        self.cv.configure(yscrollcommand=sb.set); T.wheel_area(self, lambda n: self.sb.can_scroll() and self.cv.yview_scroll(n, "units"))   # the whole page is its box (the panel border frames it)
-        self.list = tk.Frame(self.cv, bg=self["bg"]); self.win = self.cv.create_window((0, 0), window=self.list, anchor="n"); T.on_change(lambda: self.list.configure(bg=self["bg"]))
-        self.list.bind("<Configure>", self._fit); self.cv.bind("<Configure>", self._fit); self.bind("<Configure>", self._wrap_intro, add="+")
-        self.bind("<Map>", lambda e: self.master.master.show_create(True)); self.bind("<Unmap>", lambda e: self.master.master.show_create(False))
-        self.show()
-
-    def show(self):
-        for w in self.list.winfo_children(): w.destroy()
-        active = prefs.get("active_model") or "Core (default)"
-        rows = [dict(name="Core (default)", focus="Built in", description="The shared Core on its own: the engine's own painterly style.", builtin=True),
-                dict(name="My learned style", focus="Original library", description="Everything learned in the original training library.", builtin=True)] + MD.list_models()
-        for m in rows:
-            name = m["name"]; is_active = name == active
-            card = T.Panel(self.list, pad=10, inner=True); card.pack(fill="x", pady=4)
-            if is_active: card.configure(highlightthickness=3)
-            head = themed_frame(card); head.pack()
-            tk.Label(head, text=name, font=T.f(13), fg=T.PALETTE["title"], bg=head["bg"]).pack(side="left")
-            T.Text(head, f"   {m.get('focus', '').upper()}" + ("   ·   SELECTED" if is_active else ""), muted=not is_active, font=T.f(9)).pack(side="left")
-            if m.get("description"):
-                dt = T.Text(card, m["description"], font=T.f(9)); dt.configure(justify="center"); dt.pack()
-            if name != "Core (default)":
-                s = MD.stats(name); subj = ", ".join(f"{k} {v}" for k, v in s["subjects"].items()) or "nothing yet"
-                st = T.Text(card, f"LEARNED: {subj}   ·   WAITING: {s['waiting']}   ·   VERSIONS: {s['versions']}" +
-                       (f"   ·   UPDATED {m['updated'].replace('T', ' ')}" if m.get("updated") else ""), muted=True, font=T.f(9))
-                st.configure(justify="center"); st.pack(pady=(2, 0))
-            r = themed_frame(card); r.pack(pady=(6, 0))
-            T.Button(r, "Selected" if is_active else "Select", lambda n=name: self.select(n)).pack(side="left", padx=(0, 6))
-            if name != "Core (default)":
-                T.Button(r, "Train", lambda n=name: self.train(n)).pack(side="left", padx=(0, 6))
-                T.Button(r, "Versions", lambda n=name: self.versions(n)).pack(side="left", padx=(0, 6))
-            if not m.get("builtin"):
-                T.Button(r, "Rename", lambda n=name: self.rename(n)).pack(side="left", padx=(0, 6))
-                T.Button(r, "Delete", lambda n=name: self.delete(n), kind="danger").pack(side="left")
-
-    def _fit(self, e=None):
-        w, h, lh = self.cv.winfo_width(), self.cv.winfo_height(), self.list.winfo_reqheight()
-        self.cv.coords(self.win, w / 2, max(0, (h - lh) // 2))                               # the cards sit in the middle of the space under the divider (top-aligned once they outgrow it)
-        self.cv.configure(scrollregion=(0, 0, w, max(lh, h)))
-
-    def _wrap_intro(self, e=None):
-        """the intro text stays inside its borders: it wraps to the space left of the gutter (measured pixels, as text so zoom leaves them alone)"""
-        self.intro.configure(wraplength=f"{max(200, self.winfo_width() - self.gut.winfo_reqwidth() - int(round(32 * T.Z)))}")
-
-    def _dialog(self, title):
-        win = tk.Toplevel(self.app); win.title(title); win.configure(bg=T.PALETTE["bg"]); win.transient(self.app); win.resizable(False, False)
-        p = T.Panel(win, pad=18); p.pack(padx=10, pady=10); T.Title(p, title).pack(pady=(0, 10)); return win, p
-
-    def create(self):
-        win, p = self._dialog("Create a model")
-        name = tk.StringVar(); desc = tk.StringVar(); focus = tk.StringVar(value="Landscapes"); start = tk.StringVar(value="Empty")
-        for label, widget in (("NAME", lambda f: T.Entry(f, name, width=30)), ("DESCRIPTION", lambda f: T.Entry(f, desc, width=40))):
-            r = themed_frame(p); r.pack(fill="x", pady=4); T.Text(r, label, font=T.f(10)).pack(side="left", padx=(0, 10)); widget(r).pack(side="left")
-        r = themed_frame(p); r.pack(fill="x", pady=4); T.Text(r, "FOCUS", font=T.f(10)).pack(side="left", padx=(0, 10)); T.Choice(r, "", MD.FOCUS, focus).pack(side="left")
-        r = themed_frame(p); r.pack(fill="x", pady=4); T.Text(r, "START FROM", font=T.f(10)).pack(side="left", padx=(0, 10))
-        T.Choice(r, "", ["Empty", "My learned style"] + MD.names(), start).pack(side="left")
-        err = T.Text(p, "", font=T.f(9)); err.pack(pady=4)
-        def ok():
-            try: MD.create(name.get(), focus.get(), desc.get(), None if start.get() == "Empty" else start.get())
-            except ValueError as e: return err.configure(text=str(e), fg="#ff8a65")
-            win.destroy(); self.select(name.get().strip())
-        r = themed_frame(p); r.pack(pady=8); T.Button(r, "Create", ok).pack(side="left", padx=6); T.Button(r, "Cancel", win.destroy, kind="danger").pack(side="left")
-
-    def select(self, name):
-        prefs.set("active_model", name); self.app.refresh_models(); self.app.gen["model"].set(name); self.show()
-
-    def train(self, name):
-        sec = self.app.pages["AI Training"]; sec.select("Learn from Images"); sec.pages["Learn from Images"].set_target(name)
-
-    def rename(self, name):
-        win, p = self._dialog("Rename model"); new = tk.StringVar(value=name)
-        T.Entry(p, new, width=30).pack(pady=4); err = T.Text(p, "", font=T.f(9)); err.pack()
-        def ok():
-            try: MD.rename(name, new.get())
-            except ValueError as e: return err.configure(text=str(e), fg="#ff8a65")
-            if self.app.gen["model"].get() == name: self.app.gen["model"].set(new.get().strip())
-            win.destroy(); self.app.refresh_models(); self.show()
-        r = themed_frame(p); r.pack(pady=8); T.Button(r, "Rename", ok).pack(side="left", padx=6); T.Button(r, "Cancel", win.destroy, kind="danger").pack(side="left")
-
-    def versions(self, name):
-        win, p = self._dialog(f"Versions of {name}"); vs = MD.versions(name)
-        if not vs: T.Text(p, "No versions yet: every training session saves one.", muted=True).pack()
-        for f in vs[:20]:
-            r = themed_frame(p); r.pack(fill="x", pady=2); stamp = os.path.basename(f)[8:-5].replace("-", " ", 1)
-            T.Text(r, stamp, font=T.f(10)).pack(side="left", padx=(0, 12))
-            T.Button(r, "Roll back to this", lambda f=f: (MD.rollback(name, f), win.destroy(), self.show(), T.banner(self.app, f"ROLLED BACK — {name} now uses that version", "success"))).pack(side="left")
-        T.Button(p, "Close", win.destroy, kind="danger").pack(pady=10)
-
-    def delete(self, name):
-        if T.popup(self.app, f"DELETE {name.upper()}?", "Its learning, words and versions are deleted. The Core and other models are not affected.\nThis can't be undone.",
-                   (("Delete", "danger"), ("Cancel", "normal"))) == "Delete":
-            MD.delete(name)
-            if self.app.gen["model"].get() == name: self.app.gen["model"].set("Core (default)")
-            self.app.refresh_models(); self.show()
 
 # ---------------------------------------------------------------- Words
-class WordsPage(Page):
-    def __init__(self, master, app):
-        super().__init__(master, app)
-        T.Title(self, "Teach it words").pack(pady=(0, 6))
-        T.Text(self, f"It already knows {len(language.load_vocab(home_dir()))} painting words and phrases. Teach it yours.", muted=True).pack()
-        T.Button(self, "Teach a new word or phrase", lambda: TeachDialog(self.app, on_done=self.refresh)).pack(pady=12)
-        T.Title(self, "Words you've taught it").pack(anchor="w")
-        self.list = T.Field(self, height=9); self.list.pack(fill="both", expand=True, pady=6)
-        T.Title(self, "Test its understanding").pack(anchor="w", pady=(8, 2))
-        r = themed_frame(self); r.pack(fill="x"); self.test = tk.StringVar(value="a lonely wanderer at golden hour")
-        T.Entry(r, self.test, width=60).pack(side="left", fill="x", expand=True); T.Button(r, "Test", self.do_test).pack(side="left", padx=8)
-        self.res = T.Text(self, "", font=T.f(10)); self.res.configure(wraplength=1000); self.res.pack(anchor="w", pady=6)
-        self.refresh()
-
-    def refresh(self):
-        self.list.delete("1.0", "end"); tw = language.taught_words(home_dir())
-        self.list.insert("1.0", "\n".join(f"{w}  →  {m}" for w, m in tw.items()) or "(none yet)")
-
-    def do_test(self):
-        text = self.test.get(); o, u, k = language.understand(text, home_dir())
-        show = lambda o, u, k, note="": self.res.configure(text=f"UNDERSTOOD: {', '.join(u) or 'nothing'}\nSETTINGS:   {o}\nUNKNOWN:    {', '.join(k) or 'none'}{note}", fg="#4fdc7a")
-        show(o, u, k)
-        def work():                                                                           # then the text model's reading, if it's there
-            if not language.ai_available(): return
-            self.app.q.put(lambda: show(o, u, k, "\n(the text model is reading it…)"))
-            o2, u2 = language.ai_refine(text, o, u); self.app.q.put(lambda: show(o2, u2, k))
-        threading.Thread(target=work, daemon=True).start()
 
 # ---------------------------------------------------------------- Paint
-class PaintPage(Page):
-    def __init__(self, master, app):
-        super().__init__(master, app)
-        T.Title(self, "Classic tools").pack(pady=(0, 18))
-        for text, cmd in (("Add a painting as a style", self.add_style),
-                          ("Classic tools  (repaint any image, book scenes)", lambda: classic.App(self.app))):
-            T.Button(self, text, cmd, width=46).pack(pady=7)
-        T.Hints(self, [("TAB", "next button"), ("ENTER", "press")]).pack(side="bottom", pady=4)
-
-    def add_style(self):
-        p = filedialog.askopenfilename(parent=self.app, title="Choose a painting to use as a style", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp")])
-        if p: shutil.copy(p, classic.user_styles_dir()); T.banner(self.app, "STYLE ADDED — saved to my-styles; use it from the classic tools", "success")
 
 # ---------------------------------------------------------------- About
 VERSION = "0.9 (Nov 15, 2026)"

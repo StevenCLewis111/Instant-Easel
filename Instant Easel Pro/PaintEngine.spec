@@ -3,10 +3,10 @@
 import os
 SYSTEMS = [d for d, _, files in os.walk('systems') if any(f.endswith('.py') for f in files)]
 a = Analysis(['main.py'], pathex=['.'] + SYSTEMS,
-             datas=[('images/UI', 'images/UI'), ('images/Styles', 'images/Styles'), ('fonts', 'fonts')],
-             hiddenimports=['scipy.ndimage', 'scipy.special._cdflib', 'PIL._tkinter_finder', 'scenes', 'learn', 'painter2', 'bench',
-                            'brushes', 'landscape', 'paint_window', 'app', 'language', 'theme', 'img2img', 'paths', 'skin', 'ui_art',
-                            'art_panel', 'crash', 'image_grabber', 'shortcut'],
-             excludes=['matplotlib', 'pandas'])
+             datas=[('images/UI', 'images/UI'), ('fonts', 'fonts')],
+             hiddenimports=['scipy.ndimage', 'scipy.special._cdflib', 'PIL._tkinter_finder', 'paths', 'prefs', 'features', 'theme', 'skin', 'ui_art',
+                            'art_panel', 'crash', 'shortcut', 'brain', 'brushes', 'brush_catalog', 'paint_window', 'rename_custom', 'draw_studio', 'edit',
+                            'settings_pages', 'learning_areas', 'image_models', 'image_grabber'],
+             excludes=['matplotlib', 'pandas', 'torch', 'transformers'])
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='InstantEaselPro', icon='images/UI/App Icon/icon.ico', console=False, upx=False)

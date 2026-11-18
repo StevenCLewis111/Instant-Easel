@@ -11,3 +11,4 @@ EXE Build/recovery/
 EXE Build/my-library/
 EXE Build/my-models/
 EXE Build/firefox_profile/
+logs/text_engine.log

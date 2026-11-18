@@ -6,50 +6,71 @@ Generated from `features.py` (the same list the app's menus use).
 
 | # | Feature | Menu | Status |
 |---|---|---|---|
-| 3 | Text to Image | Images | 🟡 partial |
-| 5 | AI Models | Settings | 🟡 partial |
-| 6 | Inpainting | Images | ⬜ planned |
+| 1 | AI Models | Settings | 🟡 partial |
+| 3 | Text to Image | AI Images | ⬜ planned |
+| 4 | Image to Image | AI Images | ⬜ planned |
+| 5 | Image Learning | AI Training | 🟡 partial |
+| 6 | Inpainting | AI Images | ⬜ planned |
 | 7 | AI Tools | Editing | ⬜ planned |
-| 10 | Prompt to Edit | Images | ⬜ planned |
-| 11 | Sketch to Image | Images | ⬜ planned |
-| 12 | Image Prompting | Images | ⬜ planned |
-| 13 | Multi-Image Fusion | Images | ⬜ planned |
-| 14 | Pose to Image | Images | ⬜ planned |
-| 15 | Consistent Character | Images | ⬜ planned |
-| 16 | Depth to Image | Images | ⬜ planned |
-| 20 | Text to Video | Videos | ⬜ planned |
-| 21 | Image to Video | Videos | ⬜ planned |
-| 22 | Motion Effects | Videos | ⬜ planned |
-| 23 | Story Sequence | Videos | ⬜ planned |
-| 24 | Video Style | Videos | ⬜ planned |
-| 25 | Loops & GIFs | Videos | ⬜ planned |
-| 26 | Video Edit | Videos | ⬜ planned |
-| 27 | Video Settings | Videos | ⬜ planned |
+| 10 | Prompt to Edit | AI Images | ⬜ planned |
+| 11 | Sketch to Image | AI Images | ⬜ planned |
+| 12 | Image Prompting | AI Images | ⬜ planned |
+| 13 | Multi-Image Fusion | AI Images | ⬜ planned |
+| 14 | Pose to Image | AI Images | ⬜ planned |
+| 15 | Consistent Character | AI Images | ⬜ planned |
+| 16 | Depth to Image | AI Images | ⬜ planned |
+| 20 | Text to Video | AI Videos | ⬜ planned |
+| 21 | Image to Video | AI Videos | ⬜ planned |
+| 22 | Motion Effects | AI Videos | ⬜ planned |
+| 22 | Video Learning | AI Training | ⬜ planned |
+| 23 | Story Sequence | AI Videos | ⬜ planned |
+| 24 | Video Style | AI Videos | ⬜ planned |
+| 25 | Loops & GIFs | AI Videos | ⬜ planned |
+| 26 | Video Edit | AI Videos | ⬜ planned |
+| 27 | Video Settings | AI Videos | ⬜ planned |
+| 30 | New Chat | AI Chat | ⬜ planned |
+| 31 | Chat History | AI Chat | ⬜ planned |
+| 32 | Chat Settings | AI Chat | ⬜ planned |
+| 33 | Code Editor | AI Coding | ⬜ planned |
+| 34 | Run | AI Coding | ⬜ planned |
+| 35 | Snippets | AI Coding | ⬜ planned |
 
-## Images: Make new images
+## Drawing: Draw and paint by hand (the whole page is the drawing studio)
 
-### Text to Image  (🟡 partial)
-Type what you want; it paints it.
+### Draw  (✅ built)
+A full drawing studio: paint by hand on a blank page, the last created image, or any picture.
 
-- Prompt box with 'what I understood' and unknown words (built)
-- SHARED IMAGE SETTINGS PANEL, right side of Images, used by every Create tool (built):
--    Model: Core (default) / My learned style (built); trained models appear here once Training > Models exists
--    Art style: 19 styles in a thumbnail gallery (built): Painterly, Realism, Oil Painting, Watercolor, Pastel, Pencil Sketch, Black and White, Cartoon, Anime, Comic Book, Pop Art, Street Art, Pixel Art, Abstract, Impressionist, Stained Glass, Woodblock Print, Neon, Low Poly; style words in the prompt pick them too
--    Aspect ratio: 2:3, 3:2, 1:1, 16:9, 9:16, original, painted at that shape (built)
--    Next: cover and thumbnail presets: 21:9 wide cover, 4:5 and 3:4 vertical, 1:1 share card, 1280x720 thumbnail, 6x9 in book cover; 'make all sizes' from one image
--    How many: 1, 4 (2x2) or 9 (3x3), click one to choose it (built)
--    Starting image: upload / clear; guides colors in Text to Image, is the picture in Image to Image (built)
--    Download all (built); Save per image (built)
-- New variation (built)
-- Next: your saved styles in Art style; trained models in Model
+- Toolbar: Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror symmetry
+- Brush library: all 45 brushes as live stroke previews, grouped; brush properties: size (1-300), opacity, preview stroke
+- Brush library sections (brush_catalog.py): Brushes, Pens, Blending, Blurring, Sharpen, Special Effects, Stamps & Icons, Layers & FX Brushes, Texture Brushes, More brushes; tools not built yet show a drawn preview marked SOON
+- Next: Blending (smudge, blend, soften, mix), Blurring (gaussian, motion, radial, zoom), Sharpen (unsharp mask, high pass, edge enhance, detail), Special Effects (dodge, burn, saturation, hue shift, noise, pixelate), Stamps (25 icons), FX (glow, outline, shadow, inner shadow, outer glow, neon), Textures (canvas, fabric, brick, metal, paper, clouds)
+- Layers: add, duplicate, delete, merge down, move up/down, show/hide, layer opacity, blend modes (normal, multiply, screen, overlay)
+- Color: hue ring + saturation/brightness square, hex code, color history, eyedropper
+- Canvas: zoom with the wheel, pan with the right mouse button; only the visible part is redrawn
+- New, Open, Use last created, Save, Send to Editing
+- Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y
+- Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails
 
-### Image to Image  (✅ built)
+## AI Images: Make new images
+
+### Text to Image  (⬜ planned)
+Type what you want; the image model paints it.
+
+- Your words go through the core text model first, which turns them into a clear picture description
+- Pick which of your image models (Cartoon, Fashion, Nature...) to switch on
+- Size, how many, seed
+- Save / download
+
+*Note:* Needs an image model: Settings > AI Models > AI Images (Stable Diffusion 1.5 recommended for a 6 GB card). Being built next.
+
+### Image to Image  (⬜ planned)
 Repaint any picture, guided by words.
 
-- Strength
-- Art style, model, aspect, how many: from the shared Image settings panel
-- Palette: keep, warm, night
-- Mood words, night re-lighting, captions
+- Start from a picture
+- How much to change it
+- Your image models
+
+*Note:* Needs the image engine (being built next).
 
 ### Prompt to Edit  (⬜ planned)
 Edit an image by describing the change.
@@ -115,7 +136,7 @@ Carry the style and subject feel of a reference image into a creation.
 - Style strength (palette, texture, brushwork)
 - Uses the same learning as Train
 
-## Videos: Make moving pictures (future)
+## AI Videos: Make moving pictures (future)
 
 ### Text to Video  (⬜ planned)
 Type a scene; it paints it and brings it to life.
@@ -196,6 +217,60 @@ Shared panel for every Video tool (like Image settings).
 
 *Note:* MP4/WebM export needs a small video encoder bundled with the app (ffmpeg); GIF needs nothing extra.
 
+## AI Chat: Talk with it (future)
+
+### New Chat  (⬜ planned)
+Placeholder.
+
+
+### Chat History  (⬜ planned)
+Placeholder.
+
+
+### Chat Settings  (⬜ planned)
+Placeholder.
+
+
+## AI Coding: Code tools (future)
+
+### Code Editor  (⬜ planned)
+Placeholder.
+
+
+### Run  (⬜ planned)
+Placeholder.
+
+
+### Snippets  (⬜ planned)
+Placeholder.
+
+
+## AI Training: Teach it
+
+### Image Learning  (🟡 partial)
+Your image models (Cartoon, Fashion, Nature...), each with its own pictures, step by step.
+
+
+### Video Learning  (⬜ planned)
+Teach it movement from short clips (needs a 16 GB+ graphics card to train).
+
+
+### Chat Learning  (✅ built)
+Teach it how to answer: examples, a check set, training, testing; a library for facts.
+
+
+### Coding Learning  (✅ built)
+Teach it to code your way from permitted, clean code and your examples.
+
+
+### Image Scraper  (✅ built)
+Find pictures on Google Images to learn from.
+
+
+### Pictures  (✅ built)
+The active image model's pictures and their review.
+
+
 ## Editing: Change an image (any picture, or one it made)
 
 ### Light  (✅ built)
@@ -260,18 +335,6 @@ Bigger changes.
 
 *Note:* Remove background, expand and upscale can be built into the engine. Fix faces needs a face-restoration AI model run offline as an add-on.
 
-### Draw  (✅ built)
-A full drawing studio: paint by hand on a blank page, the last created image, or any picture.
-
-- Toolbar: Undo, Redo, Zoom -/+/Fit, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Mirror symmetry
-- Brush library: all 45 brushes as live stroke previews, grouped; brush properties: size (1-300), opacity, preview stroke
-- Layers: add, duplicate, delete, merge down, move up/down, show/hide, layer opacity, blend modes (normal, multiply, screen, overlay)
-- Color: hue ring + saturation/brightness square, hex code, color history, eyedropper
-- Canvas: zoom with the wheel, pan with the right mouse button; only the visible part is redrawn
-- New, Open, Use last created, Save, Send to Editing
-- Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y
-- Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails
-
 ### History  (✅ built)
 Undo, redo, every step by name, compare, reset, save as new / overwrite.
 
@@ -281,39 +344,6 @@ Undo, redo, every step by name, compare, reset, save as new / overwrite.
 - Compare original and current side by side
 - Reset to original (undoable)
 - Save as new; Overwrite original (with confirmation)
-
-## Training: Teach it
-
-### Models  (✅ built)
-Trained models on a shared Core: create, select, rename, train, versions, delete.
-
-- Create: name, focus (Landscapes, Faces, Cartoons, Animals, Night scenes, Architecture, Custom), description; start empty or from another model
-- Select: the model Images paints with (also in Image settings > Model)
-- Train: opens Learn from Images aimed at that model
-- Rename; Delete (with confirmation; the Core and other models are untouched)
-- Versions: every training session saves one; roll back any time
-- Each model: its own images (deleted after learning), learned style, and words
-- Shared Core: painting knowledge, brushes, styles, words taught to all models, and every label correction (improves every model's guesses)
-
-*Note:* A model learns how things look (color, texture, brushwork, light). New kinds of subjects need a painter in the Core, which then serves every model.
-
-### Learn from Images  (✅ built)
-Images it learns from (guess + confirm), per subject. Images are deleted after learning.
-
-- Add images
-- Confirm labels
-- Learn
-- Cumulative: new learning blends into old, weighted by image count
-- Fingerprints stop the same picture being learned twice
-- After learning, the app's copies are deleted (switch 'Keep copies' to keep them); your originals are never touched
-- Dated profile versions in history/ (numbers only)
-
-### Words  (✅ built)
-Teach its vocabulary.
-
-- Teach a word
-- Words you've taught
-- Test understanding
 
 ## Settings: The app itself
 
@@ -326,13 +356,6 @@ Save folder, file format and quality, auto-save, file names, start tab, confirm 
 - File name pattern
 - Open on start
 - Confirm before quitting
-
-### Generation Defaults  (✅ built)
-What the Image settings start with; fixed or random seed.
-
-- Model, art style, aspect, how many
-- Seed: random or fixed
-- Apply now
 
 ### Performance  (✅ built)
 Speed vs quality.
@@ -364,16 +387,13 @@ What stays on your PC; storage used; clear learned data; reset words.
 - Local error log
 
 ### AI Models  (🟡 partial)
-Built-in model runner (no separate programs): hardware, catalog, model files.
+The core text model (Qwen3.5 4B or 9B, switchable) and each AI tab's own model.
 
-- Your PC: processor, memory, graphics card
-- Use the graphics card (Vulkan)
-- Models folder
-- Catalog: Gemma 4 E4B, SDXL-class, FLUX.1 [schnell] with size and license; found / not installed
-- Add a model file
-- Next: the built-in runner that loads and uses the models; downloads
-
-*Note:* Author's direction: native first; model files loaded by the app itself, no separate programs.
+- Core text model: Qwen3.5 4B or 9B, download, start, stop, switch any time
+- AI Chat: the core model
+- AI Coding: the core model or Qwen2.5 Coder 7B
+- AI Images: Stable Diffusion 1.5 / XL / your own file (engine being built next)
+- AI Videos: needs a 16 GB+ graphics card
 
 ### Updates  (✅ built)
 Check GitHub for a newer version; opt-in check at startup.
@@ -415,29 +435,18 @@ Logo, version, credits and open-source notes.
 - Credits
 - Open-source notes and licenses
 
-### Classic Tools  (✅ built)
-Older tools: repaint book scenes, styles.
+## How the models fit together (design)
 
-- Book scenes
-- Styles
+**One core text model** (Qwen3.5 4B or 9B, switchable in Settings > AI Models) understands you in every AI tab. It runs on this PC
+through llama.cpp, which reaches Intel Arc, AMD and NVIDIA cards through Vulkan.
 
-## How models work (design)
+**Each tab can add its own model** on top of the core, for what that tab makes:
+- AI Chat: the core model.
+- AI Coding: the core model, or a coding model (Qwen2.5 Coder 7B).
+- AI Images: an image model (Stable Diffusion 1.5 for a 6 GB card). Your words go through the core model first.
+- AI Videos: a video model (needs a 16 GB+ card).
 
-**The Core** is shared by every model, and improved by every model:
-- **Language:** the painting vocabulary, and every word taught in any model.
-- **Painting knowledge:** composition, light and depth rules (`KNOWLEDGE.md`), the brushes and the subject painters (sky, mountains, rock, grass, figures…).
-- **Learning methods:** how images are measured (palette, texture, brushwork, light and dark), the label guesser and its corrections, and the test suite.
-- **When any model is trained,** anything general it teaches (new words, corrected guesses, better learning settings) goes into the Core, so every model benefits.
-
-**A Model** is trained its own way to become its own thing:
-- **Identity:** a name, a focus (faces, cartoons, animals, landscapes, night scenes…), a description and a cover image.
-- **Its own training images,** labeled by subject.
-- **Its own learned style:** palettes, textures, brushwork and light-and-dark structure, learned only from its images.
-- **Its own words,** on top of the Core's (for example, "chibi" means something only in the cartoons model).
-- **Its own defaults:** medium, palette, aspect ratio.
-- **Versions** (like checkpoints): every training saves a version you can roll back to, with its test scores.
-
-**In Training > Models:** create, select (the active model), rename or edit, delete (with confirmation), see its images, versions and scores.
-**In Create:** pick which model paints.
-
-**Honest limit:** a model learns *how things look* (color, texture, light, brushwork) from its images. Drawing a new *kind* of subject (animal bodies, cartoon faces) also needs a painter for that subject in the Core, and once it's added, every model can use it.
+**Training** has a side button per area (Image, Video, Chat, Coding), each with the steps that suit it.
+- Image Learning has one more layer: your own image models (Cartoon, Fashion, Nature...). Each is trained on its own pictures, as a
+  small add-on (LoRA) on top of the image model.
+- Chat and Coding learn from examples and a library now. Fine-tuning the model itself needs a 12 GB+ graphics card.

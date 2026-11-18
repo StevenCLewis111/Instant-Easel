@@ -10,11 +10,11 @@ Dots: **green** works now · **blue** started (saved or partly working) · **gre
 Settings are kept in `.json/learning_settings.json`; the code is `systems/AI Training/Learning Areas/learning_areas.py`.
 
 ## Image Learning
+- **Image models:** the bar at the top picks which of your image models you're training (Cartoon, Fashion, Nature...), or makes, renames or deletes one. Each has its own pictures, so they never mix.
 - **Collect:** search Google Images (each picture is labelled with the word you searched), or add your own. 15–50 varied pictures per word is the sweet spot.
-- **Clean:** review before learning and untick bad pictures. Pictures already learned are skipped, and so are tiny ones (under 256 px).
-- **Label:** the search word is the label. "Teach words" teaches what your words mean.
-- **Train / Test:** Learn now; every training saves a version you can roll back to (Models).
-- It learns how things look: colours, textures, brushwork and light.
+- **Clean:** every new picture goes through a review where you untick bad ones. Duplicates and tiny pictures are skipped.
+- **Label:** the search word is the label. Each image model gets its own made-up trigger word.
+- **Train / Test:** training each image model's add-on (a LoRA) on top of Stable Diffusion 1.5 comes with the image engine, which is the next thing being built.
 
 ## Video Learning
 - Use short real clips (3–5 s), not only still pictures, because still pictures teach it not to move. 10–30 clips is a good start.
@@ -22,10 +22,10 @@ Settings are kept in `.json/learning_settings.json`; the code is `systems/AI Tra
 - Training a video model needs a graphics card with 16 GB+ (or a rented one online), so most of this area is grey for now. Clips you add are kept in the video library.
 
 ## Chat Learning and Coding Learning
-- **Facts go in the library; how to answer is what training changes.** Training doesn't store facts reliably.
-- **Collect:** teach examples (a question and the perfect answer), or import a `.jsonl` / `.csv` file. Aim for 100+; 500+ is better.
-- **Clean:** duplicates are removed. Coding also keeps only permissively licensed code (MIT, Apache, BSD), skips duplicate files, and skips Python that doesn't compile.
-- **Settings:** 1–3 passes, a learning speed (Careful / Normal / Fast), and an add-on size (8 / 16 / 32).
-  "Hold back 10% to check it" keeps some examples out of training. Training stops early once the check gets worse, because that means it has started memorising.
-- **Train:** each area trains its own small add-on. Other areas and the base model don't change.
+- These teach the core text model (Settings > AI Models).
+- **Facts go in the library; how to answer goes in examples.** Both are used every time it answers, starting now.
+- **Collect:** teach examples (a question and the perfect answer), or import a `.jsonl` / `.csv` file. Add documents or code to the library.
+- **Clean:** duplicates count once. Coding keeps only permissively licensed code (MIT, Apache, BSD), skips duplicate files, and skips Python that doesn't compile.
+- **Format:** answer length. For coding, also the main language and whether to explain the code.
+- **Train:** baking examples into the model itself needs a 12 GB+ graphics card, so the training settings are saved for then.
 - **Test:** ask it questions that are not in your examples.

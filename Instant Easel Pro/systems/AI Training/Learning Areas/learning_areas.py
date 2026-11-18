@@ -65,11 +65,11 @@ def _text_steps(tab, code=False):
                B("Import examples from a file", "built", "A .jsonl (text / answer) or .csv file (two columns: question, answer).", "import_examples"),
                I("Examples so far", "built", "Aim for 100 or more good examples; 500+ is better. A few great ones beat many sloppy ones.", "count")]
     if code:
-        collect += [B("Add a code folder", "partial", "Copies code files into the coding library after the checks in Clean. "
-                      "Kept for the library (looking things up comes next); it isn't trained on yet.", "import_code")]
+        collect += [B("Add a code folder", "built", "Copies code files into the coding library after the checks in Clean; it looks things up "
+                      "there when it answers.", "import_code")]
     else:
-        collect += [B("Add documents to the library", "partial", "Facts belong in a library it looks things up in, not in training. "
-                      "Your files are kept there now; looking things up while answering comes next.", "import_docs")]
+        collect += [B("Add documents to the library", "built", "Facts belong in a library it looks things up in, not in training. "
+                      "It reads the parts that match your question before it answers.", "import_docs")]
     clean = [S("Remove duplicate examples", "built", "The same example twice makes it lean too hard on it. Duplicates count once when training.", "dedupe", True),
              B("Open the examples folder", "built", "Everything taught is in examples.jsonl, one per line, if you want to look or fix by hand.", "open_folder"),
              B("Review and fix examples", "planned", "A list of every example with edit and delete.", "planned")]
@@ -79,56 +79,55 @@ def _text_steps(tab, code=False):
                  S("Skip exact duplicates", "built", "About half of public code is copies; copies teach it to parrot boilerplate.", "dedupe", True),
                  S("Skip Python that doesn't compile", "built", "Broken code teaches broken code.", "compiles", True),
                  B("Remove passwords and keys", "planned", "Finds things like API keys and passwords in code and blanks them out.", "planned")] + clean[1:]
-    fmt = [C("Answer style", "partial", "How long its answers should be. Saved now; used when it answers next.", "style", ["Short", "Normal", "Detailed"], "Normal")]
+    fmt = [C("Answer style", "built", "How long its answers should be.", "style", ["Short", "Normal", "Detailed"], "Normal")]
     if code:
-        fmt = [C("Main language", "partial", "Saved now; it will steer collecting and testing.", "language", ["Python", "JavaScript", "Any"], "Python"),
-               S("Explain the code too", "partial", "Answers come with a short explanation. Saved now; used when it answers next.", "explain", True)]
-    settings = [C("Passes over the examples", "built", "1 to 3. More passes make it memorise your examples and forget other things.", "epochs", ["1", "2", "3"], "2"),
-                C("Learning speed", "built", "Careful learns slower and safer; Fast can wreck what it knew. Normal suits most.", "speed", SPEEDS, "Normal"),
-                C("Add-on size", "built", "How much the small add-on can hold. 8 or 16 for a few hundred examples.", "rank", ["8", "16", "32"], "8"),
-                S("Hold back 10% to check it", "built", "Those examples are never trained on; they show whether it learned or just memorised. "
+        fmt = [C("Main language", "built", "The language it writes in unless you ask for another.", "language", ["Python", "JavaScript", "Any"], "Python"),
+               S("Explain the code too", "built", "Answers come with a short explanation.", "explain", True)]
+    settings = [I("How it learns right now", "built", "Your examples and library are used every time it answers. Training the model itself "
+                  "needs a graphics card with 12 GB or more (or a rented one), so the settings below are saved for then.", "tip"),
+                C("Passes over the examples", "planned", "1 to 3. More passes make it memorise your examples and forget other things.", "epochs", ["1", "2", "3"], "2"),
+                C("Learning speed", "planned", "Careful learns slower and safer; Fast can wreck what it knew. Normal suits most.", "speed", SPEEDS, "Normal"),
+                C("Add-on size", "planned", "How much the small add-on can hold. 8 or 16 for a few hundred examples.", "rank", ["8", "16", "32"], "8"),
+                S("Hold back 10% to check it", "planned", "Those examples are never trained on; they show whether it learned or just memorised. "
                   "Training stops once the check gets worse. Needs 10+ examples.", "holdout", True)]
-    train = [B(f"Train {tab}", "built", "Bakes the examples into this area's own add-on. Other areas don't change.", "train"),
-             I("Last training", "built", "When it was trained, on how many examples, and its check score (lower is better).", "trained"),
+    train = [I("What it knows", "built", "Examples it follows and library files it looks things up in.", "knows"),
+             B(f"Train {tab}", "planned", "Bakes the examples into this area's own add-on. Needs a 12 GB+ graphics card (or a rented one).", "planned"),
              B(f"Forget everything {tab} learned", "built", "Clears this area's examples and add-on. The base model and other areas are untouched.", "forget")]
     test = [B("Ask it something", "built", "Try questions that are NOT in your examples. That's the real test.", "ask")]
     test += ([B("Run its code against tests", "planned", "Write a test, let it write the code, and run them together.", "planned")] if code else
-             [S("Use the library when answering", "planned", "Looks up your documents first, then answers from them.", "use_library", False)])
-    goal = ([C("What should it get better at?", "partial", "Writing code your way is training; knowing a library's details is the library.",
+             [S("Use the library when answering", "built", "Looks up your documents first, then answers from them.", "use_library", True)])
+    goal = ([C("What should it get better at?", "built", "Writing code your way is training; knowing a library's details is the library.",
                "goal", ["Write code my way", "Explain code", "Fix bugs"], "Write code my way")] if code else
-            [C("What should it get better at?", "partial", "Knowing facts: use the library. Answering your way (tone, format, steps): train it.",
+            [C("What should it get better at?", "built", "Knowing facts: use the library. Answering your way (tone, format, steps): train it.",
                "goal", ["Answering my way", "Knowing my stuff", "Both"], "Answering my way")])
     return [("Goal", goal), ("Collect", collect), ("Clean", clean), ("Format", fmt), ("Settings", settings), ("Train", train), ("Test", test)]
 
 AREAS = {
- "Image Learning": dict(tab="AI Images", intro="Teaches it how things look: colours, textures, brushwork and light, one subject per word you search.",
+ "Image Learning": dict(tab="AI Images", intro="Each image model (Cartoon, Fashion, Nature...) learns from its own pictures. Pick one at the top.",
   steps=[
-   ("Goal", [C("What are you teaching?", "partial", "A subject (a shoe, a cat), a style (watercolour, neon) or a place. Saved now; it will set the right defaults.",
-               "goal", ["A subject", "A style", "A place or mood"], "A subject"),
-             B("Choose which model learns", "built", "Each model learns only from its own pictures, so a cartoon model never picks up photo looks.", "models")]),
+   ("Goal", [C("What is this image model for?", "built", "Saved with the model. A focused model (only cartoons, only shoes) learns faster and better.",
+               "focus", ["Cartoons", "Fashion", "Nature", "Portraits", "Animals", "Products", "Architecture", "Anything"], "Anything"),
+             I("Image model it trains on top of", "built", "Chosen in Settings > AI Models (Stable Diffusion 1.5 is best for a 6 GB card).", "base")]),
    ("Collect", [B("Search Google Images", "built", "Type the word; every picture found is labelled with that word.", "scraper"),
                 B("Add my own pictures", "built", "Your own photos or art. Your files are never changed or moved.", "add_pictures"),
                 C("Pictures per word", "built", "15 to 50 varied pictures is the sweet spot. Under about 15 it copies them; past 100 it hardly helps.",
                   "per_word", ["10", "20", "30", "50"], "20")]),
-   ("Clean", [B("Review pictures before learning", "built", "Untick anything wrong: one bad picture teaches the wrong thing.", "review"),
-              I("Skip pictures it already learned", "built", "Fingerprints stop the same picture counting twice.", "always"),
-              S("Skip tiny pictures", "built", "Pictures under 256 pixels are left out: too small to show texture or brushwork.", "skip_small", True),
+   ("Clean", [B("Review the pictures", "built", "Untick anything wrong: one bad picture teaches the wrong thing.", "review"),
+              S("Skip duplicate pictures", "built", "The same picture twice makes it copy that picture.", "dedupe", True),
+              S("Skip tiny pictures", "built", "Pictures under 256 pixels are left out: too small to show any detail.", "skip_small", True),
               S("Square-crop around the middle", "planned", "Same framing on every picture keeps it learning the subject, not the edges.", "crop", False)]),
    ("Label", [I("Search word = label", "built", "Pictures from a search are labelled with the word you searched. Change any label in the review.", "label_note"),
-              B("Teach words", "built", "Teach what your words mean (\"moody\" = dark, many clouds).", "words"),
-              S("Describe each picture", "planned", "A short automatic description per picture, which you can correct. Wrong descriptions teach wrong things.", "captions", False),
-              C("Trigger word", "planned", "A made-up word (like 'shuez') that switches on what it learned, used the same way on every picture.",
-                "trigger", ["none", "use the search word"], "none")]),
-   ("Settings", [S("Keep copies after learning", "built", "Off: the app's copies are deleted after learning. Your originals are never touched.", "keep", False),
-                 C("Strength", "planned", "How strongly it learns. Too strong and everything it paints looks like your pictures.",
+              I("Trigger word", "built", "A made-up word for this model, used the same way on every picture. Type it in a request to switch the model on.", "trigger"),
+              S("Describe each picture", "planned", "The core model writes a short description of each picture for you to check. Wrong descriptions teach wrong things.", "captions", False)]),
+   ("Settings", [S("Keep copies after training", "built", "Off: the app's copies are deleted after training. Your originals are never touched.", "keep", False),
+                 C("Strength", "planned", "How strongly it learns (the add-on's size). Too strong and everything looks like your pictures.",
                    "strength", ["Gentle", "Normal", "Strong"], "Normal"),
-                 C("Training length", "planned", "Longer for more pictures (about 100 steps per picture); start short and check.",
+                 C("Training length", "planned", "About 100 steps per picture; start with a short test and check before a long run.",
                    "length", ["Short test", "Normal", "Long"], "Normal")]),
-   ("Train", [B("Learn now", "built", "Learns every picture waiting in the library, then deletes the copies (unless kept).", "learn"),
-              I("Waiting to learn", "built", "Pictures added but not learned yet, per label.", "waiting")]),
-   ("Test", [B("Try it in Text to Image", "built", "Paint something with the model you trained and see if it looks right.", "try_images"),
-             B("Roll back to an earlier version", "built", "Every training saves a version; go back if a new one made it worse.", "models"),
-             S("Compare before and after", "planned", "The same request painted before and after training, side by side.", "compare", False)]),
+   ("Train", [I("Pictures ready", "built", "Pictures in this model, per label.", "waiting"),
+              B("Train this image model", "planned", "Trains this model's add-on (a LoRA) on its pictures. Needs the image engine, which is being built next.", "planned")]),
+   ("Test", [B("Make a test picture", "planned", "Paints a request with this model switched on, next to the same request without it.", "planned"),
+             B("Roll back to an earlier version", "planned", "Every training saves a version; go back if a new one made it worse.", "planned")]),
   ]),
  "Video Learning": dict(tab="AI Videos", intro="Teaches movement: how things move, a look, or a character, from short video clips.",
   warn="Training a video model needs a graphics card with 16 GB or more (or a rented one online). Your settings are saved now so it's ready.",
@@ -230,6 +229,7 @@ class AreaPage(tk.Frame):
         T.Title(self, self.AREA).pack(pady=(0, 4))
         T.Text(self, a["intro"], muted=True).pack()
         if a.get("warn"): T.Text(self, a["warn"], font=T.f(9)).pack(pady=(4, 0))
+        self.top_bar()
         bar = _frame(self); bar.pack(pady=(10, 6)); self.step_buttons = {}
         for i, (name, _) in enumerate(a["steps"]):
             b = skin.button(T.Button(bar, f"{i + 1} {name}", lambda n=name: self.show(n), width=11)); b.pack(side="left", padx=3); self.step_buttons[name] = b
@@ -242,6 +242,8 @@ class AreaPage(tk.Frame):
         T.Button(low, "Use best-practice settings", self.best, width=26).pack(side="left", padx=6)
         T.Button(low, "Open this area's folder", lambda: prefs.open_folder(self.folder()), width=24).pack(side="left", padx=6)
         self.show(a["steps"][0][0])
+
+    def top_bar(self): pass                                                     # Image Learning: which image model
 
     # ---- drawing
     def show(self, step):
@@ -257,8 +259,8 @@ class AreaPage(tk.Frame):
                 T.Button(r, "Open" if o["status"] != "planned" else "Coming", lambda o=o: self.run(o), width=10,
                          kind="normal").pack(side="left", padx=(8, 0))
             elif o["kind"] == "choice":
-                v = tk.StringVar(value=str(get(self.AREA, o["key"]))); T.Choice(r, "", o["values"], v).pack(side="left", padx=(8, 0))
-                v.trace_add("write", lambda *x, o=o, v=v: put(self.AREA, o["key"], v.get()))
+                v = tk.StringVar(value=str(self.choice_value(o))); T.Choice(r, "", o["values"], v).pack(side="left", padx=(8, 0))
+                v.trace_add("write", lambda *x, o=o, v=v: self.set_choice(o, v.get()))
             elif o["kind"] == "toggle":
                 v = tk.BooleanVar(value=bool(self.toggle_value(o))); T.Toggle(r, v, command=lambda o=o, v=v: self.set_toggle(o, v.get())).pack(side="left", padx=(8, 0))
             elif o["kind"] == "info":
@@ -271,6 +273,9 @@ class AreaPage(tk.Frame):
         for lab, what in self.infos:
             try: lab.configure(text=self.info_text(what))
             except Exception as e: lab.configure(text=f"({e})")
+
+    def choice_value(self, o): return get(self.AREA, o["key"])
+    def set_choice(self, o, v): put(self.AREA, o["key"], v)
 
     def toggle_value(self, o):
         if o["key"] == "keep": return prefs.get("keep_training_copies")
@@ -287,32 +292,20 @@ class AreaPage(tk.Frame):
 
     # ---- where things live
     def folder(self):
-        if self.AREA == "Image Learning": return self.lfi().folder()
         if self.AREA == "Video Learning": d = paths.data("my-library", "Video clips"); os.makedirs(d, exist_ok=True); return d
         import brain; return brain._tab_dir(self.tab)
 
     def library(self):
-        d = os.path.join(self.folder(), "library"); os.makedirs(d, exist_ok=True); return d
-
-    def lfi(self): return self.app.pages["AI Training"].pages["Learn from Images"]
+        import brain; return brain.library_dir(self.tab)
 
     def info_text(self, what):
         if what in ("tip",): return ""
         if what in ("label_note", "always"): return "ALWAYS ON"
-        if what == "waiting":
-            import learn; w = {k: v for k, v in learn.waiting(self.folder()).items() if v}
-            return "   ".join(f"{k}: {v}" for k, v in w.items()) or "nothing waiting"
         import brain
         if what == "count":
             n = len(brain.examples(self.tab)); return f"{n}  " + ("(a good start)" if n >= 100 else "(aim for 100+)")
-        if what == "trained":
-            i = brain.info(self.tab)
-            if not i["adapter"]: return "not trained yet"
-            t = {}
-            p = os.path.join(brain._tab_dir(self.tab), "trained.json")
-            if os.path.exists(p): t = json.load(open(p))
-            cl = f", check {t['check_loss']:.3f}" if t.get("check_loss") is not None else ""
-            return f"{i['trained_when'][:16].replace('T', ' ')}, {i['trained_on']} examples{cl}"
+        if what == "knows":
+            i = brain.info(self.tab); return f"{i['examples']} examples, {i['library']} library files"
         return ""
 
     # ---- what the buttons do
@@ -325,13 +318,6 @@ class AreaPage(tk.Frame):
         self.refresh()
 
     def goto(self, page): self.app.goto("AI Training", page)
-    def do_models(self): self.goto("Models")
-    def do_scraper(self): self.goto("Image Scraper")
-    def do_words(self): self.goto("Words")
-    def do_review(self): self.goto("Learn from Images")
-    def do_add_pictures(self): self.goto("Learn from Images"); self.lfi().add_images()
-    def do_learn(self): self.goto("Learn from Images"); self.lfi().learn()
-    def do_try_images(self): self.app.goto("AI Images", "Text to Image")
     def do_open_folder(self): prefs.open_folder(self.folder())
 
     def do_add_clips(self):
@@ -374,23 +360,18 @@ class AreaPage(tk.Frame):
                    (("Forget", "danger"), ("Cancel", "normal"))) != "Forget": return
         import brain; brain.forget(self.tab); T.banner(self.app, f"FORGOTTEN — {self.tab}", "success")
 
-    def do_train(self):
-        import brain
-        if not brain.examples(self.tab): return T.banner(self.app, f"NOTHING TO LEARN YET — teach {self.tab} some examples first (Collect)")
-        g = lambda k: get(self.AREA, k)
-        kw = dict(epochs=int(g("epochs")), rank=int(g("rank")), lr=LR.get(g("speed"), 2e-4), holdout=0.1 if g("holdout") else 0.0, dedupe=bool(g("dedupe")))
-        T.banner(self.app, f"TRAINING — {self.tab}: this takes a while; you can keep working", "success")
-        q = self.app.q
-        brain.train_async(self.tab, on_done=lambda ok, m: q.put(lambda: (T.banner(self.app, ("TRAINED — " if ok else "TRAINING FAILED — ") + m,
-                                                                                     "success" if ok else "error"), self.refresh())), **kw)
-
     def do_ask(self):
         d = Dialog(self.app, f"Ask {self.tab}", "Your question", None)
         if not d.result: return
-        import brain; q = self.app.q; question = d.result[0]
+        import brain; q = self.app.q; question = d.result[0]; g = lambda k: get(self.AREA, k)
+        style = {"Short": " Keep the answer short.", "Detailed": " Give a detailed answer."}.get(g("style") or "", "")
+        if self.tab == "AI Coding":
+            style += (f" Write {g('language')} unless the question asks for another language." if g("language") not in (None, "Any") else "")
+            style += " Explain the code briefly after it." if g("explain") else " Just the code, no explanation."
+        system = brain.SYSTEMS.get(self.tab, brain.CHAT_SYSTEM) + style; lib = bool(g("use_library")) if self.tab == "AI Chat" else True
         T.banner(self.app, "THINKING — the first answer takes longer while the model loads", "success")
         def work():
-            try: ans = brain.ask(self.tab, question); q.put(lambda: Answer(self.app, question, ans))
+            try: ans = brain.ask(self.tab, question, system=system, use_library=lib); q.put(lambda: Answer(self.app, question, ans))
             except Exception as e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T ANSWER — {e}"))
         threading.Thread(target=work, daemon=True).start()
 
@@ -421,6 +402,157 @@ class Answer(tk.Toplevel):
         T.Text(p, answer, wraplength=600).pack(anchor="w")
         T.Button(p, "Close", self.destroy, kind="danger").pack(pady=(12, 0))
 
+class ImageAreaPage(AreaPage):
+    """Image Learning: the same steps, for the image model picked in the bar at the top"""
+    AREA = "Image Learning"
+    def top_bar(self):
+        import image_models as IM; self.IM = IM
+        r = _frame(self); r.pack(pady=(8, 0))
+        T.Text(r, "TRAINING:", font=T.f(11)).pack(side="left", padx=(0, 8))
+        self.model_v = tk.StringVar(value=IM.active() or "—"); self.model_choice = T.Choice(r, "", IM.names() or ["—"], self.model_v); self.model_choice.pack(side="left")
+        self.model_v.trace_add("write", lambda *a: (self.model_v.get() in IM.names() and IM.set_active(self.model_v.get()), self.show(self.step)))
+        for text, cmd, kind in (("+ New image model", self.new_model, "normal"), ("Rename", self.rename_model, "normal"), ("Delete", self.delete_model, "danger")):
+            T.Button(r, text, cmd, kind=kind).pack(side="left", padx=(8, 0))
+    def _models_changed(self, pick=None):
+        names = self.IM.names(); self.model_choice.choices = names or ["—"]; self.model_v.set(pick if pick in names else (self.IM.active() or "—"))
+    def new_model(self):
+        d = Dialog(self.app, "New image model", "Its name (e.g. Cartoon, Fashion, Nature)", None)
+        if not d.result: return
+        try: n = self.IM.create(d.result[0].strip()); self.IM.set_active(n); self._models_changed(n)
+        except ValueError as e: return T.banner(self.app, f"CAN'T MAKE IT — {e}")
+        T.banner(self.app, f"MADE — {n} is the image model being trained", "success")
+    def rename_model(self):
+        cur = self.IM.active()
+        if not cur: return T.banner(self.app, "NO IMAGE MODEL YET — make one with + New image model")
+        d = Dialog(self.app, f"Rename {cur}", "New name", None)
+        if not d.result: return
+        try: n = self.IM.rename(cur, d.result[0].strip()); self._models_changed(n)
+        except ValueError as e: T.banner(self.app, f"CAN'T RENAME — {e}")
+    def delete_model(self):
+        cur = self.IM.active()
+        if not cur: return
+        if T.popup(self.app, f"DELETE {cur.upper()}?", "Its pictures and anything it learned are deleted. Other image models are untouched.",
+                   (("Delete", "danger"), ("Cancel", "normal"))) == "Delete":
+            self.IM.delete(cur); self._models_changed(); T.banner(self.app, f"DELETED — {cur}", "success")
+    def need_model(self):
+        n = self.IM.active()
+        if not n: T.banner(self.app, "MAKE AN IMAGE MODEL FIRST — press + New image model (e.g. Cartoon, Fashion, Nature)")
+        return n
+    def folder(self):
+        n = self.IM.active(); return self.IM.folder(n) if n else self.IM.root()
+    def choice_value(self, o):
+        if o["key"] == "focus": return self.IM.info(self.IM.active()).get("focus", "Anything") if self.IM.active() else "Anything"
+        return super().choice_value(o)
+    def set_choice(self, o, v):
+        if o["key"] == "focus" and self.IM.active(): self.IM.update(self.IM.active(), focus=v)
+        else: super().set_choice(o, v)
+    def info_text(self, what):
+        n = self.IM.active()
+        if what == "base":
+            import settings_pages as SP; k = prefs.get("model_AI_Images"); return SP.IMAGE_MODELS.get(k, ("—",))[0]
+        if what == "trigger": return self.IM.info(n).get("trigger", "") if n else "(make an image model first)"
+        if what == "waiting":
+            if not n: return "(make an image model first)"
+            w = self.IM.pictures(n); return "   ".join(f"{k}: {v}" for k, v in w.items()) or "no pictures yet"
+        return super().info_text(what)
+    def pictures(self): return self.app.pages["AI Training"].pages["Pictures"]
+    def do_scraper(self):
+        if self.need_model(): self.goto("Image Scraper")
+    def do_review(self):
+        if self.need_model(): self.goto("Pictures")
+    def do_add_pictures(self):
+        if self.need_model(): self.goto("Pictures"); self.pictures().add_images()
+
+class PicturesPage(tk.Frame):
+    """the active image model's pictures, and the 'what does each picture show?' review they come in through"""
+    def __init__(self, master, app):
+        super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
+        import image_models as IM; self.IM = IM; self.review_view = None
+        home = self.home = _frame(self); home.pack(fill="both", expand=True)
+        self.title = T.Title(home, "Pictures"); self.title.pack(pady=(0, 8))
+        T.Text(home, "The pictures this image model learns from, one folder per label (the word you searched).\n"
+                     "Add more, or search Google Images; every new picture goes through a quick review first.", muted=True).pack(pady=(0, 10))
+        r = _frame(home); r.pack(pady=6)
+        T.Button(r, "Search Google Images", lambda: app.goto("AI Training", "Image Scraper"), width=22).pack(side="left", padx=6)
+        T.Button(r, "Add my own pictures", self.add_images, width=22).pack(side="left", padx=6)
+        T.Button(r, "Open the folder", lambda: self.IM.active() and prefs.open_folder(self.IM.pictures_dir(self.IM.active())), width=18).pack(side="left", padx=6)
+        T.Button(r, "Back to Image Learning", lambda: app.goto("AI Training", "Image Learning"), width=24).pack(side="left", padx=6)
+        self.info = T.Text(home, "", font=T.f(11)); self.info.pack(pady=16)
+        self.bind("<Map>", lambda e: self.refresh(), add="+"); self.refresh()
+
+    def refresh(self):
+        n = self.IM.active()
+        if not n: self.title.configure(text="Pictures"); self.info.configure(text="MAKE AN IMAGE MODEL FIRST (AI TRAINING > IMAGE LEARNING > + NEW IMAGE MODEL)"); return
+        self.title.configure(text=f"Pictures for {n}"); w = self.IM.pictures(n)
+        self.info.configure(text=("   ".join(f"{k.upper()}: {v}" for k, v in w.items()) or "NO PICTURES YET"))
+
+    def add_images(self):
+        ps = filedialog.askopenfilenames(parent=self.app, title="Choose pictures to learn from",
+                                         filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")])
+        if ps: self.review(ps)
+
+    def review(self, ps, remove_originals=False, source=""):
+        """'What does each picture show?' Pictures from a search are labelled with the word searched; your own get the model's
+        name. remove_originals: they came from the scraper, so the scraped files are deleted once reviewed (nothing left behind)"""
+        from PIL import Image, ImageTk
+        n = self.IM.active()
+        if not n: return T.banner(self.app, "MAKE AN IMAGE MODEL FIRST — AI Training > Image Learning > + New image model")
+        self.close_review()
+        v_ = self.review_view = _frame(self); self.home.pack_forget(); v_.pack(fill="both", expand=True)
+        T.Title(v_, f"What does each picture show?  ({n})").pack(pady=(0, 6))
+        T.Text(v_, (f"From: {source}.\n" if source else "") + "Each picture is labelled with the word you searched; click a label to change it. "
+               "Untick anything wrong, then press Add to " + n + ".", muted=True).pack()
+        bar = _frame(v_); bar.pack(side="bottom", pady=(8, 0))
+        box = T.ScrollBox(v_); box.pack(fill="both", expand=True, pady=(10, 0))
+        cv = tk.Canvas(box.body, bg=v_["bg"], highlightthickness=0); inner = tk.Frame(cv, bg=v_["bg"])
+        T.on_change(lambda: (cv.configure(bg=self["bg"]), inner.configure(bg=self["bg"])))
+        inner.bind("<Configure>", lambda e: T.fit_scrollregion(cv)); cv.create_window((0, 0), window=inner, anchor="nw")
+        box.attach(cv); cv.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        rows = []; self._thumbs = []; size = max(24, int(round(60 * T.Z))); labels = list(self.IM.pictures(n))
+        for path in ps:
+            lab = os.path.basename(os.path.dirname(path)) if remove_originals else n.lower()
+            r = tk.Frame(inner, bg=v_["bg"]); r.pack(fill="x", pady=3)
+            try: th = Image.open(path).convert("RGB"); th.thumbnail((size, size)); ph = ImageTk.PhotoImage(th)
+            except Exception: ph = None
+            self._thumbs.append(ph)
+            (tk.Label(r, image=ph, bg=v_["bg"], width=size, height=size) if ph else tk.Label(r, text="?", bg=T.PALETTE["field"], fg=T.PALETTE["muted"])).pack(side="left")
+            T.Text(r, os.path.basename(path)[:30], width=32, anchor="w").pack(side="left", padx=8)
+            v = tk.StringVar(value=lab); T.Choice(r, "shows", list(dict.fromkeys([lab] + labels)), v).pack(side="left")
+            use = tk.BooleanVar(value=True); T.Text(r, "use it", font=T.f(8)).pack(side="left", padx=(12, 4)); T.Toggle(r, use).pack(side="left")
+            rows.append((path, v, use))
+        def commit():
+            import hashlib
+            added = dropped = skipped = 0; seen = set()
+            if get("Image Learning", "dedupe"):
+                for d_, _, fs in os.walk(self.IM.pictures_dir(n)):
+                    for f in fs:
+                        try: seen.add(hashlib.md5(open(os.path.join(d_, f), "rb").read()).hexdigest())
+                        except OSError: pass
+            for path, v, use in rows:
+                ok = use.get()
+                if ok and get("Image Learning", "skip_small"):
+                    try: ok = min(Image.open(path).size) >= 256
+                    except Exception: ok = False
+                    skipped += not ok
+                if ok and get("Image Learning", "dedupe"):
+                    h = hashlib.md5(open(path, "rb").read()).hexdigest(); ok = h not in seen; seen.add(h); skipped += not ok
+                if ok:
+                    d = os.path.join(self.IM.pictures_dir(n), v.get()); os.makedirs(d, exist_ok=True); shutil.copy(path, d); added += 1
+                elif not use.get(): dropped += 1
+                if remove_originals:
+                    try: os.remove(path)
+                    except OSError: pass
+            self.close_review(); self.refresh()
+            T.banner(self.app, f"ADDED — {added} pictures to {n}" + (f"; {dropped} left out" if dropped else "") + (f"; {skipped} skipped (tiny or duplicate)" if skipped else ""), "success")
+        T.Button(bar, f"Add to {n}", commit).pack(side="left", padx=8); T.Button(bar, "Close", self.close_review, kind="danger").pack(side="left")
+        return v_
+
+    def close_review(self):
+        if self.review_view is not None:
+            self.review_view.destroy(); self.review_view = None; self._thumbs = []; self.home.pack(fill="both", expand=True)
+
 def page_classes():
     """{"Image Learning": class, ...} for main.py's page list"""
-    return {name: type(name.replace(" ", "") + "Page", (AreaPage,), dict(AREA=name)) for name in AREAS}
+    out = {name: type(name.replace(" ", "") + "Page", (AreaPage,), dict(AREA=name)) for name in AREAS}
+    out["Image Learning"] = ImageAreaPage; out["Pictures"] = PicturesPage
+    return out

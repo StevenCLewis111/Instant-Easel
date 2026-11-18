@@ -1,3 +1,6 @@
 numpy
 scipy
 Pillow
+# the Image Scraper
+requests
+selenium
