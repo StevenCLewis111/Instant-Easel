@@ -281,12 +281,12 @@ class DrawStudio(tk.Frame):
         sc.bind("<Configure>", lambda e: T.defer(self, "tiles", 40, self._fit_tiles), add="+")              # once the size settles, not on every step
         self._pills = []
         def pill(text):                                                              # a section heading: the HISTORY-style bar, name in the middle
-            h = tk.Label(inner, bd=0, highlightthickness=0, padx=0, pady=0, bg=L["bg"]); h.pack(anchor="w", padx=(2, 4), pady=(8, 4))
-            h._text = text.upper(); self._pills.append(h); self._set_pill(h)
-            T.on_change(lambda: h.configure(bg=h.master["bg"]))
+            h = tk.Label(inner, bd=0, highlightthickness=0, padx=0, pady=0, bg=L["bg"]); h.pack(pady=(8, 4))      # centred over its two tiles
+            h._text = text.upper(); h._grid = None; self._pills.append(h); self._set_pill(h)
+            T.on_change(lambda: h.configure(bg=h.master["bg"])); return h
         for title, layout, items in BC.sections(brushes.B):
             if layout == "icons": continue                                           # Stamps & Icons: not shown in the brush list
-            pill(title); grid = tk.Frame(inner, bg=L["bg"]); grid.pack(anchor="w")
+            ph_ = pill(title); grid = tk.Frame(inner, bg=L["bg"]); grid.pack(); ph_._grid = grid
             if layout == "icons":                                                    # stamps: a grid of small pictures
                 for i, it in enumerate(items):
                     lb = tk.Label(grid, bg="#0d1220", cursor="hand2", highlightthickness=1, highlightbackground=L["bg"])
@@ -846,7 +846,7 @@ class DrawStudio(tk.Frame):
         tw = max(40, (w - 20) // 2); ic = max(20, min(40, (w - 4) // 5 - 4)); lh = self._name_h()
         if (tw, ic, lh) == (self._tw, self._ic, self._lh) and self._fitted: return
         self._tw, self._ic, self._lh = tw, ic, lh; self._fitted = True
-        for h in self._pills: self._set_pill(h)
+        self.after_idle(self._fit_pills)                                              # once the tiles have their new size: the titles match them
         for key, im in list(self._tile_src.items()): self._set_tile(key, im)
         if self._tile_names:                                                          # names on one line: shortened with … if too long
             import tkinter.font as tkfont
@@ -868,9 +868,19 @@ class DrawStudio(tk.Frame):
         x1, y1 = im.width - 6, im.height - 6; d.rounded_rectangle([x1 - w, y1 - h, x1, y1], radius=h // 3, fill=(20, 26, 42, 235), outline=(245, 196, 0, 255))
         d.text((x1 - w / 2, y1 - h / 2), "SOON", fill=(245, 196, 0, 255), font=font, anchor="mm"); return im
 
+    def _fit_pills(self):
+        self._sc.update_idletasks()
+        for h in self._pills: self._set_pill(h)
+
     def _set_pill(self, h):
-        """a section title bar, as wide as two tiles"""
-        W = max(40, 2 * self._tw + 8); H = max(12, round(20 * T.Z))
+        """a section title bar exactly as wide as the two tiles under it (left edge of the left one to right edge of the right one),
+        the name in its middle"""
+        g = getattr(h, "_grid", None); W = 2 * self._tw + 8
+        cells = g.winfo_children()[:2] if g is not None else []
+        if len(cells) == 2:                                                             # the two tiles' real widths and the gap between them
+            px = int(str(cells[0].grid_info().get("padx", 0)).split()[0]); tiles = [c.winfo_children()[0].winfo_reqwidth() for c in cells]
+            if min(tiles) > 10: W = tiles[0] + tiles[1] + 2 * px
+        W = max(40, W); H = max(12, round(20 * T.Z))
         if not AP.ok(): h.configure(text=h._text, fg="white", bg=T.PALETTE["button"], font=T.f(9)); return
         ph = AP.photo(("pill", h._text, W, H), lambda: AP.text(AP.bar("bar_blank", W, H, 0.3).copy(), h._text, W // 2, H // 2, int(H * 0.5)))
         h.configure(image=ph, width=W, height=H)
