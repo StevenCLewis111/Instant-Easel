@@ -410,18 +410,23 @@ class DrawStudio(tk.Frame):
         R = self._edged_panel(body, "right"); self._fixed_width(R, RIGHT_W); self._artp = True; self._R = R
         self._art_items = []; T.on_change(self._art_redraw, zoom=True); self._lay_off = 0; self._show_hist = True
         IW = self._IW = RIGHT_W - 2 * 8 - 4                                                    # design width inside the panel
-        def frame(parent=R, **pack):
-            f = tk.Frame(parent, bg=R["bg"]); f.pack(**pack); T.on_change(lambda: f.configure(bg=R["bg"])); return f
-        def rule(parent=R):
-            ln = tk.Frame(parent, height=2, bg="#1fc8ff"); ln.pack(fill="x", pady=(1, 5)); return ln
+        def frame(parent=None, **pack):
+            f = tk.Frame(parent if parent is not None else here[0], bg=R["bg"]); f.pack(**pack); T.on_change(lambda: f.configure(bg=R["bg"])); return f
+        # ---- Color / Layers: two views, switched by the buttons at the top (as Brushes / Options on the left)
+        sw = tk.Frame(R, bg=R["bg"]); sw.pack(fill="x", pady=(0, 4)); T.on_change(lambda: sw.configure(bg=R["bg"])); self.right_btns = {}
+        for name in ("Color", "Layers"):
+            b = skin.button(small(T.Button(sw, name, lambda n=name: self._right_view(n), width=10)), piece="bar"); b.pack(side="left", expand=True); self.right_btns[name] = b
+        self.col_view = tk.Frame(R, bg=R["bg"]); self.lay_view = tk.Frame(R, bg=R["bg"])
+        T.on_change(lambda: (self.col_view.configure(bg=R["bg"]), self.lay_view.configure(bg=R["bg"])))
+        here = [self.lay_view]; LV = self.lay_view
         # ---- layers
-        self._title(R, "LAYERS").pack(); rule()
         r = frame(fill="x", pady=(0, 3)); bs = (IW - 5 * 4) // 6
         for piece, cmd, tip in (("layer_add", self.add_layer, "New layer"), ("layer_dup", self.dup_layer, "Duplicate layer"),
                                 ("layer_merge", self.merge_down, "Merge down"), ("layer_up", lambda: self.move_layer(1), "Move layer up"),
                                 ("layer_down", lambda: self.move_layer(-1), "Move layer down"), ("layer_del", self.del_layer, "Delete layer")):
             self._panel_button(r, piece, cmd, tip, bs).pack(side="left", expand=True)
         self.layer_box = frame(fill="x")
+        LV.bind("<Configure>", lambda e: T.defer(self, "layrows", 60, self._fit_layer_rows), add="+")   # as many layer rows as the panel has room for
         self.layer_box.bind("<MouseWheel>", lambda e: self._lay_scroll(-1 if e.delta > 0 else 1), add="+")
         # ---- blend mode: click for the next one, right-click for the one before
         self.mode = tk.StringVar(value="normal"); bh = 30
@@ -431,7 +436,7 @@ class DrawStudio(tk.Frame):
                 im = AP.bar("bar_blend", W, H, 1.3, 0.6).copy(); im = AP.shade(im, 1.15) if hv else im
                 return AP.text(im, f"BLEND: {m}", int(W * 0.55), H // 2, int(H * 0.36))
             return AP.photo(("blend", W, H, m, hv), make)
-        self.blend_lbl = self._art(self._art_label(R), blend_img); self.blend_lbl.pack(pady=(4, 2))
+        self.blend_lbl = self._art(self._art_label(LV), blend_img); self.blend_lbl.pack(pady=(4, 2))
         def step(d): self.mode.set(MODES[(MODES.index(self.mode.get()) + d) % len(MODES)] if self.mode.get() in MODES else MODES[0])
         self.blend_lbl.bind("<Button-1>", lambda e: step(1)); self.blend_lbl.bind("<Button-3>", lambda e: step(-1))
         self._tip(self.blend_lbl, "Blend mode: click for the next, right-click for the one before")
@@ -454,7 +459,7 @@ class DrawStudio(tk.Frame):
                     return AP.text(im, ar, W - int(h * 0.5), h // 2, int(h * 0.42), anchor="mm") if ar else im
                 return AP.photo(("hdr", word, W, h, ar, hv), make)
             return render
-        self._title(R, "COLOR").pack(pady=(3, 0))
+        here[0] = CV = self.col_view
         # ---- the colour ring: as big as the room left allows
         wf = frame(fill="both", expand=True); self._wS = self._apx(150)
         self.wheel = tk.Canvas(wf, width=self._wS, height=self._wS, bg=R["bg"], highlightthickness=0, cursor="hand2"); self.wheel.place(relx=0.5, rely=0.5, anchor="center")
@@ -493,11 +498,11 @@ class DrawStudio(tk.Frame):
                                lambda: AP.shade(AP.swatch(c, self._apx(cw), self._apx(h)), 1.15) if b._hover else AP.swatch(c, self._apx(cw), self._apx(h))))
                 lb.pack(side="left", padx=1); lb.bind("<Button-1>", lambda e, c=c: (self.set_color(c), self._remember()))
             return row
-        swatches(R, BASIC_COLORS, 24)
+        swatches(CV, BASIC_COLORS, 24)
         # palettes: the header opens / closes them. On their own they close when the panel is short (so the colour ring keeps its
         # room) and open again when there's space (big mode); clicking the header decides from then on
         self._pal_open, self._pal_auto = True, True
-        ph_ = self._art(self._art_label(R), header("PALETTES", 24, arrow=lambda: "▾" if self._pal_open else "▸")); ph_.pack(pady=(4, 1))
+        ph_ = self._art(self._art_label(CV), header("PALETTES", 24, arrow=lambda: "▾" if self._pal_open else "▸")); ph_.pack(pady=(4, 1))
         self._pal_box = frame(fill="x"); self._pal_hdr = ph_
         for pair in (("Warm", "Cool"), ("Pastel", "Earth")): swatches(self._pal_box, PALETTES[pair[0]] + PALETTES[pair[1]], 20)
         ph_.bind("<Button-1>", lambda e: (setattr(self, "_pal_auto", False), self._set_palettes(not self._pal_open)))
@@ -514,9 +519,10 @@ class DrawStudio(tk.Frame):
                 im.alpha_composite(AP.fit("history_icon", ic, ic), (x0, (H - ic) // 2))
                 return AP.text(im, "HISTORY", x0 + ic + gap, H // 2, px, anchor="lm")
             return AP.photo(("hist2", W, H, hv), make)
-        hb2 = self._art(self._art_label(R), hist_img); hb2.pack(side="bottom", pady=(3, 0)); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
+        hb2 = self._art(self._art_label(CV), hist_img); hb2.pack(side="bottom", pady=(3, 0)); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
         self._tip(hb2, "Show / hide the colours you used last")
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
+        self._right_view(prefs.get("draw_right_view") if prefs.get("draw_right_view") in ("Color", "Layers") else "Color")
 
     @staticmethod
     def _title(parent, text):
@@ -573,18 +579,20 @@ class DrawStudio(tk.Frame):
     def _toggle_hist(self):
         self._show_hist = not self._show_hist; self._remember(add=False)
 
+    def _rows(self): return getattr(self, "_lay_rows", 4)                          # layer rows shown (as many as fit, see _fit_layer_rows)
     def _lay_scroll(self, d):
-        self._lay_off = max(0, min(max(0, len(self.layers) - 4), self._lay_off + d)); self._layers_ui()
+        self._lay_off = max(0, min(max(0, len(self.layers) - self._rows()), self._lay_off + d)); self._layers_ui()
 
     def _layers_ui_art(self):
-        """layer rows: green-framed = the layer you're painting on; the ball shows / hides it; up to 4 rows (the wheel scrolls more)"""
+        """layer rows: green-framed = the layer you're painting on; the ball shows / hides it; as many rows as fit (the wheel scrolls more)"""
         for w in self.layer_box.winfo_children(): w.destroy()
         n = len(self.layers); top_first = list(range(n - 1, -1, -1)); pos = top_first.index(self.li)
         if pos < self._lay_off: self._lay_off = pos
-        if pos >= self._lay_off + 4: self._lay_off = pos - 3
-        self._lay_off = max(0, min(self._lay_off, max(0, n - 4)))
+        k = self._rows()
+        if pos >= self._lay_off + k: self._lay_off = pos - k + 1
+        self._lay_off = max(0, min(self._lay_off, max(0, n - k)))
         IW, RH = self._IW, 26
-        for i in top_first[self._lay_off:self._lay_off + 4]:
+        for i in top_first[self._lay_off:self._lay_off + k]:
             L = self.layers[i]; sel = i == self.li; info = (L.name, L.visible, int(L.opacity * 100), L.mode, sel)
             def render(b, info=info):
                 W, H = self._apx(IW), self._apx(RH); name, vis, op, mode, sel = info
@@ -754,6 +762,20 @@ class DrawStudio(tk.Frame):
             self.set_brush(it["engine"], it["name"])
         elif it.get("studio_tool"): self.set_tool(it["studio_tool"]); self.brush_lbl.configure(text=it["name"])
         else: T.banner(self.app, f"COMING SOON — {it['name']} isn't built yet")
+
+    def _right_view(self, name):
+        """the right panel: the Color view (ring, swatches, palettes, history) or the Layers view"""
+        for n, b in self.right_btns.items(): skin.select(b, n == name)
+        for w in (self.col_view, self.lay_view): w.pack_forget()
+        (self.col_view if name == "Color" else self.lay_view).pack(fill="both", expand=True); prefs.set("draw_right_view", name)
+
+    def _fit_layer_rows(self):
+        """the Layers view shows as many layer rows as fit under its buttons, blend and opacity"""
+        try: room = self.lay_view.winfo_height() - (self.layer_box.winfo_y() + self.layer_box.winfo_height()) + self.layer_box.winfo_height()
+        except tk.TclError: return
+        below = sum(w.winfo_height() + 6 for w in self.lay_view.pack_slaves() if w is not self.layer_box and w.winfo_y() > self.layer_box.winfo_y())
+        n = max(4, min(20, (room - below) // max(1, self._apx(28))))
+        if n != getattr(self, "_lay_rows", 4): self._lay_rows = n; self._layers_ui()
 
     # ---------------- Brush Options
     def _left_view(self, name):
