@@ -228,8 +228,8 @@ class InstantEasel(tk.Tk):
         for f, col, sticky in (("mascot-guy.png", 0, "sw"), ("mascot-girl.png", 2, "se")):          # both look in at the logo
             try:
                 im = Image.open(paths.ui("Header", f)).convert("RGBA"); import numpy as _np
-                cols = _np.flatnonzero((_np.asarray(im)[..., 3] > 40).any(0))                      # painted columns only: no see-through margin at the sides
-                if len(cols): im = im.crop((int(cols[0]), 0, int(cols[-1]) + 1, im.height))
+                box = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()            # painted area only: no see-through margin at the sides or
+                if box: im = im.crop(box)                                                          # the bottom, so the feet really touch the line
                 self.mascot_src[col] = im
                 lbl = tk.Label(self.frame, bg=top["bg"], bd=0, padx=0, pady=0, highlightthickness=0)   # placed (see _size_mascots): standing on the border below
                 self.mascot_lbl[col] = lbl
@@ -237,6 +237,7 @@ class InstantEasel(tk.Tk):
             except Exception: pass
         self.after_idle(self._size_mascots); T.on_change(lambda: self.mascot_src and self.after_idle(self._size_mascots))   # outline follows the theme colour
         self.frame.bind("<Configure>", lambda e: T.defer(self, "header", 80, self._paint_header), add="+")   # the header picture follows the window size
+        self.after_idle(lambda: self.body.bind("<Configure>", lambda e: T.defer(self, "mascots", 60, self._size_mascots), add="+"))   # the line under the header moved: stand on it again
 
         built = {"Draw": draw_studio.DrawStudio, "Theme": ThemePage, "About": AboutPage, "General": SP.GeneralPage, "Display": SP.DisplayPage,
                  "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
@@ -268,16 +269,24 @@ class InstantEasel(tk.Tk):
         if h < 40: return self.after(50, self._size_mascots)
         self._mph = {}
         mid = max(self.tabs.winfo_reqwidth(), self.top.grid_bbox(1, 0, 1, 1)[2])            # the middle column: the logo or the tab row, whichever is wider
-        room = (self.top.winfo_width() - mid) // 2 - int(round(18 * T.Z)) - 2               # the space beside the logo and tab row
+        # locked to the windowed layout: a wider window (full screen, maximized) adds width that the header picture fills, but the guy
+        # and girl keep the places they have in the window, scaled up, rather than sliding out to the new edges
+        fw, fh = fixed_window_size(self.winfo_screenwidth(), self.winfo_screenheight())
+        extra = max(0, int(self.view_cv.winfo_width() - T.Z * fw / target_zoom(fw, fh)))
+        lock_w = self.top.winfo_width() - extra; x0 = self.top.winfo_x() + extra // 2
+        room = (lock_w - mid) // 2 - int(round(18 * T.Z)) - 2                              # the space beside the logo and tab row
         for col, src in self.mascot_src.items():
             k = h / src.height
             if room > 40 and src.width * k > room: k = room / src.width                     # too wide for its space: smaller, never cut off
-            im = _outlined(src.resize((max(1, int(src.width * k)), max(1, int(src.height * k))), Image.LANCZOS), T.PALETTE["border"])
+            self._mdz = getattr(self, "_mdz", {})
+            if abs(self.winfo_width() - fw) <= 4 and abs(self.winfo_height() - fh) <= 4: self._mdz[col] = src.height * k / T.Z   # the windowed size (design pixels)...
+            elif col in self._mdz: k = min(h, self._mdz[col] * T.Z) / src.height           # ...kept, scaled, at every other window size
+            im = src.resize((max(1, int(src.width * k)), max(1, int(src.height * k))), Image.LANCZOS)
             over = int(self.frame.cget("highlightthickness")) - (body_y - im.height)   # rows that would reach the top border or above it
             if over > 0: im = im.crop((0, over, im.width, im.height))            # cut those off, so nothing shows on or above the top line
             self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col], width=0, height=0)   # 0 = the picture's own size
             self._mpil = getattr(self, "_mpil", {}); self._mpil[col] = im
-            x = self.top.winfo_x() if col == 0 else self.top.winfo_x() + self.top.winfo_width() - im.width   # outer edge in line with the page's border
+            x = x0 if col == 0 else x0 + lock_w - im.width                          # outer edge where the page's border is in the windowed layout
             self.mascot_lbl[col].place(x=x, y=body_y - im.height, bordermode="outside")      # flat bottom standing on the line
         self.update_idletasks()
         if any(self.mascot_lbl[c].winfo_width() + 1 < self._mpil[c].width for c in self._mpil) and getattr(self, "_fit_tries", 0) < 2:
