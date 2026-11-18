@@ -615,6 +615,10 @@ class InstantEasel(tk.Tk):
             finally: self._asking = False
             if answer != "Quit": return
         crash.clean_exit()                                                                    # a normal quit: nothing to recover next time
+        ig = sys.modules.get("image_grabber")                                                 # the scraper's hidden Firefox (kept open between
+        if ig is not None:                                                                     # scans so Google's check comes up once) closes too
+            try: ig.close_browser()
+            except Exception: pass
         self.destroy()
 
     def _on_error(self, exc, val, tb):

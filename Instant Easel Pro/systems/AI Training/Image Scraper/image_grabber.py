@@ -147,6 +147,66 @@ def save_png(data, path):
     img.save(path, "PNG")
 
 
+# ==== ONE FIREFOX PER APP LAUNCH ====
+# After a run the hidden Firefox is kept (not quit), and the next run picks it up: Google sees the same browser that already
+# passed its "are you a human" check, so the puzzle comes up at most once per launch. close_browser() quits it when the app closes.
+_KEPT = {"driver": None, "closed": False}
+_KEPT_LOCK = threading.Lock()
+_OPEN = set()  # every Firefox this launch started, including one a scan is using right now
+
+
+def _alive(driver):
+    try:
+        driver.window_handles
+        return True
+    except Exception:
+        return False
+
+
+def take_browser():
+    """-> the kept hidden Firefox (now owned by the caller), or None"""
+    with _KEPT_LOCK:
+        driver, _KEPT["driver"] = _KEPT["driver"], None
+    if driver is not None and not _alive(driver):
+        try:
+            driver.quit()
+        except Exception:
+            pass
+        return None
+    return driver
+
+
+def keep_browser(driver):
+    """keep a hidden Firefox for the next run (if one is already kept, this one closes)"""
+    with _KEPT_LOCK:
+        if _KEPT["driver"] is None and not _KEPT["closed"]:
+            _KEPT["driver"] = driver
+            return
+    _OPEN.discard(driver)
+    try:
+        driver.quit()
+    except Exception:
+        pass
+
+
+def close_browser():
+    """quit every Firefox this launch opened: the kept one and any a scan is still using (the app calls this as it closes)"""
+    with _KEPT_LOCK:
+        _KEPT["closed"] = True
+        _KEPT["driver"] = None
+        drivers = list(_OPEN)
+        _OPEN.clear()
+    for driver in drivers:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+
+import atexit  # noqa: E402
+atexit.register(close_browser)  # also closes it if the app ends some other way
+
+
 # ==== SEARCH WORKER ====
 class Grabber:
     def __init__(self, words, log, stop_event):
@@ -154,11 +214,16 @@ class Grabber:
         self.log = log
         self.stop = stop_event
         self.driver = None
+        self.hidden = START_HIDDEN
 
     def run(self):
         try:
-            self.log("Starting Firefox...")
-            self.driver = self.start_driver(START_HIDDEN)
+            self.driver = take_browser()
+            if self.driver is not None:
+                self.log("Using the Firefox already open (hidden) from the last run...")
+            else:
+                self.log("Starting Firefox...")
+                self.driver = self.start_driver(START_HIDDEN)
         except Exception as e:
             self.log("ERROR starting Firefox (is Firefox installed? internet on?): %r" % e)
             return
@@ -172,10 +237,14 @@ class Grabber:
                 except Exception as e:
                     self.log("ERROR on '%s': %r" % (word, e))
         finally:
-            try:
-                self.driver.quit()
-            except Exception:
-                pass
+            if self.driver is not None and self.hidden and _alive(self.driver):
+                keep_browser(self.driver)  # stays open, hidden, for the next run; closed when the app closes
+            elif self.driver is not None:
+                _OPEN.discard(self.driver)
+                try:
+                    self.driver.quit()
+                except Exception:
+                    pass
             self.log("Done.")
 
     def start_driver(self, hidden):
@@ -192,6 +261,8 @@ class Grabber:
             driver = webdriver.Firefox(options=options)
             driver.set_page_load_timeout(max(DOWNLOAD_TIMEOUT, 30))
             driver.set_script_timeout(DOWNLOAD_TIMEOUT)
+            self.hidden = hidden
+            _OPEN.add(driver)
             return driver
         try:
             return make(True)
@@ -479,6 +550,7 @@ class App:
     def close(self):
         """closing the window also stops a search in progress"""
         self.stop_event.set()
+        close_browser()
         self.root.destroy()
 
     def set_running(self, running):
