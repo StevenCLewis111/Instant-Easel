@@ -429,8 +429,22 @@ class DrawStudio(StudioExtras, tk.Frame):
         T.on_change(lambda: (self.col_view.configure(bg=R["bg"]), self.lay_view.configure(bg=R["bg"])))
         # Options (layers + text) scrolls: its scroll bar on the right, a border line left of it, the contents in a scrolling canvas
         ov = self.lay_view; g = T.ScrollBox.GAP
-        osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(g, 0), pady=g); T.Line(ov, vertical=True).pack(side="right", fill="y")
-        ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True, padx=(0, g))   # a gap before the line
+        osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(g, 0), pady=g); ovl = T.Line(ov, vertical=True); ovl.pack(side="right", fill="y")
+        ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True, padx=(0, g), pady=(g, 0))   # a gap before the lines
+        # border lines that reach the panel's own border: one across the top (under Color / Options), one down to the bottom
+        top_line, side_line = T.Line(R), T.Line(R, vertical=True)
+        def oborders(e=None):
+            try:
+                if not ov.winfo_ismapped(): top_line.place_forget(); side_line.place_forget(); return
+                e_ = int(float(R.cget("bd"))) + int(float(R.cget("highlightthickness")))      # place() counts from inside the panel's edge and padding
+                px_, py_ = e_ + int(float(R.cget("padx"))), e_ + int(float(R.cget("pady"))); t_ = max(1, int(round(T.Z)))
+                y = ov.winfo_rooty() - R.winfo_rooty() - py_; x = ovl.winfo_rootx() - R.winfo_rootx() - px_
+                top_line.place(x=-px_ + e_, y=y, width=R.winfo_width() - 2 * e_, height=t_)
+                side_line.place(x=x, y=y, width=t_, height=R.winfo_height() - (y + py_) - e_)
+                top_line.lift(); side_line.lift()
+            except tk.TclError: pass
+        for w_ in (ov, R): w_.bind("<Configure>", lambda e: ov.after_idle(oborders), add="+")
+        ov.bind("<Map>", lambda e: ov.after_idle(oborders), add="+"); ov.bind("<Unmap>", lambda e: oborders(), add="+")
         LV = tk.Frame(ocv, bg=R["bg"]); owin = ocv.create_window(0, 0, window=LV, anchor="nw")
         osb.command = ocv.yview; ocv.configure(yscrollcommand=osb.set)
         def ofit(e=None):
