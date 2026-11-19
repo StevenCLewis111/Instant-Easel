@@ -53,7 +53,7 @@ TILES = {
     "Stipple": "brushes/stipple_brush", "Pattern Brush": "brushes/pattern_brush", "Smudge": "brushes/smudge", "Blend": "brushes/blend",
     "Fill": "brushes/fill", "Gradient": "brushes/gradient",
 }
-TILE_SIZE = (2, 1)                                                     # every tile is shown at exactly this shape (width : height)
+TILE_SIZE = (3, 2)                                                     # every tile is shown at exactly this shape (width : height)
 _TITLED = ("brushes/", "custom/")
 
 # ---- the pictures you edit: images/UI/Brush Library/<Section_Title>/<Name>.png, one for EVERY item in the Draw studio's brush list, named
@@ -326,6 +326,7 @@ def _pill(im):
         import numpy as np
         from scipy import ndimage as ndi
         a = np.asarray(im); pill = (a[..., 2] > 170) & (a[..., 0] < 90) & (a[..., 1] < 120) & (a[..., 3] > 200)
+        pill[int(a.shape[0] * 0.3):] = False                                   # the pill is along the top (blue paint lower down isn't it)
         lab, n = ndi.label(pill)
         if not n: _pillbox[k] = None
         else:
@@ -346,7 +347,7 @@ def _with_name(im, name):
     """the tile with its name written on the blue pill (only on screen; the file isn't changed). Every custom tile gets this, so
     the name always comes from the file name"""
     from PIL import ImageDraw
-    box = _template_pill(im) or _pill(im)
+    box = _pill(im) or _template_pill(im)                                      # the tile's own pill first (painted tiles differ a little)
     if box is None: return im
     x0, y0, x1, y1 = box; out = im.copy(); d = ImageDraw.Draw(out); size = int((y1 - y0) * 0.75)
     while size > 7 and d.textlength(name, font=_font(size)) > (x1 - x0) * 0.9: size -= 1
