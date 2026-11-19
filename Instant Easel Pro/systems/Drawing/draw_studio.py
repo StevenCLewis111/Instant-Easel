@@ -152,6 +152,8 @@ class DrawStudio(tk.Frame):
                        ("<Button-4>", lambda e: self.zoom_by(1.15)), ("<Button-5>", lambda e: self.zoom_by(1 / 1.15)), ("<Configure>", lambda e: self._cv_resized())):
             cv.bind(ev, fn)
         cv.bind("<Enter>", lambda e: cv.focus_set())
+        for ev in ("<Motion>", "<B1-Motion>", "<Enter>"): cv.bind(ev, lambda e: self._tip_move(e), add="+")   # the brush tip follows the mouse
+        cv.bind("<Leave>", lambda e: self._tip_hide(e.widget), add="+")
         cv.bind("<Escape>", lambda e: (self.toggle_big(), "break")[1] if self._big else None)
         for key, fn in (("<Control-z>", lambda e: (self.undo(), "break")[1]), ("<Control-y>", lambda e: (self.redo(), "break")[1]), ("<bracketleft>", lambda e: self.set_size(self.size / 1.2)),
                         ("<bracketright>", lambda e: self.set_size(self.size * 1.2))):
@@ -760,6 +762,7 @@ class DrawStudio(tk.Frame):
         self.ph = ImageTk.PhotoImage(im); self.cv.delete("all"); self.cv.create_image(ox + x0 * z, oy + y0 * z, image=self.ph, anchor="nw")
         if self.mirror.get(): self.cv.create_line(ox + w * z / 2, oy, ox + w * z / 2, oy + h * z, fill=T.PALETTE["border"], dash=(4, 4))
         if self.mirror_y.get(): self.cv.create_line(ox, oy + h * z / 2, ox + w * z, oy + h * z / 2, fill=T.PALETTE["border"], dash=(4, 4))
+        self._tip_redraw()
 
     # ------------------------------------------------------------------ tools
     def set_tool(self, t):
@@ -767,7 +770,65 @@ class DrawStudio(tk.Frame):
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
-        self.cv.configure(cursor={"pick": "tcross", "fill": "spraycan", "text": "xterm"}.get(t, "crosshair"))
+        self.cv.configure(cursor="none" if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm"}.get(t, "crosshair"))
+        self._tip_redraw()
+
+    # ------------------------------------------------------------------ the brush tip under the mouse
+    def _tip_move(self, e):
+        self._tip_at = (e.widget, e.x, e.y); self._tip_redraw()
+
+    def _tip_hide(self, cv):
+        self._tip_at = None
+        try: cv.delete("tip")
+        except tk.TclError: pass
+
+    def _tip_image(self):
+        """what one touch of the brush leaves (its shape, softness, texture, colour and opacity) at the size you'd paint it,
+        — no ring or cross, just the mark. Eraser: a see-through white dot its size"""
+        z = self.zoom or 1.0; d = self.size * z
+        if self.tool == "brush":
+            try: opts = repr(sorted(self._live_brush().items(), key=lambda kv: kv[0]))
+            except Exception: opts = ""
+            key = ("brush", self.brush, self.size, tuple(self._stroke_color()), round(self.opacity, 2), round(z, 2), opts)
+        else: key = ("eraser", self.size, round(z, 2))
+        if getattr(self, "_tip_key", None) == key: return self._tip_ph
+        D = int(min(600, max(10, d * 1.25 + 8)))                                    # on screen, the most it will cover
+        out = Image.new("RGBA", (D, D), (0, 0, 0, 0))
+        if self.tool == "brush":
+            try:
+                n = max(8, int(self.size * 1.6) + 6); c = brushes.Canvas(n, n, paper=(0, 0, 0), transparent=True)
+                brushes.B["__tip__"] = self._live_brush()
+                try:
+                    c.stroke([(n / 2, n / 2, 1.0), (n / 2 + 0.6, n / 2, 1.0)], "__tip__", color=self._stroke_color(), size=self.size, opacity=self.opacity)
+                    if np.nan_to_num(c.alpha).max() < 0.05:                     # tapering brushes leave nothing on one touch: a short line instead
+                        L = self.size * 0.35
+                        c.stroke([(n / 2 + (t - 0.5) * 2 * L, n / 2 - (t - 0.5) * 0.6 * L, 0.4 + 0.6 * math.sin(math.pi * t)) for t in np.linspace(0, 1, 16)], "__tip__",
+                                 color=self._stroke_color(), size=self.size, opacity=self.opacity)
+                finally: brushes.B.pop("__tip__", None)
+                al = np.nan_to_num(c.alpha); top = float(al.max())
+                if 0 < top < 0.6: al = al * min(4.0, 0.6 / top)                     # very soft brushes: strong enough to see
+                rgb = Image.fromarray(np.clip(np.nan_to_num(c.a), 0, 255).astype(np.uint8))
+                a = Image.fromarray(np.clip(al * 255 * 0.85, 0, 255).astype(np.uint8))
+                dab = rgb.convert("RGBA"); dab.putalpha(a)
+                k = z                                                                    # image pixels to screen pixels
+                dab = dab.resize((max(1, round(n * k)), max(1, round(n * k))), Image.LANCZOS if k < 1 else Image.NEAREST if k > 3 else Image.BILINEAR)
+                if dab.width > D: dab = dab.crop(((dab.width - D) // 2, (dab.height - D) // 2, (dab.width - D) // 2 + D, (dab.height - D) // 2 + D))
+                out.alpha_composite(dab, ((D - dab.width) // 2, (D - dab.height) // 2))
+            except Exception: pass
+        r = max(2, d / 2); c0 = D / 2
+        if out.getchannel("A").getextrema()[1] < 25:                                    # nothing to show (eraser, or a mark too faint): a see-through dot
+            fill = (255, 255, 255, 110) if self.tool == "eraser" else tuple(self._stroke_color()) + (150,)
+            ImageDraw.Draw(out).ellipse((c0 - r, c0 - r, c0 + r, c0 + r), fill=fill)
+        self._tip_ph = ImageTk.PhotoImage(out); self._tip_key = key; return self._tip_ph
+
+    def _tip_redraw(self):
+        at = getattr(self, "_tip_at", None)
+        for cv in {self.cv, getattr(self, "_cv_small", self.cv)}:
+            try: cv.delete("tip")
+            except tk.TclError: pass
+        if at is None or self.tool not in ("brush", "eraser") or at[0] is not self.cv: return
+        try: self.cv.create_image(at[1], at[2], image=self._tip_image(), tags="tip")
+        except tk.TclError: pass
 
     def set_brush(self, n, label=None):
         self.brush = n; self.brush_lbl.configure(text=label or n); self.set_tool("brush")
@@ -939,10 +1000,10 @@ class DrawStudio(tk.Frame):
     def _s2v(self, s): return math.log(max(1, s)) / math.log(300)
     def _v2s(self, v): return max(1, int(round(300 ** v)))
     def set_size(self, s, from_slider=False):
-        self.size = int(max(1, min(300, s))); self.size_row.var.set(str(self.size))
+        self.size = int(max(1, min(300, s))); self.size_row.var.set(str(self.size)); self._tip_redraw()
         if not from_slider: self.size_s.value = self._s2v(self.size); self.size_s._draw()
         self._preview()
-    def set_opacity(self, v): self.opacity = max(0.02, min(1.0, v)); self.op_row.var.set(f"{int(round(self.opacity * 100))}%"); self._preview()
+    def set_opacity(self, v): self.opacity = max(0.02, min(1.0, v)); self.op_row.var.set(f"{int(round(self.opacity * 100))}%"); self._preview(); self._tip_redraw()
 
     UNDO_MB = 400                                                               # undo memory cap, on top of Settings > Performance > Draw undo steps
 
