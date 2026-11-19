@@ -22,8 +22,6 @@ def _b(name, *engines, look=None, **kw):
 SECTIONS = [
     ("Brushes", "tiles", [
         _b("Round", "round", "round brush", look=dict(color=(30, 45, 110), width=7)),
-        _b("Soft Round", "soft round", "mop", "soft", look=dict(color=(40, 60, 120), width=8, soft=3)),
-        _b("Hard Round", "hard round", "spotter", "hard", look=dict(color=(15, 15, 20), width=9)),
         _b("Flat", "flat", "flat brush", look=dict(color=(15, 20, 40), width=10, cap="square", tex="bristle")),
         _b("Square", "square", "bright", "square brush", look=dict(color=(15, 15, 20), width=9, cap="square")),
         _b("Filbert", "filbert", "filbert brush", look=dict(color=(20, 30, 60), width=10, tex="bristle", taper=True)),
@@ -56,17 +54,11 @@ SECTIONS = [
         _b("Splatter", "splatter", "splat", look=dict(scatter="splat", color=(30, 70, 200))),
         _b("Drip", "drip", "drips", look=dict(fx="drip")),
         _b("Leaf", "leaf", "foliage", "leaves", look=dict(scatter="leaf", color=(90, 190, 60))),
-        _b("Star", "star", "stars brush", look=dict(scatter="star", color=(250, 200, 30))),
-        _b("Heart", "heart", "hearts brush", look=dict(scatter="heart", color=(240, 60, 170))),
-        _b("Bubble", "bubble", "bubbles brush", look=dict(scatter="bubble", color=(60, 160, 240))),
-        _b("Sparkle", "sparkle", "glitter", look=dict(scatter="sparkle", color=(240, 230, 120), dark=True)),
         _b("Stipple", "stipple", "dotting", look=dict(color=(30, 30, 40), width=10, tex="dots")),
         _b("Pattern Brush", "pattern brush", "pattern", look=dict(scatter="star", color=(20, 20, 30), even=True)),
     ]),
     ("Blending", "tiles", [
         _b("Smudge", "smudge", "smudge / blender", "finger", kind="tool", look=dict(color=(40, 55, 100), width=8, soft=1.5, tex="smear")),
-        _b("Blend", "blend", "smudge / blender", "blender", kind="tool", look=dict(color=(40, 55, 100), width=8, soft=4)),
-        _b("Blur", "blur brush", "blur (filter)", kind="tool", look=dict(color=(40, 55, 100), width=7, soft=5)),
         _b("Soften", "soften", "soft blend", kind="tool", look=dict(color=(40, 55, 100), width=7, soft=7, alpha=0.7)),
         _b("Mix", "mix", "deform (push)", "mixer", kind="tool", look=dict(color=(40, 55, 100), width=6, soft=2, tex="swirl")),
     ]),
@@ -92,7 +84,6 @@ SECTIONS = [
         _b("Noise", "noise", kind="tool", look=dict(fx="noise")),
     ]),
     ("Effect Brushes", "tiles", [
-        _b("Glow", "glow", "glow (dodge)", "glow brush", kind="fx", look=dict(fx="neon", color=(60, 230, 240))),
         _b("Neon", "neon", "neon brush", look=dict(fx="neon", color=(255, 40, 200))),
         _b("Outline", "outline", "outline brush", look=dict(fx="ring", color=(235, 240, 255))),
         _b("Shadow", "shadow", "drop shadow", look=dict(fx="shadow")),
@@ -138,10 +129,8 @@ SECTIONS = [
         _b("Gradient Fill", "tool:gradient fill", kind="tool", look=dict(fx="gradfill")),
         _b("Pattern Fill", "tool:pattern fill", kind="tool", look=dict(fx="pattern", pat="checks", col=(150, 80, 40))),
         _b("Color Fill", "tool:color fill", kind="tool", tool="fill", look=dict(fx="blocks")),
-        _b("Paint Bucket", "tool:paint bucket", kind="tool", tool="fill", look=dict(fx="icon", icon="Paint Bucket")),
         _b("Magic Wand", "tool:magic wand", kind="tool", look=dict(fx="icon", icon="Magic Wand")),
         _b("Eyedropper", "tool:eyedropper", kind="tool", tool="pick", look=dict(fx="icon", icon="Eyedropper")),
-        _b("Color Picker", "tool:color picker", kind="tool", tool="pick", look=dict(fx="icon", icon="Color Picker")),
         _b("Crop", "tool:crop", kind="tool", look=dict(fx="icon", icon="Crop")),
         _b("Move", "tool:move", kind="tool", look=dict(fx="icon", icon="Move")),
         _b("Rotate", "tool:rotate", kind="tool", look=dict(fx="icon", icon="Rotate")),
@@ -158,7 +147,6 @@ SECTIONS = [
         _b("Polyline", "tool:polyline", kind="tool", look=dict(fx="shape", shape="polyline")),
         _b("Text", "tool:text", kind="tool", tool="text", look=dict(fx="shape", shape="text")),
         _b("Erase", "tool:erase", kind="tool", tool="eraser", look=dict(fx="icon", icon="Eraser")),
-        _b("Fill", "tool:fill", kind="tool", tool="fill", look=dict(fx="icon", icon="Paint Bucket")),
         _b("Dither", "tool:dither", kind="tool", look=dict(fx="dither")),
     ]),
 ]

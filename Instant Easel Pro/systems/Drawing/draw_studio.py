@@ -51,7 +51,7 @@ class DrawStudio(tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
-        self.color = (196, 92, 44); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.opacity = 1.0
+        self.color = (196, 92, 44); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.opacity = 0.5   # brushes start half see-through
         self.mirror = tk.BooleanVar(value=False); self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
         self.mirror_y = tk.BooleanVar(value=False); self.use_pressure = tk.BooleanVar(value=False)                      # Brush Options switches
         self.color_mode = tk.StringVar(value="Normal"); self.blend_mode = tk.StringVar(value="Brush default"); self._hue = 0.0
@@ -324,7 +324,7 @@ class DrawStudio(tk.Frame):
         pinned.bind("<Configure>", lambda e: self._fit_preview(pinned), add="+"); self._preview()
         self.size_row = self._slider_row(pinned, "Size:", self._s2v(24), lambda v: self.set_size(self._v2s(v), from_slider=True), "24")
         self.size_row.entry.bind("<Return>", lambda e: self._typed(self.size_row, lambda x: self.set_size(x)))
-        self.op_row = self._slider_row(pinned, "Opacity:", 1.0, self.set_opacity, "100%")
+        self.op_row = self._slider_row(pinned, "Opacity:", 0.5, self.set_opacity, "50%")
         self.op_row.entry.bind("<Return>", lambda e: self._typed(self.op_row, lambda x: (self.set_opacity(x / 100), self._sync_slider(self.op_row, self.opacity))))
         self.size_s, self.op_s = self.size_row.slider, self.op_row.slider
         # ---- Options view
