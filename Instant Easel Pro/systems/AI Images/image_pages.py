@@ -142,6 +142,14 @@ def _hide_when_empty(label):
     label.configure = label.config = configure
     if not str(label.cget("text")).strip(): label.pack_forget()
 
+class _HeadTitle(T.Text):
+    """a box's heading: gold, underlined, centred over it"""
+    def __init__(self, master, text): super().__init__(master, text, font=T.f(10, "underline"))
+    def _style(self):
+        super()._style()
+        try: self.configure(fg=T.PALETTE["title"])
+        except tk.TclError: pass
+
 def head_row(master):
     """a label row of fixed height (it can hold a painted button) — used on both sides so the boxes under them start level"""
     r = _frame(master); r.pack(side="top", fill="x", pady=(4, 2)); r.pack_propagate(False)
@@ -346,7 +354,7 @@ class Viewer(tk.Frame):
         self.cv.bind("<Button-3>", lambda e: self.current and self.page._actions(e, self.current, prefs.picture_info(self.current).get("seed", "")))
         self.bar = T.ProgressBar(self.cv, width=360, height=22)
         head = head_row(self)                                                    # same height as WHAT YOU WANT's row: the two boxes' tops line up
-        T.Text(head, "YOUR PICTURE", font=T.f(10)).pack(side="left", anchor="s")
+        _HeadTitle(head, "YOUR PICTURE").place(relx=0.5, rely=1.0, anchor="s")    # centred over the box (Open / Save sit at the right)
         self._head_btns = []
         for text, fn in (("Save a copy…", lambda p: self.page.save_copy(p)), ("Open", _open_file)):   # Save at the top right, Open to its left
             b = skin.file_button(T.Button(head, text, lambda fn=fn: self.current and fn(self.current)), height=30)
@@ -473,7 +481,7 @@ class ImagePage(tk.Frame):
         if self.SPLIT: self.build_left(self.left)
         else: self.build_top(host)
         if self.VIEWER:
-            self._words_label = head_row(host); T.Text(self._words_label, self.WORDS, font=T.f(10)).pack(side="left", anchor="s")
+            self._words_label = head_row(host); _HeadTitle(self._words_label, self.WORDS).place(relx=0.5, rely=1.0, anchor="s")
         else: self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
         self.prompt = T.Field(host, height=3, **({"width": 10} if self.VIEWER else {}))   # (beside the viewer it fills whatever height is left)
         self.prompt.pack(fill="both" if self.VIEWER else "x", expand=bool(self.VIEWER))
