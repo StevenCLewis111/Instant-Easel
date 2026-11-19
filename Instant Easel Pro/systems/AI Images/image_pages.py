@@ -50,10 +50,96 @@ class ListChoice(T.Choice):
         try: m.tk_popup(x, y)
         finally: m.grab_release()
 
+class _Pane:
+    """a scrolling column (no border of its own): widgets go in .inner, kept centred left-to-right; its scroll bar is .sb"""
+    def __init__(self, master):
+        self.cv = tk.Canvas(master, bd=0, highlightthickness=0, width=10, height=10)
+        self.sb = T.Scrollbar(master, "vertical", command=self.cv.yview); self.cv.configure(yscrollcommand=self.sb.set)
+        self.inner = tk.Frame(self.cv, bd=0, highlightthickness=0); self.win = self.cv.create_window(0, 0, window=self.inner, anchor="n")
+        self.inner.bind("<Configure>", lambda e: self.fit(), add="+"); self.cv.bind("<Configure>", lambda e: self.fit(), add="+")
+        T.wheel_area(self.cv, lambda n: self.sb.can_scroll() and self.cv.yview_scroll(n, "units"))
+    def fit(self):
+        try:
+            W, H = self.cv.winfo_width(), self.cv.winfo_height(); ih = self.inner.winfo_reqheight()
+            self.cv.coords(self.win, max(W, self.inner.winfo_reqwidth()) / 2, 0)
+            self.cv.configure(scrollregion=(0, 0, max(W, self.inner.winfo_reqwidth()), max(ih, H)))
+            if ih <= H: self.cv.yview_moveto(0)
+        except tk.TclError: pass
+
+class OptionPanel(tk.Frame):
+    """the settings box beside the viewer:
+        [ setting buttons, one under another, centred | scroll bar | that setting's choices, centred | scroll bar ]
+    with a border line either side of the middle scroll bar and left of the right one. Clicking a setting lists its choices on the
+    right; clicking a choice picks it. Each side scrolls on its own when it has more than fits."""
+    def __init__(self, master):
+        super().__init__(master, bd=0, highlightthickness=1); self.cap = None; self.current = None; self._job = None
+        self.left, self.right = _Pane(self), _Pane(self)
+        cells = [self.left.cv, T.Line(self), self.left.sb, T.Line(self), self.right.cv, T.Line(self), self.right.sb]
+        for c, w in enumerate(cells): w.grid(row=0, column=c, sticky="nsew", pady=0)
+        self.columnconfigure(0, weight=1, uniform="op"); self.columnconfigure(4, weight=1, uniform="op"); self.rowconfigure(0, weight=1)
+        self.inner = self.left.inner
+        self.left.inner.bind("<Configure>", lambda e: self._soon(), add="+"); self.right.inner.bind("<Configure>", lambda e: self._soon(), add="+")
+        self._style(); T.on_change(self._style)
+        self.show(None)
+    def _style(self):
+        bg = self.master["bg"]
+        try:
+            self.configure(bg=bg, highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"])
+            for pn in (self.left, self.right): pn.cv.configure(bg=bg); pn.inner.configure(bg=bg)
+        except tk.TclError: pass
+    def attach(self, choice):
+        """this setting button lists its choices on the right instead of stepping through them"""
+        choice.open_right = True
+        opener = lambda e=None, c=choice: self.show(c)
+        choice.bind("<Button-1>", opener); choice.bind("<Return>", opener)
+        choice.var.trace_add("write", lambda *a, c=choice: self.current is c and self.after_idle(lambda: self.show(c)))
+    def show(self, choice):
+        self.current = choice; box = self.right.inner
+        for w in box.winfo_children(): w.destroy()
+        if choice is None:
+            T.Text(box, "Click a setting\non the left to see\nits choices here", muted=True, font=T.f(9)).pack(pady=8); return
+        T.Text(box, (choice.label or "Choices").upper(), font=T.f(9)).pack(pady=(6, 4))
+        now = choice.var.get()
+        for c in choice.choices:
+            b = T.Button(box, ("● " if c == now else "") + str(c), lambda c=c: choice.var.set(c))
+            b.pack(pady=2, padx=6, fill="x")
+        self.right.cv.yview_moveto(0)
+    def set_height(self, h):
+        h = None if h is None else max(10, int(h))
+        if h is None or self.cap is None or abs(h - self.cap) > 2: self.cap = h; self._soon()
+    def _soon(self):
+        if self._job is None: self._job = self.after(15, self._fit)
+    def _fit(self):
+        self._job = None
+        try:
+            ih = self.left.inner.winfo_reqheight() + 2
+            want = ih if self.cap is None else min(ih, self.cap)
+            for pn in (self.left, self.right):
+                if int(float(pn.cv.cget("height"))) != want: pn.cv.configure(height=want)
+            self.left.fit(); self.right.fit()
+        except tk.TclError: pass
+
+def _hide_when_empty(label):
+    """a message line that takes no room while it has nothing to say (shows again, in its place, when it does)"""
+    raw = label.configure
+    def configure(cnf=None, **kw):
+        out = raw(cnf, **kw)
+        if "text" in kw or (isinstance(cnf, dict) and "text" in cnf):
+            try:
+                if str(label.cget("text")).strip():
+                    if not label.winfo_manager():
+                        sib = [w for w in label.master.pack_slaves()]
+                        label.pack(anchor="w", **({"before": sib[0]} if (label is getattr(label, "_first", None) and sib) else {}))
+                elif label.winfo_manager(): label.pack_forget()
+            except tk.TclError: pass
+        return out
+    label.configure = label.config = configure
+    if not str(label.cget("text")).strip(): label.pack_forget()
+
 def head_row(master):
     """a label row of fixed height (it can hold a painted button) — used on both sides so the boxes under them start level"""
     r = _frame(master); r.pack(side="top", fill="x", pady=(4, 2)); r.pack_propagate(False)
-    fit = lambda: r.winfo_exists() and r.configure(height=max(16, int(round(32 * T.Z))))
+    fit = lambda: r.winfo_exists() and r.configure(height=max(18, int(round(40 * T.Z))))   # room for a painted button plus a gap under it
     fit(); T.on_change(fit, zoom=True); return r
 
 def open_right(choice):
@@ -258,7 +344,7 @@ class Viewer(tk.Frame):
         self._head_btns = []
         for text, fn in (("Save a copy…", lambda p: self.page.save_copy(p)), ("Open", _open_file)):   # Save at the top right, Open to its left
             b = skin.file_button(T.Button(head, text, lambda fn=fn: self.current and fn(self.current)), height=30)
-            b.pack(side="right", padx=(6, 0)); self._head_btns.append(b)
+            b.pack(side="right", anchor="n", padx=(6, 0)); self._head_btns.append(b)   # top of the row: a gap between them and the box below
         self.barea = T.ScrollArea(self); self.barea.pack(side="bottom", fill="x", pady=(6, 0)); self.btns = self.barea.inner; self._buttons()
         self.bind("<Configure>", lambda e: e.widget is self and self.winfo_viewable() and self.barea.set_height(self.winfo_height() * 0.4), add="+")
         self.strip = _frame(self); self.strip.pack(side="bottom", pady=(2, 0))
@@ -392,7 +478,7 @@ class ImagePage(tk.Frame):
         self.lo_note = T.Text(host, "", muted=True, font=T.f(8)); self.lo_note.configure(wraplength=480 if self.VIEWER else 1000)
         # the settings, laid out in a tidy grid (2 across beside the viewer, 3 across otherwise)
         if self.VIEWER:                                                              # beside the viewer: in a bordered area that scrolls if it must
-            self.optarea = T.ScrollArea(host); self.optarea.pack(pady=(8, 0), fill="x"); self.optbox = self.optarea.inner
+            self.optarea = OptionPanel(host); self.optarea.pack(pady=(8, 0), fill="x"); self.optbox = self.optarea.inner
         else: self.optbox = _frame(host); self.optbox.pack(pady=(8, 0), anchor="w" if self.SPLIT else "center")
         ob = self.optbox
         self._opts = []
@@ -443,15 +529,20 @@ class ImagePage(tk.Frame):
             self.go_btn.pack(side="left", padx=(0, 6)); stop.configure(width=8); stop.pack(side="left", padx=6)
             skin.file_button(T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()))).pack(side="left", padx=6)
         mh = host
+        if self.VIEWER: self.notes = mh = _frame(host); self.notes.pack(fill="x")    # the two message lines: take no room while they're empty
         self.msg = T.Text(mh, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
         if self.VIEWER: self.msg.configure(wraplength=int(480 * T.Z))
         self.used = T.Text(mh, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
         self.used.pack(anchor="w" if self.VIEWER else "center")
+        if self.VIEWER:
+            self.msg._first = self.msg
+            for lab in (self.msg, self.used): _hide_when_empty(lab)
         if self.VIEWER:                                                              # everything under the words box is placed first, from the bottom up,
-            for w in (self.optarea, self.gobar, self.used, self.msg, self.lo_row):   # so the words box only gets the height that's left and nothing is cut off;
+            for w in (self.optarea, self.gobar, self.notes, self.lo_row):           # so the words box only gets the height that's left and nothing is cut off;
                                                                                          # the settings box last, so its bottom lines up with the picture buttons' box
                 w.pack_configure(side="bottom", before=self._words_label)
-            self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=(6, 0)); self.gobar.pack_configure(fill="x", pady=(8, 0))
+            self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=0)
+            self.gobar.pack_configure(fill="x", pady=(10, 10))                       # Paint it / Stop: the same gap above (to LEAVE OUT) as below (to the box)
             host.bind("<Configure>", lambda e: e.widget is host and self.after(20, self._fit_left), add="+")
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
         self.results = _frame(self if not self.SPLIT else host)
@@ -466,18 +557,13 @@ class ImagePage(tk.Frame):
         hidden = getattr(self, "_hidden_opts", set())
         for w, _ in self._opts: w.grid_forget()
         if self.VIEWER:
-            # beside the viewer: two equal columns, everything on the left edge of its cell, the same at every window size.
-            # The settings fill the rows in order; the seed row and the fuller-description toggle share the last row.
-            ob = self.optbox; ob.columnconfigure(0, weight=1, uniform="opt"); ob.columnconfigure(1, weight=1, uniform="opt")
-            tail = [getattr(self, "_seed_row", None), getattr(self, "_imp_row", None)]
+            # one column, centred, scrolling down: the settings in order, then the seed row and the fuller-description toggle
+            tail = [w for w in (getattr(self, "_seed_row", None), getattr(self, "_imp_row", None)) if w is not None]
             i = 0
-            for w, span in self._opts:
-                if w in hidden or w in tail: continue
-                if isinstance(w, T.Choice) and not getattr(w, "open_right", False): open_right(w)
-                w.grid(row=i // 2, column=i % 2, sticky="w", pady=3); i += 1
-            r = -(-i // 2)
-            for k, w in enumerate(tail):
-                if w is not None: w.grid(row=r, column=k, sticky="w", pady=3)
+            for w in [w for w, _ in self._opts if w not in hidden and w not in tail] + tail:
+                if isinstance(w, T.Choice) and not getattr(w, "open_right", False): self.optarea.attach(w)
+                w.grid(row=i, column=0, pady=3, padx=6); i += 1
+            if self.optarea.current in hidden: self.optarea.show(None)
             return
         cols = 3; i = 0
         for w, span in self._opts:
@@ -490,8 +576,9 @@ class ImagePage(tk.Frame):
             H = self.host.winfo_height()
             if H < 50 or not self.host.winfo_viewable(): return
             others = self.host.winfo_reqheight() - self.prompt.winfo_reqheight() - self.optarea.winfo_reqheight()
-            border = self.optarea.winfo_reqheight() - int(float(self.optarea.cv.cget("height")))
-            self.optarea.set_height(max(int(40 * T.Z), H - others - self.prompt.winfo_reqheight() - border))
+            border = self.optarea.winfo_reqheight() - int(float(self.optarea.left.cv.cget("height")))
+            room = H - others - self.prompt.winfo_reqheight() - border             # all but the words box's 3 lines
+            self.optarea.set_height(max(int(40 * T.Z), min(room, int(H * 0.5))))   # at most half the column: the words box keeps a fair share
         except tk.TclError: pass
 
     # ---- building blocks for the sections
@@ -528,12 +615,12 @@ class ImagePage(tk.Frame):
             if self.lo_row.winfo_manager(): self.lo_row.pack_forget()
             self.lo_note.configure(text=f"{self.imaging.model_label(self.model_key()) or 'This model'} follows your words as written: say what you want rather than what to leave out.")
             if not self.lo_note.winfo_manager():
-                if self.VIEWER: self.lo_note.pack(side="bottom", anchor="w", after=self.msg, pady=(6, 0))   # where LEAVE OUT was
+                if self.VIEWER: self.lo_note.pack(side="bottom", anchor="w", after=self.notes, pady=(6, 0))   # where LEAVE OUT was
                 else: self.lo_note.pack(after=self.prompt, anchor="w")
         else:
             if self.lo_note.winfo_manager(): self.lo_note.pack_forget()
             if not self.lo_row.winfo_manager():
-                if self.VIEWER: self.lo_row.pack(side="bottom", after=self.msg, fill="x", pady=(6, 0))
+                if self.VIEWER: self.lo_row.pack(side="bottom", after=self.notes, fill="x", pady=(6, 0))
                 else: self.lo_row.pack(after=self.prompt, fill="x", pady=(4, 0))
 
     def _tick(self):
