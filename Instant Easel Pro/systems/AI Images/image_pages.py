@@ -248,7 +248,8 @@ class Viewer(tk.Frame):
         self.cv.bind("<Button-3>", lambda e: self.current and self.page._actions(e, self.current, prefs.picture_info(self.current).get("seed", "")))
         self.bar = T.ProgressBar(self.cv, width=360, height=22)
         T.Text(self, "YOUR PICTURE", font=T.f(10)).pack(side="top", anchor="w", pady=(4, 2))   # same as WHAT YOU WANT: the two boxes line up
-        self.btns = _frame(self); self.btns.pack(side="bottom", pady=(4, 0)); self._buttons()
+        self.barea = T.ScrollArea(self); self.barea.pack(side="bottom", fill="x", pady=(6, 0)); self.btns = self.barea.inner; self._buttons()
+        self.bind("<Configure>", lambda e: e.widget is self and self.winfo_viewable() and self.barea.set_height(self.winfo_height() * 0.4), add="+")
         self.strip = _frame(self); self.strip.pack(side="bottom", pady=(2, 0))
         self.info = T.Text(self, "", muted=True, font=T.f(8)); self.info.pack(side="bottom", pady=(3, 0))
         self.cv.pack(side="top", fill="both", expand=True); self._style(); T.on_change(self._style)
@@ -264,24 +265,12 @@ class Viewer(tk.Frame):
         for row in rows:
             for text, fn in row:
                 if fn is None:
-                    b = T.Button(r, text, lambda: None, width=12); b.command = lambda b=b: self._more(b)
-                else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), width=12, kind="danger" if text == "Delete" else "normal")
+                    b = T.Button(r, text, lambda: None); b.command = lambda b=b: self._more(b)
+                else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), kind="danger" if text == "Delete" else "normal")
                 if skin.file_kind(text): skin.file_button(b, height=36)                 # painted New / Open / Save button
                 self._bl.append(b)
-        self._bcols = None; self._grid_btns(4)
-        self.bind("<Configure>", lambda e: e.widget is self and self._fit_btns(), add="+")
-    def _grid_btns(self, cols):
-        """the picture's buttons: 4 across, or 2 across when the picture box is narrow, so none get cut off"""
-        if cols == self._bcols: return
-        self._bcols = cols
-        for i, b in enumerate(self._bl): b.grid(row=i // cols, column=i % cols, padx=2, pady=1)
-    def _fit_btns(self):
-        try:
-            W = self.winfo_width()
-            if W < 50: return
-            wide = sum(sorted((b.winfo_reqwidth() + 4 for b in self._bl), reverse=True)[:4])   # the widest row of 4 it could make
-            self._grid_btns(4 if wide <= W else 2)
-        except tk.TclError: pass
+        for c in range(4): r.columnconfigure(c, weight=1)                         # 4 across; spare width shared out between the columns
+        for i, b in enumerate(self._bl): b.grid(row=i // 4, column=i % 4, padx=1, pady=2)
     def _more(self, b):
         if not self.current: return
         class E: x_root = b.winfo_rootx(); y_root = b.winfo_rooty() + b.winfo_height()
@@ -368,25 +357,31 @@ class ImagePage(tk.Frame):
         self.get_btn = T.Button(st, "Download", self.download, width=12)
         if self.SPLIT or self.VIEWER:
             split = _frame(self); split.pack(fill="both", expand=True, pady=(4, 0))
-            self.left = _frame(split); self.left.pack(side="left", anchor="n", padx=(0, 14), fill="y" if self.VIEWER else None)
-            if self.VIEWER:
-                self.viewer = Viewer(split, self); self.viewer.pack(side="left", fill="both", expand=True, anchor="n")
+            if self.VIEWER:                                                          # two equal halves, whatever the window size
+                split.columnconfigure(0, weight=1, uniform="half"); split.columnconfigure(1, weight=1, uniform="half"); split.rowconfigure(0, weight=1)
+                self.left = _frame(split); self.left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+                self.viewer = Viewer(split, self); self.viewer.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
                 host = self.left
             else:
+                self.left = _frame(split); self.left.pack(side="left", anchor="n", padx=(0, 14))
                 host = _frame(split); host.pack(side="left", fill="both", expand=True, anchor="n")
         else: self.left = None; host = self
         self.host = host
         if self.SPLIT: self.build_left(self.left)
         else: self.build_top(host)
         self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
-        self.prompt = T.Field(host, height=4 if self.VIEWER else 3, **({"width": 52} if self.VIEWER else {})); self.prompt.pack(fill="x")
+        self.prompt = T.Field(host, height=3, **({"width": 10} if self.VIEWER else {}))   # (beside the viewer it fills whatever height is left)
+        self.prompt.pack(fill="both" if self.VIEWER else "x", expand=bool(self.VIEWER))
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         self.lo_row = _frame(host); self.lo_row.pack(fill="x", pady=(4, 0))
         T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 8))
-        self.leave_out = self.var("leave_out", imaging.NEGATIVE); T.Entry(self.lo_row, self.leave_out, width=44 if self.VIEWER else 60).pack(side="left", fill="x", expand=True)
+        self.leave_out = self.var("leave_out", imaging.NEGATIVE); T.Entry(self.lo_row, self.leave_out, width=10 if self.VIEWER else 60).pack(side="left", fill="x", expand=True)
         self.lo_note = T.Text(host, "", muted=True, font=T.f(8)); self.lo_note.configure(wraplength=480 if self.VIEWER else 1000)
         # the settings, laid out in a tidy grid (2 across beside the viewer, 3 across otherwise)
-        self.optbox = _frame(host); self.optbox.pack(pady=(8, 0), anchor="w" if (self.SPLIT or self.VIEWER) else "center"); ob = self.optbox
+        if self.VIEWER:                                                              # beside the viewer: in a bordered area that scrolls if it must
+            self.optarea = T.ScrollArea(host); self.optarea.pack(pady=(8, 0), fill="x"); self.optbox = self.optarea.inner
+        else: self.optbox = _frame(host); self.optbox.pack(pady=(8, 0), anchor="w" if self.SPLIT else "center")
+        ob = self.optbox
         self._opts = []
         def add(w, span=1): self._opts.append((w, span)); return w
         self.style = self.var("style", prefs.get("image_default_style") or "None")
@@ -418,10 +413,10 @@ class ImagePage(tk.Frame):
         seed = _frame(ob); T.Text(seed, "SEED", font=T.f(9)).pack(side="left", padx=(0, 4))
         self.seed = self.var("seed", "random")
         T.Button(seed, "Random", lambda: self.seed.set("random"), width=7).pack(side="left", padx=(0, 4))
-        T.Entry(seed, self.seed, width=11).pack(side="left"); add(seed)
+        T.Entry(seed, self.seed, width=9).pack(side="left"); add(seed); self._seed_row = seed
         self.improve = tk.BooleanVar(value=self._mem.get("improve", prefs.get("image_improve_words") if prefs.get("image_improve_words") is not None else True))
         if self.IMPROVE:
-            imp = _frame(ob); T.Text(imp, "FULLER DESCRIPTION", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(imp, self.improve).pack(side="left"); add(imp)
+            imp = _frame(ob); T.Text(imp, "FULLER DESCRIPTION", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(imp, self.improve).pack(side="left"); add(imp); self._imp_row = imp
         self._layout_opts()
         b = ob if self.VIEWER else _frame(host)                                      # beside the viewer: Paint it / Stop sit in the settings grid
         if not self.VIEWER: b.pack(pady=8, anchor="center")
@@ -434,9 +429,15 @@ class ImagePage(tk.Frame):
             skin.file_button(T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()))).pack(side="left", padx=6)
         mh = host
         self.msg = T.Text(mh, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
+        if self.VIEWER: self.msg.configure(wraplength=int(480 * T.Z))
         self.used = T.Text(mh, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
         self.used.pack(anchor="w" if self.VIEWER else "center")
-        if self.VIEWER: host.bind("<Configure>", lambda e: e.widget is host and self._fit_opts(), add="+")
+        if self.VIEWER:                                                              # everything under the words box is placed first, from the bottom up,
+            for w in (self.optarea, self.used, self.msg, self.lo_row):               # so the words box only gets the height that's left and nothing is cut off;
+                                                                                         # the settings box last, so its bottom lines up with the picture buttons' box
+                w.pack_configure(side="bottom", before=self._words_label)
+            self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=(8, 0))
+            host.bind("<Configure>", lambda e: e.widget is host and self.after(20, self._fit_left), add="+")
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
         self.results = _frame(self if not self.SPLIT else host)
         if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
@@ -447,34 +448,36 @@ class ImagePage(tk.Frame):
 
     def _layout_opts(self):
         """put the visible settings into the grid, in order"""
-        # beside the viewer: one column, lined up on the left; each list opens in the empty space to its right
-        cols = getattr(self, "_opt_cols", 1) if self.VIEWER else 3; hidden = getattr(self, "_hidden_opts", set())
+        hidden = getattr(self, "_hidden_opts", set())
         for w, _ in self._opts: w.grid_forget()
-        i = 0
+        if self.VIEWER:
+            # beside the viewer: two equal columns, everything on the left edge of its cell, the same at every window size.
+            # The settings fill the rows in order; then the seed row with Paint it beside it, and the toggle with Stop beside it.
+            ob = self.optbox; ob.columnconfigure(0, weight=1, uniform="opt"); ob.columnconfigure(1, weight=1, uniform="opt")
+            tail = [getattr(self, "_seed_row", None), getattr(self, "_imp_row", None)]
+            i = 0
+            for w, span in self._opts:
+                if w in hidden or w in tail: continue
+                if isinstance(w, T.Choice) and not getattr(w, "open_right", False): open_right(w)
+                w.grid(row=i // 2, column=i % 2, sticky="w", pady=3); i += 1
+            r = -(-i // 2)
+            for k, (w, b) in enumerate(zip(tail, (getattr(self, "go_btn", None), getattr(self, "stop_btn", None)))):
+                if w is not None: w.grid(row=r + k, column=0, sticky="w", pady=3)
+                if b is not None: b.grid(row=r + k, column=1, sticky="w", pady=3)
+            return
+        cols = 3; i = 0
         for w, span in self._opts:
             if w in hidden: continue
-            if self.VIEWER and isinstance(w, T.Choice) and not getattr(w, "open_right", False): open_right(w)
-            w.grid(row=i // cols, column=i % cols, sticky="w", padx=(0, 4) if self.VIEWER else 4, pady=3); i += 1
-        if self.VIEWER and getattr(self, "stop_btn", None) is not None:              # Paint it / Stop: right of the last two rows (the seed and the toggle)
-            last = (i - 1) // cols; top = max(0, last - 1)
-            self.go_btn.grid(row=top, column=cols, sticky="w", padx=(16, 0), pady=3)
-            self.stop_btn.grid(row=top + 1, column=cols, sticky="w", padx=(16, 0), pady=3)
-        if self.VIEWER and not getattr(self, "_fitting", False): self.after_idle(self._fit_opts)   # (settings shown/hidden: check it still fits)
+            w.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=3); i += 1
 
-    def _fit_opts(self):
-        """beside the viewer the settings are one column; on a short window they spread to 2 (then 3) columns so the column
-        never runs past the bottom of the window and Paint it / Stop stay in view"""
-        if getattr(self, "_fitting", False): return
+    def _fit_left(self):
+        """the settings area gets what the column has left after the words box's 3 lines; past that it scrolls"""
         try:
             H = self.host.winfo_height()
-            if H < 50: return
-            shown = [w for w, _ in self._opts if w not in getattr(self, "_hidden_opts", set())]; n = max(1, len(shown)); cols = getattr(self, "_opt_cols", 1)
-            rows_now = -(-n // cols); rowh = self.optbox.winfo_reqheight() / max(1, rows_now)
-            rest = self.host.winfo_reqheight() - self.optbox.winfo_reqheight()
-            want = next((c for c in (1, 2, 3) if rest + rowh * -(-n // c) <= H), 3)
-            if want != cols:
-                self._fitting = True; self._opt_cols = want; self._layout_opts()
-                self.after(50, lambda: setattr(self, "_fitting", False))
+            if H < 50 or not self.host.winfo_viewable(): return
+            others = self.host.winfo_reqheight() - self.prompt.winfo_reqheight() - self.optarea.winfo_reqheight()
+            border = self.optarea.winfo_reqheight() - int(float(self.optarea.cv.cget("height")))
+            self.optarea.set_height(max(int(40 * T.Z), H - others - self.prompt.winfo_reqheight() - border))
         except tk.TclError: pass
 
     # ---- building blocks for the sections
@@ -510,10 +513,14 @@ class ImagePage(tk.Frame):
         if dit:
             if self.lo_row.winfo_manager(): self.lo_row.pack_forget()
             self.lo_note.configure(text=f"{self.imaging.model_label(self.model_key()) or 'This model'} follows your words as written: say what you want rather than what to leave out.")
-            if not self.lo_note.winfo_manager(): self.lo_note.pack(after=self.prompt, anchor="w")
+            if not self.lo_note.winfo_manager():
+                if self.VIEWER: self.lo_note.pack(side="bottom", anchor="w", after=self.msg, pady=(6, 0))   # where LEAVE OUT was
+                else: self.lo_note.pack(after=self.prompt, anchor="w")
         else:
             if self.lo_note.winfo_manager(): self.lo_note.pack_forget()
-            if not self.lo_row.winfo_manager(): self.lo_row.pack(after=self.prompt, fill="x", pady=(4, 0))
+            if not self.lo_row.winfo_manager():
+                if self.VIEWER: self.lo_row.pack(side="bottom", after=self.msg, fill="x", pady=(6, 0))
+                else: self.lo_row.pack(after=self.prompt, fill="x", pady=(4, 0))
 
     def _tick(self):
         if not self.winfo_exists(): return

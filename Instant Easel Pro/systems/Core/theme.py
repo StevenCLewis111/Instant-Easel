@@ -536,6 +536,60 @@ class ScrollBox(tk.Frame):
         self.configure(bg=bg, highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
         self.body.configure(bg=bg); self.gutter.configure(bg=bg)
 
+class ScrollArea(tk.Frame):
+    """a bordered area whose contents scroll: put widgets in .inner. A scroll bar (the app's own) appears on a side only when the
+    contents don't fit that way. The view is as tall as the contents unless set_height() caps it.
+        area = ScrollArea(parent); area.pack(fill="x"); T.Button(area.inner, "Hi").grid(...)"""
+    PAD = 4                                                      # gap inside the border (design pixels)
+    def __init__(self, master, **kw):
+        super().__init__(master, bd=0, highlightthickness=1, **kw); self.cap = None; self._busy = False; self._job = None
+        p = max(2, int(round(self.PAD * Z)))
+        self.cv = tk.Canvas(self, bd=0, highlightthickness=0, width=10, height=10)
+        self.vsb = Scrollbar(self, "vertical", command=self.cv.yview); self.hsb = Scrollbar(self, "horizontal", command=self.cv.xview)
+        self.cv.configure(yscrollcommand=self.vsb.set, xscrollcommand=self.hsb.set)
+        self.inner = tk.Frame(self.cv, bd=0, highlightthickness=0); self._win = self.cv.create_window(0, 0, window=self.inner, anchor="nw")
+        self.cv.grid(row=0, column=0, sticky="nsew", padx=p, pady=p); self.columnconfigure(0, weight=1); self.rowconfigure(0, weight=1)
+        self.inner.bind("<Configure>", lambda e: self._soon(), add="+"); self.cv.bind("<Configure>", lambda e: self._soon(), add="+")
+        wheel_area(self, self._wheel); self._style(); on_change(self._style)
+    def _wheel(self, n):
+        if self.vsb.can_scroll(): self.cv.yview_scroll(n, "units")
+        elif self.hsb.can_scroll(): self.cv.xview_scroll(n, "units")
+    def _soon(self):
+        """fit on a short timer, not straight from the size event: sizes settle first and one fit covers a burst of changes
+        (a timer, not an idle task, so a size change can never feed itself inside one redraw)"""
+        if self._job is None: self._job = self.after(15, self._fit)
+    def set_height(self, h):
+        """the most the view may be tall (None: as tall as the contents); taller contents scroll"""
+        h = None if h is None else max(10, int(h))
+        if h is None or self.cap is None or abs(h - self.cap) > 2: self.cap = h; self._soon()
+    def _fit(self):
+        self._job = None
+        if self._busy: return
+        self._busy = True
+        try:
+            iw, ih = self.inner.winfo_reqwidth(), self.inner.winfo_reqheight()
+            want = ih if self.cap is None else min(ih, self.cap)
+            if self.hsb.winfo_manager() and self.cap is None: want = ih
+            if int(float(self.cv.cget("height"))) != want: self.cv.configure(height=want)
+            W, H = self.cv.winfo_width(), self.cv.winfo_height()
+            if W < 2 or H < 2: return
+            self.cv.itemconfigure(self._win, width=max(iw, W), height=max(ih, H))      # narrower contents stretch to the width
+            self.cv.configure(scrollregion=(0, 0, max(iw, W), max(ih, H)))
+            p = max(2, int(round(self.PAD * Z)))
+            for sb, need, kw in ((self.vsb, ih > H + 1, dict(row=0, column=1, sticky="ns", padx=(0, p), pady=p)),
+                                 (self.hsb, iw > W + 1, dict(row=1, column=0, sticky="ew", padx=p, pady=(0, p)))):
+                if need and not sb.winfo_manager(): sb.grid(**kw)
+                elif not need and sb.winfo_manager():
+                    sb.grid_forget(); (self.cv.yview_moveto if sb is self.vsb else self.cv.xview_moveto)(0)
+        except tk.TclError: pass
+        finally: self._busy = False
+    def _style(self):
+        bg = self.master["bg"]
+        try:
+            self.configure(bg=bg, highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
+            self.cv.configure(bg=bg); self.inner.configure(bg=bg)
+        except tk.TclError: pass
+
 class Line(tk.Frame):
     """thin divider in the border colour (follows the Theme tab and the zoom)"""
     def __init__(self, master, vertical=True, **kw):

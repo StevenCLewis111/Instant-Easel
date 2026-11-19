@@ -169,8 +169,8 @@ def tabs(row):
     row._style = restyle; restyle(); T.on_change(restyle, zoom=True); return row
 
 # ---------------------------------------------------------------- New / Open / Save: the painted file buttons (images/UI/Draw Toolbar/File Buttons)
-# A button that says just "New", "Open" or "Save" wears its picture as it is. One with more words ("Open my Images folder", "Save a copy…")
-# keeps the picture's frame and icon and gets its own words painted on, the frame stretched to fit them.
+# Every New / Open / Save button wears its picture exactly as drawn. When the button's job has more words ("Open my Images folder",
+# "Save to Training"), they show in a small note while the pointer is over it.
 FILE_ART = {"new": "buttons/new", "open": "buttons/open", "save": "buttons/save"}
 _file_ph = {}
 
@@ -203,9 +203,8 @@ def _file_base(which, text):
     """the button at the picture's own height: the painted one, or the frame + icon with these words"""
     key = ("fbase", which, text)
     if key in _src: return _src[key]
-    word = text.replace("…", "").replace("...", "").strip().lower()
     im = UA.load(FILE_ART[which])
-    if word != which:
+    if False:                                                                   # (the stretched version with other words looked cut up: always the picture as drawn)
         left, strip, cap = _file_parts(which); H = im.height; font = _word_font(round(H * 0.40))
         d = ImageDraw.Draw(Image.new("RGBA", (1, 1))); tw = int(d.textlength(text, font=font)); mid = tw + round(H * 0.16)
         out = Image.new("RGBA", (left.width + mid + cap.width, H)); out.paste(left, (0, 0))
@@ -217,6 +216,24 @@ def _file_base(which, text):
                                  stroke_width=max(2, round(H * 0.035)), stroke_fill=(16, 28, 90))
         im = out
     _src[key] = im; return im
+
+def _hover_note(w, text):
+    """a small note with the button's full name while the pointer rests on it"""
+    tip = {}
+    def show(e=None):
+        if tip.get("w") is not None: return
+        try:
+            t = tk.Toplevel(w); t.overrideredirect(True); t.attributes("-topmost", True)
+            tk.Label(t, text=text, bg=T.PALETTE["panel2"], fg="white", font=T.f(9), padx=6, pady=2, bd=1, relief="solid").pack()
+            t.geometry(f"+{w.winfo_rootx()}+{w.winfo_rooty() + w.winfo_height() + 2}"); tip["w"] = t
+        except tk.TclError: pass
+    def hide(e=None):
+        t = tip.pop("w", None)
+        if t is not None:
+            try: t.destroy()
+            except tk.TclError: pass
+    w.bind("<Enter>", lambda e: w.after(350, lambda: getattr(w, "hover", False) and show()), add="+")
+    w.bind("<Leave>", hide, add="+"); w.bind("<ButtonPress-1>", hide, add="+"); w.bind("<Destroy>", hide, add="+")
 
 def file_picture(which, text, H, state="normal", ring=False):
     key = (which, text, H, state, ring, T.PALETTE["border"] if ring else None, margin())
@@ -241,6 +258,7 @@ def file_button(w, which=None, height=34):
     text = w.cget("text"); which = which or file_kind(text)
     if not which or UA.load(FILE_ART[which]) is None or getattr(w, "_skin", None) is not None: return w
     _take_over(w, text, None); w._skin["file"] = which; w._skin["fh"] = height
+    if text.replace("…", "").strip().lower() != which: _hover_note(w, text.replace("…", "").strip())
     def style():
         try:
             if not w.winfo_exists(): return
