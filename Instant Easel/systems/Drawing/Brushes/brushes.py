@@ -152,8 +152,10 @@ class Canvas:
         else: new = np.broadcast_to(c, reg.shape)
         self.a[y0:y1, x0:x1] = reg * (1 - m3) + new * m3
 
-    def stroke(self, pts, name, color=(30, 30, 30), size=24, opacity=1.0):
-        """pts: list of (x, y) or (x, y, pressure)"""
+    def stroke(self, pts, name, color=(30, 30, 30), size=24, opacity=1.0, state=None):
+        """pts: list of (x, y) or (x, y, pressure). state: a dict kept for one stroke painted in pieces as the mouse moves (live
+        painting): the brush's direction is smoothed across the pieces (no rocking on small mouse wobbles) and a tapering brush
+        only thins at the start, not at the ends of every piece"""
         b = B[name]; pts = [(p[0], p[1], p[2] if len(p) > 2 else 1.0) for p in pts]
         sp = b["special"]
         if sp in ("particle", "sketch", "hatching", "curve", "grid", "shape", "grass"): return getattr(self, "_" + sp)(pts, color, size, opacity)
@@ -164,9 +166,23 @@ class Canvas:
             for i in range(n): t = i / n; out.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, p0 + (p1 - p0) * t, math.atan2(y1 - y0, x1 - x0)))
         if not out: out = [(pts[0][0], pts[0][1], pts[0][2], 0.0)]
         N = len(out); src = None
+        if state is not None:                                                # turn smoothly: each dab leans only part way to the new direction
+            vx, vy = state.get("dir", (None, None)); dist = state.get("dist", 0.0); sm = []
+            for j, (x, y, p, ang) in enumerate(out):
+                cx, cy = math.cos(ang), math.sin(ang)
+                if vx is None: vx, vy = cx, cy
+                else:
+                    if cx * vx + cy * vy < 0: cx, cy = -cx, -cy                  # a flat tip looks the same turned half way round
+                    k = min(1.0, step / max(size * 1.2, 1.0)); vx, vy = vx + (cx - vx) * k, vy + (cy - vy) * k
+                    n_ = math.hypot(vx, vy) or 1.0; vx, vy = vx / n_, vy / n_
+                if j: dist += math.hypot(x - out[j - 1][0], y - out[j - 1][1])
+                sm.append((x, y, p, math.atan2(vy, vx), dist))
+            if out: state["dir"] = (vx, vy); state["dist"] = dist + (math.hypot(pts[-1][0] - out[-1][0], pts[-1][1] - out[-1][1]) if len(pts) > 1 else 0)
+            out = [q[:4] for q in sm]; travel = [q[4] for q in sm]
         if sp == "clone": src = self.a.copy()
         for i, (x, y, p, ang) in enumerate(out):
-            t = i / max(1, N - 1); pr = p * (math.sin(math.pi * t) ** 0.6 if b["taper"] else 1.0)
+            if state is not None: pr = p * (min(1.0, 0.25 + 0.75 * travel[i] / max(size * 1.5, 1.0)) if b["taper"] else 1.0)   # thin only as it starts
+            else: t = i / max(1, N - 1); pr = p * (math.sin(math.pi * t) ** 0.6 if b["taper"] else 1.0)
             s = max(2, int(size * b["size_scale"] * pr * (1 + self.rng.uniform(-b["jitter_size"], b["jitter_size"]) if b["jitter_size"] else 1)))
             ta = dict(b["tipargs"])
             if b["angle_follow"]: ta["angle"] = ang + math.pi / 2 + ta.get("angle", 0)

@@ -1099,7 +1099,9 @@ class DrawStudio(StudioExtras, tk.Frame):
         else:
             brushes.B["__live__"] = self._live_brush(); name, color = "__live__", self._stroke_color()   # the brush with your options, for this stroke piece
         try:
-            for P in self._mirror_sets(pts): self.cur.cv.stroke(P, name, color=color, size=self.size, opacity=self.opacity)
+            st = getattr(self, "_stroke_state", None) if self._live() else None
+            for k, P in enumerate(self._mirror_sets(pts)):
+                self.cur.cv.stroke(P, name, color=color, size=self.size, opacity=self.opacity, state=None if st is None else st.setdefault(k, {}))
         finally: brushes.B.pop("__live__", None)
 
     def _live(self):
@@ -1129,6 +1131,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             return
         if t == "text" or t in SEL_TOOLS or t == "crop": return self.x_down(e, p)     # text box, selection, crop (studio_extras)
         self._begin_edit(); self.points = [p]; self._pending = []; self._last_pt = p
+        self._stroke_state = {}; self._smooth_pt = p; self._smooth_pr = 1.0                 # one stroke: smoothed direction, position and pressure
         if self._live(): self._paint([p, p]); self._show_change(self._bbox([p]))
 
     def drag(self, e):
@@ -1138,9 +1141,13 @@ class DrawStudio(StudioExtras, tk.Frame):
         if t in ("pick", "fill", "text"): return
         if t in ("line", "rect", "oval"): self.cv.delete("shape"); self._preview_shape(self.start, p); return
         if self.points and abs(p[0] - self.points[-1][0]) + abs(p[1] - self.points[-1][1]) < 1.5 / max(self.zoom, 0.01): return
-        if self.use_pressure.get() and self.points:                              # a mouse has no pressure: slower = harder, faster = lighter
+        sp_ = getattr(self, "_smooth_pt", None)                                   # steady the hand: follow the mouse a little behind, not every jiggle
+        if sp_ is not None: p = (sp_[0] + (p[0] - sp_[0]) * 0.55, sp_[1] + (p[1] - sp_[1]) * 0.55, p[2])
+        self._smooth_pt = p
+        if self.use_pressure.get() and self.points:                              # a mouse has no pressure: slower = harder, faster = lighter (eased in)
             q = self.points[-1]; speed = math.hypot(p[0] - q[0], p[1] - q[1]) * max(self.zoom or 1, 0.01)
-            p = (p[0], p[1], min(1.0, max(0.3, 1.2 - speed / 35)))
+            self._smooth_pr = getattr(self, "_smooth_pr", 1.0) * 0.85 + min(1.0, max(0.3, 1.2 - speed / 35)) * 0.15
+            p = (p[0], p[1], self._smooth_pr)
         self.points.append(p)
         if self._live():
             self._pending.append(p)                                              # painted on the next frame tick, together with any other moves since
