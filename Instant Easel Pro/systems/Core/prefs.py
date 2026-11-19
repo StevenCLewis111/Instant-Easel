@@ -19,7 +19,7 @@ DEFAULTS = {
     "edit_preview": "Normal", "undo_steps": 30,
     # Display
     "text_size": "Normal", "show_hints": True, "show_splash": True,
-    "window_mode": "Maximized", "remember_window": True, "window_geometry": "", "last_tab": "AI Images",
+    "window_mode": "Maximized", "title_bar": "Painted", "remember_window": True, "window_geometry": "", "last_tab": "AI Images",
     # Privacy & data
     "keep_training_copies": False,
     # AI models: one core text model for every AI tab; a tab can add its own model (Settings > AI Models)

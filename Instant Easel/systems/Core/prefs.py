@@ -21,7 +21,7 @@ DEFAULTS = {
     "edit_preview": "Normal", "i2i_size": "Standard", "undo_steps": 30,
     # Display
     "text_size": "Normal", "show_hints": True, "show_splash": True,
-    "window_mode": "Maximized", "remember_window": True, "window_geometry": "", "last_tab": "Drawing",
+    "window_mode": "Maximized", "title_bar": "Painted", "remember_window": True, "window_geometry": "", "last_tab": "Drawing",
     # Privacy & data
     "keep_training_copies": False, "active_model": "Core (default)",
     # AI models
