@@ -5,6 +5,7 @@ skin.py: painted button and status-dot pictures for Tk widgets (images/UI/Tabs a
     skin.button(widget, "Text to Image", chars=20)   # a T.Button or a tab label wears skin/button.png, same size it had before
     skin.tabs(tabs)                                   # every tab of a T.Tabs row
     skin.dot(master, "green" | "blue" | "grey", 12)   # skin/dot_ring.png filled with the painted ball (a Label)
+    skin.file_button(T.Button(row, "Open my Images folder", cmd))   # New / Open / Save buttons wear the painted file-button pictures
 
 The button picture is stretched in the middle only (its rounded ends keep their shape), drawn at the widget's own size for the current
 zoom, with the text painted on in white with a dark edge so it reads on every colour of the rainbow. Hover is a little brighter, a tab
@@ -119,6 +120,12 @@ def draw(w, state=None, ring=None):
     if sk is None: return
     if state: sk["state"] = state
     if ring is not None: sk["ring"] = ring
+    if sk.get("file"):                                                          # a painted New / Open / Save button
+        ph = file_picture(sk["file"], sk["text"], max(12, round(sk["fh"] * T.Z)), sk["state"], sk["ring"])
+        if sk.get("ph") is not ph:
+            try: w.configure(image=ph); sk["ph"] = ph
+            except tk.TclError: pass
+        return
     f, pt = _tk_font(sk["font"])
     cw = f.measure("0") * sk["chars"] if sk["chars"] else f.measure(sk["text"])
     px, py = (max(0, round(p * T.Z)) for p in sk["pads"])
@@ -160,6 +167,88 @@ def tabs(row):
             if int(b.cget("highlightthickness")): b.tk.call(b._w, "configure", "-highlightthickness", 0)
             draw(b, "hover" if b._hover else ("normal" if n == row.active else "dim"), ring=n == row.active or b._hover)   # ring under the mouse, and kept on the open tab
     row._style = restyle; restyle(); T.on_change(restyle, zoom=True); return row
+
+# ---------------------------------------------------------------- New / Open / Save: the painted file buttons (images/UI/Draw Toolbar/File Buttons)
+# A button that says just "New", "Open" or "Save" wears its picture as it is. One with more words ("Open my Images folder", "Save a copy…")
+# keeps the picture's frame and icon and gets its own words painted on, the frame stretched to fit them.
+FILE_ART = {"new": "buttons/new", "open": "buttons/open", "save": "buttons/save"}
+_file_ph = {}
+
+def _file_parts(which):
+    """the picture split into: frame + icon (left), a clean strip of background (middle), the right end of the frame"""
+    key = ("fparts", which)
+    if key not in _src:
+        import numpy as np
+        im = UA.load(FILE_ART[which]); a = np.asarray(im).astype(int); H, W = a.shape[:2]; band = a[int(H * .3):int(H * .7)]
+        dark = np.where(((band[..., :3].max(-1) < 60) & (band[..., 3] > 200)).sum(0) > 3)[0]
+        icon_end = int(max([c for c in dark if c < W // 2] or [W * 0.45]))              # the icon's dark outline ends here
+        white = np.where((((band[..., :3].min(-1) > 225) & (band[..., 3] > 200)).sum(0) > 2))[0]
+        word_end = int(white.max()) if len(white) else int(W * 0.87)
+        cap = max(8, round(W * 0.075)); s0 = min(word_end + 6, W - cap - 8); s1 = max(s0 + 4, W - cap)
+        _src[key] = (im.crop((0, 0, icon_end + round(H * 0.05), H)), im.crop((s0, 0, s1, H)), im.crop((W - cap, 0, W, H)))
+    return _src[key]
+
+def _word_font(px):
+    k = ("word", px)
+    if k not in _pil_fonts:
+        f = None
+        for n in ("arialbd.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                  os.path.join(HERE, "fonts", "CourierPrime-Bold.ttf")):
+            try: f = ImageFont.truetype(n, px); break
+            except Exception: pass
+        _pil_fonts[k] = f or ImageFont.load_default()
+    return _pil_fonts[k]
+
+def _file_base(which, text):
+    """the button at the picture's own height: the painted one, or the frame + icon with these words"""
+    key = ("fbase", which, text)
+    if key in _src: return _src[key]
+    word = text.replace("…", "").replace("...", "").strip().lower()
+    im = UA.load(FILE_ART[which])
+    if word != which:
+        left, strip, cap = _file_parts(which); H = im.height; font = _word_font(round(H * 0.40))
+        d = ImageDraw.Draw(Image.new("RGBA", (1, 1))); tw = int(d.textlength(text, font=font)); mid = tw + round(H * 0.16)
+        out = Image.new("RGBA", (left.width + mid + cap.width, H)); out.paste(left, (0, 0))
+        x, flip = left.width, False
+        while x < left.width + mid:                                                     # the background strip, mirrored side by side
+            out.paste(strip.transpose(Image.FLIP_LEFT_RIGHT) if flip else strip, (x, 0)); x += strip.width; flip = not flip
+        out.paste(cap, (left.width + mid, 0))
+        ImageDraw.Draw(out).text((left.width + mid / 2, H / 2), text, font=font, anchor="mm", fill=(250, 250, 255),
+                                 stroke_width=max(2, round(H * 0.035)), stroke_fill=(16, 28, 90))
+        im = out
+    _src[key] = im; return im
+
+def file_picture(which, text, H, state="normal", ring=False):
+    key = (which, text, H, state, ring, T.PALETTE["border"] if ring else None, margin())
+    if key in _file_ph: return _file_ph[key]
+    b = _file_base(which, text); im = b.resize((max(1, round(b.width * H / b.height)), H), Image.LANCZOS)
+    if state in ("hover", "disabled"):
+        rgb, a = im.convert("RGB"), im.getchannel("A")
+        rgb = ImageEnhance.Brightness(rgb).enhance(1.15) if state == "hover" else ImageEnhance.Brightness(ImageEnhance.Color(rgb).enhance(0.0)).enhance(0.55)
+        im = rgb.convert("RGBA"); im.putalpha(a)
+    im = ringed(im, ring, key=("file",) + key)
+    if len(_file_ph) > 300: _file_ph.clear()
+    _file_ph[key] = ImageTk.PhotoImage(im); return _file_ph[key]
+
+def file_kind(text):
+    """"new" / "open" / "save" for a button whose words start with one of them, else None"""
+    w = (text or "").strip().lower().split(" ")[0].rstrip("….")
+    return w if w in FILE_ART else None
+
+def file_button(w, which=None, height=34):
+    """a T.Button wears the painted New / Open / Save picture (height in design pixels). Hover brightens it, the ring shows on
+    hover / focus, greyed while it can't be used. If the picture is missing the button keeps its normal look"""
+    text = w.cget("text"); which = which or file_kind(text)
+    if not which or UA.load(FILE_ART[which]) is None or getattr(w, "_skin", None) is not None: return w
+    _take_over(w, text, None); w._skin["file"] = which; w._skin["fh"] = height
+    def style():
+        try:
+            if not w.winfo_exists(): return
+            if w.cget("bg") != w.master["bg"]: w.configure(bg=w.master["bg"], activebackground=w.master["bg"])
+        except tk.TclError: return
+        on = getattr(w, "enabled", True); hv = on and getattr(w, "hover", False)
+        draw(w, "disabled" if not on else ("hover" if hv else "normal"), ring=on and (hv or w.focus_get() is w))
+    w._style = style; style(); T.on_change(style, zoom=True); return w
 
 # ---------------------------------------------------------------- status dots
 FILLS = {"green": ((70, 230, 110), (20, 140, 50)), "blue": ((90, 170, 255), (20, 60, 170)), "grey": ((150, 150, 160), (60, 60, 70))}

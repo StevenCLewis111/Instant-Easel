@@ -40,12 +40,21 @@ def open_picture(p):
 
 class ListChoice(T.Choice):
     """a setting button that opens the whole list (for long lists: styles, sizes) instead of stepping through it"""
-    def next(self, e=None):
+    def next(self, e=None, side=False):
+        """side=True: the list opens in the space to the right of the button, its top level with the button's top"""
         m = tk.Menu(self, tearoff=0, font=T.f(10), bg=T.PALETTE["field"], fg="white", activebackground=T.PALETTE["button"])
         for c in self.choices:
             m.add_radiobutton(label=c, variable=self.var, value=c)
-        try: m.tk_popup(self.winfo_rootx(), self.winfo_rooty() + self.winfo_height())
+        side = side or getattr(self, "open_right", False)
+        x, y = (self.winfo_rootx() + self.winfo_width() + 6, self.winfo_rooty()) if side else (self.winfo_rootx(), self.winfo_rooty() + self.winfo_height())
+        try: m.tk_popup(x, y)
         finally: m.grab_release()
+
+def open_right(choice):
+    """make any setting button open its whole list to its right (top lined up with the button) instead of stepping through"""
+    choice.open_right = True
+    opener = lambda e=None, c=choice: ListChoice.next(c, side=True)
+    choice.bind("<Button-1>", opener); choice.bind("<Return>", opener)
 
 # ---------------------------------------------------------------- picture widgets
 class PicSlot(tk.Frame):
@@ -238,6 +247,7 @@ class Viewer(tk.Frame):
         self.cv.bind("<Configure>", lambda e: self._draw()); self.cv.bind("<Double-Button-1>", lambda e: self.current and _open_file(self.current))
         self.cv.bind("<Button-3>", lambda e: self.current and self.page._actions(e, self.current, prefs.picture_info(self.current).get("seed", "")))
         self.bar = T.ProgressBar(self.cv, width=360, height=22)
+        T.Text(self, "YOUR PICTURE", font=T.f(10)).pack(side="top", anchor="w", pady=(4, 2))   # same as WHAT YOU WANT: the two boxes line up
         self.btns = _frame(self); self.btns.pack(side="bottom", pady=(4, 0)); self._buttons()
         self.strip = _frame(self); self.strip.pack(side="bottom", pady=(2, 0))
         self.info = T.Text(self, "", muted=True, font=T.f(8)); self.info.pack(side="bottom", pady=(3, 0))
@@ -256,6 +266,7 @@ class Viewer(tk.Frame):
                 if fn is None:
                     b = T.Button(r, text, lambda: None, width=14); b.command = lambda b=b: self._more(b)
                 else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), width=14, kind="danger" if text == "Delete" else "normal")
+                if skin.file_kind(text): skin.file_button(b, height=36)                 # painted New / Open / Save button
                 b.pack(side="left", padx=2)
     def _more(self, b):
         if not self.current: return
@@ -292,13 +303,28 @@ class Viewer(tk.Frame):
     def _draw(self):
         from PIL import ImageTk
         self.cv.delete("pic", "hint"); W, H = max(10, self.cv.winfo_width()), max(10, self.cv.winfo_height())
-        if self._img is None:
-            self.cv.create_text(W / 2, H / 2, text="YOUR PICTURE APPEARS HERE", fill=T.PALETTE["muted"], font=T.f(11), tags="hint")
+        if self._img is None: self._placeholders(W, H)
         else:
             im = self._img.copy(); im.thumbnail((W - 8, H - 8)); self._ph = ImageTk.PhotoImage(im)
             self.cv.create_image(W / 2, H / 2, image=self._ph, tags="pic")
             if getattr(self, "_rough", False): self.cv.create_text(W / 2, H - 14, text="ROUGH PREVIEW — STILL PAINTING", fill="white", font=T.f(8), tags="hint")
         if self.busy: self.cv.coords("barwin", W / 2, 18); self.cv.tag_raise("barwin")
+    def _placeholders(self, W, H):
+        """grey boxes in the shape of the chosen size, one for each picture that will be made: IMAGE WILL APPEAR HERE"""
+        pg = self.page
+        try: w, h = pg.imaging.pixels(pg.size.get(), pg.model_key()); n = int(pg.count.get())
+        except Exception: w, h, n = 1, 1, 1
+        if n == 1: cols, rows = 1, 1
+        elif n == 2: cols, rows = (1, 2) if w > h * 1.2 else (2, 1)                # wide pictures stack, the rest sit side by side
+        else: cols, rows = 2, 2
+        gap = int(10 * T.Z); pad = int(10 * T.Z)
+        k = min((W - 2 * pad - gap * (cols - 1)) / (cols * w), (H - 2 * pad - gap * (rows - 1)) / (rows * h)); cw, ch = w * k, h * k
+        x0 = (W - (cols * cw + gap * (cols - 1))) / 2; y0 = (H - (rows * ch + gap * (rows - 1))) / 2
+        for i in range(n):
+            x, y = x0 + (i % cols) * (cw + gap), y0 + (i // cols) * (ch + gap)
+            self.cv.create_rectangle(x, y, x + cw, y + ch, fill="#3a3f4b", outline="#5a6070", tags="hint")
+            self.cv.create_text(x + cw / 2, y + ch / 2, text="IMAGE WILL\nAPPEAR HERE" if cw < 200 * T.Z else "IMAGE WILL APPEAR HERE",
+                                fill="#c9ccd6", font=T.f(10 if cw > 150 * T.Z else 8), justify="center", tags="hint")
     def progress(self, frac, text):
         """the progress bar on top of the picture"""
         self.bar.set(frac if frac else (None if frac is None else 0.0), text)
@@ -376,17 +402,22 @@ class ImagePage(tk.Frame):
         for w in ob.winfo_children():
             if w not in [x for x, _ in self._opts] and w is not self.follow_choice: w.pack_forget(); add(w)
         seed = _frame(ob); T.Text(seed, "SEED", font=T.f(9)).pack(side="left", padx=(0, 4))
-        self.seed = self.var("seed", "random"); T.Entry(seed, self.seed, width=11).pack(side="left")
-        T.Button(seed, "Random", lambda: self.seed.set("random"), width=7).pack(side="left", padx=3); add(seed)
+        self.seed = self.var("seed", "random")
+        T.Button(seed, "Random", lambda: self.seed.set("random"), width=7).pack(side="left", padx=(0, 4))
+        T.Entry(seed, self.seed, width=11).pack(side="left"); add(seed)
         self.improve = tk.BooleanVar(value=self._mem.get("improve", prefs.get("image_improve_words") if prefs.get("image_improve_words") is not None else True))
         if self.IMPROVE:
             imp = _frame(ob); T.Text(imp, "FULLER DESCRIPTION", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(imp, self.improve).pack(side="left"); add(imp)
         self._layout_opts()
         b = _frame(host); b.pack(pady=8, anchor="w" if self.VIEWER else "center")
-        self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14)); self.go_btn.pack(side="left", padx=(0, 6))
+        self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14))
         jobs.guard(self.go_btn, self.page_key, app, "your picture")
-        T.Button(b, "Stop", self.stop, kind="danger", width=8).pack(side="left", padx=6)
-        if not self.VIEWER: T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()), width=20).pack(side="left", padx=6)
+        stop = T.Button(b, "Stop", self.stop, kind="danger", width=14)
+        if self.VIEWER:                                                              # beside the viewer: Stop under Paint it, both on the left edge
+            self.go_btn.pack(anchor="w"); stop.pack(anchor="w", pady=(6, 0))
+        else:
+            self.go_btn.pack(side="left", padx=(0, 6)); stop.configure(width=8); stop.pack(side="left", padx=6)
+            skin.file_button(T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()))).pack(side="left", padx=6)
         self.msg = T.Text(host, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
         self.used = T.Text(host, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
         self.used.pack(anchor="w" if self.VIEWER else "center")
@@ -394,16 +425,20 @@ class ImagePage(tk.Frame):
         self.results = _frame(self if not self.SPLIT else host)
         if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
         self.style.trace_add("write", lambda *a: self._model_changed()); self.bind("<Map>", lambda e: e.widget is self and self.refresh(), add="+")
+        if self.viewer is not None:                                                  # the picture box shows the shape and number of pictures to come
+            for v in (self.size, self.count): v.trace_add("write", lambda *a: self.viewer.clear())
         self._model_changed(); self._tick()
 
     def _layout_opts(self):
         """put the visible settings into the grid, in order"""
-        cols = 2 if self.VIEWER else 3; hidden = getattr(self, "_hidden_opts", set())
+        # beside the viewer: one column, lined up on the left; each list opens in the empty space to its right
+        cols = 1 if self.VIEWER else 3; hidden = getattr(self, "_hidden_opts", set())
         for w, _ in self._opts: w.grid_forget()
         i = 0
         for w, span in self._opts:
             if w in hidden: continue
-            w.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=3); i += 1
+            if self.VIEWER and isinstance(w, T.Choice) and not getattr(w, "open_right", False): open_right(w)
+            w.grid(row=i // cols, column=i % cols, sticky="w", padx=(0, 4) if self.VIEWER else 4, pady=3); i += 1
 
     # ---- building blocks for the sections
     def var(self, key, default): return tk.StringVar(value=self._mem.get(key, default))
@@ -545,6 +580,7 @@ class ImagePage(tk.Frame):
         self.job = jobs.submit("AI Images", f"{self.TITLE}: {(text or self.style.get())[:40]}", work, kind="image", page=self.page_key, engine="image",
                                on_done=lambda saved: q.put(lambda: self._show(saved)), on_error=failed, on_cancel=self._stop_now)
         self.msg.configure(text="GETTING READY…" if self.job.place() <= 1 and not jobs.running() else jobs.where(self.job).upper())
+        if self.viewer is not None: self.viewer.clear()                              # placeholders until the new pictures arrive
         self._progress(None, "Waiting its turn…" if jobs.running() else "Getting ready…")
 
     def _stop_now(self): self.stop_event.set(); self.imaging.stop_now()

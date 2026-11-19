@@ -40,7 +40,7 @@ class WorkspacePage(tk.Frame):
         r = _frame(left); r.pack(fill="x", pady=(6, 0))
         self.send_btn = skin.button(T.Button(r, "Send", self.send, width=10)); self.send_btn.pack(side="left")
         jobs.guard(self.send_btn, self._key(), app, "your message")
-        T.Button(r, "Save last answer", self.save_last, width=18).pack(side="left", padx=8)
+        skin.file_button(T.Button(r, "Save last answer", self.save_last)).pack(side="left", padx=8)
         T.Text(r, "Ctrl+Enter sends.  'remember: ...' keeps a note.", muted=True, font=T.f(8)).pack(side="left", padx=8)
         self.msg = T.Text(r, "", muted=True, font=T.f(9)); self.msg.pack(side="right")
         # ---- memory side
@@ -196,7 +196,7 @@ class Editor(tk.Toplevel):
         self.count = T.Text(p, "", muted=True, font=T.f(8)); self.count.pack(anchor="e")
         self.box.bind("<KeyRelease>", lambda e: self._count()); self._count()
         r = tk.Frame(p, bg=p["bg"]); r.pack(pady=(6, 0))
-        T.Button(r, "Save", lambda: (on_save(self.box.get("1.0", "end").rstrip() + "\n"), self.destroy())).pack(side="left", padx=6)
+        skin.file_button(T.Button(r, "Save", lambda: (on_save(self.box.get("1.0", "end").rstrip() + "\n"), self.destroy()))).pack(side="left", padx=6)
         T.Button(r, "Cancel", self.destroy, kind="danger").pack(side="left")
     def _count(self):
         n = len(self.box.get("1.0", "end").strip()); self.count.configure(text=f"{n} characters" + ("  — long: it's sent with every request" if n > 3000 else ""))

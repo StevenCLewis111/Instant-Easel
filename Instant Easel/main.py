@@ -371,6 +371,7 @@ class InstantEasel(tk.Tk):
 
     def show(self, name, remember=True):
         if getattr(self, "_shown_tab", None) == name and self.pages[name].winfo_manager(): return
+        T.tab_changed(self)                                                      # messages don't follow you to another tab
         with T.frozen(self):                                                     # the old tab stays on screen until the new one is complete
             zoom_ready(self.pages[name]); self.pages[name].pack(fill="both", expand=True)
             for n, p in self.pages.items():
@@ -725,6 +726,7 @@ class Section(tk.Frame):
 
     def select(self, name):
         page = self.pages[name]
+        if not page.winfo_manager(): T.tab_changed(self.app)                                                     # another section: its messages go
         with T.frozen(self.app):                                                                                   # no half-drawn page in between
             zoom_ready(page)                                                                                       # a page marked FULL fills the whole area (so its dividers reach the borders)
             if not page.winfo_manager():

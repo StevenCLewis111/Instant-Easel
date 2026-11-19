@@ -731,8 +731,10 @@ class DrawStudio(tk.Frame):
         fx0, fy0, fx1, fy1 = (SX0 - ox) / z, (SY0 - oy) / z, (SX1 - ox) / z, (SY1 - oy) / z              # the exact picture area under those screen pixels
         ix0, iy0 = max(0, int(fx0)), max(0, int(fy0)); ix1, iy1 = min(w, int(math.ceil(fx1)) + 1), min(h, int(math.ceil(fy1)) + 1)
         if ix1 <= ix0 or iy1 <= iy0: return
-        im = Image.fromarray(self._comp[iy0:iy1, ix0:ix1]).resize((SX1 - SX0, SY1 - SY0), Image.NEAREST if z > 2 else Image.BILINEAR,
-                                                               box=(fx0 - ix0, fy0 - iy0, min(fx1, w) - ix0, min(fy1, h) - iy0))
+        # (a stroke off the paper's edge: rounding can put the area a hair outside the picture, so keep the box inside it)
+        bw, bh = ix1 - ix0, iy1 - iy0; bx0, by0 = min(max(0.0, fx0 - ix0), bw - 0.01), min(max(0.0, fy0 - iy0), bh - 0.01)
+        box = (bx0, by0, min(max(bx0 + 0.01, min(fx1, w) - ix0), bw), min(max(by0 + 0.01, min(fy1, h) - iy0), bh))
+        im = Image.fromarray(self._comp[iy0:iy1, ix0:ix1]).resize((SX1 - SX0, SY1 - SY0), Image.NEAREST if z > 2 else Image.BILINEAR, box=box)
         ph = ImageTk.PhotoImage(im); self._patches.append(ph); self.cv.create_image(SX0, SY0, image=ph, anchor="nw", tags="patch")
 
     def to_img(self, e):
@@ -756,7 +758,6 @@ class DrawStudio(tk.Frame):
         if x1 <= x0 or y1 <= y0: self.cv.delete("all"); return
         im = Image.fromarray(self._comp[y0:y1, x0:x1]).resize((max(1, int((x1 - x0) * z)), max(1, int((y1 - y0) * z))), Image.NEAREST if z > 2 else Image.BILINEAR)
         self.ph = ImageTk.PhotoImage(im); self.cv.delete("all"); self.cv.create_image(ox + x0 * z, oy + y0 * z, image=self.ph, anchor="nw")
-        self.cv.create_rectangle(ox - 1, oy - 1, ox + w * z, oy + h * z, outline=T.PALETTE["border"])
         if self.mirror.get(): self.cv.create_line(ox + w * z / 2, oy, ox + w * z / 2, oy + h * z, fill=T.PALETTE["border"], dash=(4, 4))
         if self.mirror_y.get(): self.cv.create_line(ox, oy + h * z / 2, ox + w * z, oy + h * z / 2, fill=T.PALETTE["border"], dash=(4, 4))
 

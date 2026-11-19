@@ -405,6 +405,7 @@ class InstantEasel(tk.Tk):
 
     def show(self, name, remember=True):
         if getattr(self, "_shown_tab", None) == name and self.pages[name].winfo_manager(): return
+        T.tab_changed(self)                                                      # messages don't follow you to another tab
         with T.frozen(self):                                                     # the old tab stays on screen until the new one is complete
             zoom_ready(self.pages[name]); self.pages[name].pack(fill="both", expand=True)
             for n, p in self.pages.items():
@@ -839,6 +840,7 @@ class Section(tk.Frame):
 
     def select(self, name):
         page = self.pages[name]
+        if not page.winfo_manager(): T.tab_changed(self.app)                                                     # another section: its messages go
         with T.frozen(self.app):                                                                                   # no half-drawn page in between
             zoom_ready(page)                                                                                       # a page marked FULL fills the whole area (so its dividers reach the borders)
             if not page.winfo_manager():
@@ -883,7 +885,7 @@ class EditBase(Page):
         bar = themed_frame(self); bar.pack(fill="x", pady=(0, 8))
         for text, cmd, kind in (("Open image", self.open, "normal"), ("Edit last created", self.last, "normal"), ("↶ Undo", self.app.hist_undo, "normal"),
                                 ("↷ Redo", self.app.hist_redo, "normal"), ("Before / after", self.toggle, "normal"), ("Reset all", self.reset, "danger"), ("Save", self.save, "normal")):
-            T.Button(bar, text, cmd, kind=kind).pack(side="left", padx=(0, 8))
+            skin.file_button(T.Button(bar, text, cmd, kind=kind)).pack(side="left", padx=(0, 8))     # Open image / Save: the painted file buttons
         body = themed_frame(self); body.pack(fill="both", expand=True)
         self.controls = themed_frame(body); self.controls.pack(side="left", fill="y", padx=(0, 14))
         T.Title(self.controls, title).pack(anchor="w", pady=(0, 8))
@@ -989,7 +991,7 @@ class HistoryPage(EditBase):
         r = themed_frame(c); r.pack(anchor="w", pady=(0, 6))
         T.Button(r, "Compare side by side", self.toggle_compare).pack(side="left")
         r = themed_frame(c); r.pack(anchor="w", pady=(0, 8))
-        T.Button(r, "Save as new", self.save).pack(side="left"); T.Button(r, "Overwrite original", self.overwrite, kind="danger").pack(side="left", padx=6)
+        skin.file_button(T.Button(r, "Save as new", self.save)).pack(side="left"); T.Button(r, "Overwrite original", self.overwrite, kind="danger").pack(side="left", padx=6)
         T.Text(c, "STEPS  (click one to go back to it)", font=T.f(10)).pack(anchor="w", pady=(6, 2))
         box = T.ScrollBox(c, bg="panel2"); box.pack(fill="both", expand=True)            # list, divider and scroll bar, boxed in
         self.lcv = tk.Canvas(box.body, width=262, height=420, bg=T.PALETTE["panel2"], highlightthickness=0); box.attach(self.lcv)
@@ -1122,7 +1124,7 @@ class ScraperPage(Page):
         r = themed_frame(self); r.pack(pady=12)
         self.start_btn = T.Button(r, "Start", self.start, width=12); self.start_btn.pack(side="left", padx=8)
         self.stop_btn = T.Button(r, "Stop", self.stop, width=12, kind="danger"); self.stop_btn.pack(side="left", padx=8); self.stop_btn.state("disabled")
-        T.Button(r, "Open images folder", self.open_folder, width=20).pack(side="left", padx=8)
+        skin.file_button(T.Button(r, "Open images folder", self.open_folder)).pack(side="left", padx=8)
         T.Button(r, "Review & add", self.send_to_learning, width=16).pack(side="left", padx=8)
         T.Hints(self, [("TAB", "next button"), ("ENTER", "press")]).pack(side="bottom", pady=4)
         self.log_box = T.Field(self, height=10, scroll=True); self.log_box.pack(fill="both", expand=True)

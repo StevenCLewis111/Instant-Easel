@@ -3,7 +3,7 @@ settings_pages.py: Instant Easel Pro's Settings pages. Every value lives in pref
 """
 import os, sys, json, glob, shutil, zipfile, platform, subprocess, threading, tkinter as tk
 from tkinter import filedialog
-import theme as T, prefs
+import theme as T, prefs, skin
 
 def _frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
@@ -37,7 +37,7 @@ class SettingsPage(tk.Frame):
         e.bind("<FocusOut>", save); e.bind("<Return>", save); return v
     def buttons(self, *items):
         r = _frame(self.body); r.pack(anchor="w", pady=8)
-        for text, cmd, kind in items: T.Button(r, text, cmd, kind=kind).pack(side="left", padx=(0, 8))
+        for text, cmd, kind in items: skin.file_button(T.Button(r, text, cmd, kind=kind)).pack(side="left", padx=(0, 8))   # (New / Open / Save: painted)
         return r
 
 # ---------------------------------------------------------------- General
@@ -47,7 +47,7 @@ class GeneralPage(SettingsPage):
         c = self.row("Your work folder", "images, videos, code and chats folders inside it. Every tab saves its work there and opens from there. "
                      "Normally the folder of the app you launched (the project folder, or EXE Build for the .exe).")
         self.folder_lbl = T.Text(c, prefs.work_root(), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
-        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "App's own folder", self.own).pack(side="left", padx=(6, 0)); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
+        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "App's own folder", self.own).pack(side="left", padx=(6, 0)); skin.file_button(T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root()))).pack(side="left", padx=6)
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
         self.entry("File names", "name_pattern", note="{date}, {time} and {n} (number) are filled in. Example: instant-easel-pro-2026-11-15-163000-1.png")
@@ -124,7 +124,7 @@ class AIStoragePage(SettingsPage):
         import storage, paths; self.storage = storage; self.paths = paths
         c = self.row("AI drive"); self.where = T.Text(c, paths.ai_root(), font=T.f(9)); self.where.pack(side="left", padx=(0, 8))
         T.Button(c, "Choose…", self.choose).pack(side="left"); T.Button(c, "App's own folder", lambda: self.move(paths.HOME)).pack(side="left", padx=6)
-        T.Button(c, "Open", lambda: prefs.open_folder(paths.ai_root())).pack(side="left")
+        skin.file_button(T.Button(c, "Open", lambda: prefs.open_folder(paths.ai_root()))).pack(side="left")
         self.free = T.Text(self.body, "", muted=True, font=T.f(9)); self.free.pack(anchor="w", padx=(20, 0))
         T.Text(self.body, "EACH AI'S PORTION", font=T.f(11)).pack(anchor="w", pady=(12, 4)); self.rows = {}
         for area in storage.AREAS:
@@ -270,7 +270,7 @@ class AIModelsPage(SettingsPage):
         v.trace_add("write", changed); self.slot_vars[key] = (v, choices)
         T.Button(r, "Download", lambda: download(chosen()), width=10).pack(side="left", padx=4)
         T.Button(r, "Add manually", add, width=13).pack(side="left", padx=4)
-        if folder: T.Button(r, "Open folder", lambda: prefs.open_folder(folder), width=11).pack(side="left", padx=4)
+        if folder: skin.file_button(T.Button(r, "Open folder", lambda: prefs.open_folder(folder))).pack(side="left", padx=4)
         if speed: self._speed(r, speed, restart=(speed == "speed_text"))
 
     def _select(self, key, value):

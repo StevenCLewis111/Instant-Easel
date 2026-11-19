@@ -3,7 +3,7 @@ settings_pages.py: Instant Easel's Settings pages. Every value lives in prefs.py
 """
 import os, zipfile, tkinter as tk
 from tkinter import filedialog
-import theme as T, prefs
+import theme as T, prefs, skin
 
 def _frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
@@ -47,7 +47,7 @@ class GeneralPage(SettingsPage):
         c = self.row("Your work folder", "images, videos, code and chats folders inside it. Every tab saves its work there and opens from there. "
                      "Normally the folder of the app you launched (the project folder, or EXE Build for the .exe).")
         self.folder_lbl = T.Text(c, prefs.work_root(), font=T.f(9)); self.folder_lbl.pack(side="left", padx=(0, 8))
-        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "App's own folder", self.own).pack(side="left", padx=(6, 0)); T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root())).pack(side="left", padx=6)
+        T.Button(c, "Change", self.pick).pack(side="left"); T.Button(c, "App's own folder", self.own).pack(side="left", padx=(6, 0)); skin.file_button(T.Button(c, "Open", lambda: prefs.open_folder(prefs.work_root()))).pack(side="left", padx=6)
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
         self.choice("Undo steps", "undo_steps", ["10", "30", "60", "100"], "More steps use more memory on big canvases.")

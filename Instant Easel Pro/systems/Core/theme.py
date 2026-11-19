@@ -627,11 +627,11 @@ class Hints(tk.Frame):
 # ---------------------------------------------------------------- banners: one place for every message in the app
 # Red for anything negative (errors, warnings, "nothing to save yet"...), green for anything positive (saved, updated, downloaded...).
 # Always the same spot: bottom centre of the window, over whatever page is showing. It sizes itself side to side to fit the
-# message, stays 15 seconds, then goes, and only comes back if the same thing happens again. Safe to call from any thread.
+# message, stays 30 seconds (or until you change tab), then goes, and only comes back if the same thing happens again. Safe to call from any thread.
 #     T.banner(widget, "CHECK YOUR DRIVE — D: isn't responding")            # red
 #     T.banner(widget, "SAVED — sunset.png", "success")                      # green
 import threading as _threading, queue as _queue
-BANNER_SECONDS = 15
+BANNER_SECONDS = 30                                                                     # on screen at most this long; changing tab closes it too
 BANNER_COLORS = {"error": ("#8f1d1d", "#ef5350"), "success": ("#1b6b32", "#4ee07a"), "busy": ("#6b5200", "#f5c400")}     # fill, outline (busy: amber)
 BANNER_FONT = ("Arial", 16, "bold")                                                    # design size; scales with the window
 _banner_q = _queue.Queue(); _banner_roots = set()
@@ -708,7 +708,20 @@ def _show_banner(widget, text, kind, seconds):
     if getattr(top, "_banner_job", None) is not None:
         try: top.after_cancel(top._banner_job)
         except tk.TclError: pass
-    top._banner_job = top.after(int(seconds * 1000), lambda: _hide_banner(top))   # a new message replaces it and restarts the 15 seconds
+    top._banner_job = top.after(int(seconds * 1000), lambda: _hide_banner(top))   # a new message replaces it and restarts the 30 seconds
+    import time as _t; top._banner_at = _t.monotonic()
+
+def tab_changed(widget):
+    """the user went to another tab: the message on screen belongs to the tab they left, so it goes (one shown in that same moment,
+    by whatever opened the tab, stays)"""
+    import time as _t
+    try: top = widget.winfo_toplevel()
+    except Exception: return
+    if _t.monotonic() - getattr(top, "_banner_at", 0) < 0.6: return
+    if getattr(top, "_banner_job", None) is not None:
+        try: top.after_cancel(top._banner_job)
+        except tk.TclError: pass
+    _hide_banner(top)
 
 def _hide_banner(top):
     b = getattr(top, "_banner", None); top._banner_job = None

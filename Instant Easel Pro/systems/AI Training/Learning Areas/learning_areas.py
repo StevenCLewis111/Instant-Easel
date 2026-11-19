@@ -257,7 +257,7 @@ class AreaPage(tk.Frame):
         box.attach(cv); cv.pack(side="left", fill="both", expand=True, padx=(12, 0), pady=10)
         low = _frame(self); low.pack(pady=(8, 0))
         T.Button(low, "Use best-practice settings", self.best, width=26).pack(side="left", padx=6)
-        T.Button(low, "Open this area's folder", lambda: prefs.open_folder(self.folder()), width=24).pack(side="left", padx=6)
+        skin.file_button(T.Button(low, "Open this area's folder", lambda: prefs.open_folder(self.folder()))).pack(side="left", padx=6)
         self.show(a["steps"][0][0])
 
     def top_bar(self): pass                                                     # Image Learning: which image model
@@ -273,8 +273,8 @@ class AreaPage(tk.Frame):
             if DOT is not None: DOT(r, o["status"], 14).pack(side="left", padx=(0, 8))
             T.Text(r, o["label"].upper(), font=T.f(10), width=34, anchor="w").pack(side="left")
             if o["kind"] == "button":
-                T.Button(r, "Open" if o["status"] != "planned" else "Coming", lambda o=o: self.run(o), width=10,
-                         kind="normal").pack(side="left", padx=(8, 0))
+                ob = T.Button(r, "Open" if o["status"] != "planned" else "Coming", lambda o=o: self.run(o), width=10, kind="normal")
+                skin.file_button(ob, height=28).pack(side="left", padx=(8, 0))
             elif o["kind"] == "choice":
                 v = tk.StringVar(value=str(self.choice_value(o))); T.Choice(r, "", o["values"], v).pack(side="left", padx=(8, 0))
                 v.trace_add("write", lambda *x, o=o, v=v: self.set_choice(o, v.get()))
@@ -440,7 +440,7 @@ class Answer(tk.Toplevel):
         def save():
             paths_ = save_answer(tab, question, answer)
             T.banner(app, f"SAVED — {', '.join(os.path.basename(x) for x in paths_)} in your {where} folder", "success")
-        T.Button(r, f"Save to {where}", save).pack(side="left", padx=6); T.Button(r, "Close", self.destroy, kind="danger").pack(side="left")
+        skin.file_button(T.Button(r, f"Save to {where}", save)).pack(side="left", padx=6); T.Button(r, "Close", self.destroy, kind="danger").pack(side="left")
 
 class ImageAreaPage(AreaPage):
     """Image Learning: the same steps, for the image model picked in the bar at the top"""
@@ -545,7 +545,7 @@ class PicturesPage(tk.Frame):
         r = _frame(home); r.pack(pady=6)
         T.Button(r, "Search Google Images", lambda: app.goto("AI Training", "Image Scraper"), width=22).pack(side="left", padx=6)
         T.Button(r, "Add my own pictures", self.add_images, width=22).pack(side="left", padx=6)
-        T.Button(r, "Open the folder", lambda: self.IM.active() and prefs.open_folder(self.IM.pictures_dir(self.IM.active())), width=18).pack(side="left", padx=6)
+        skin.file_button(T.Button(r, "Open the folder", lambda: self.IM.active() and prefs.open_folder(self.IM.pictures_dir(self.IM.active())))).pack(side="left", padx=6)
         T.Button(r, "Back to Image Learning", lambda: app.goto("AI Training", "Image Learning"), width=24).pack(side="left", padx=6)
         self.info = T.Text(home, "", font=T.f(11)); self.info.pack(pady=16)
         self.bind("<Map>", lambda e: self.refresh(), add="+"); self.refresh()
