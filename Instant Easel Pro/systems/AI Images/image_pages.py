@@ -228,6 +228,85 @@ def char_add_picture(name, src):
     while os.path.exists(os.path.join(chars_root(), name, f"look-{n}.png")): n += 1
     im.save(os.path.join(chars_root(), name, f"look-{n}.png"))
 
+# ---------------------------------------------------------------- the picture viewer (Text to Image's right half)
+class Viewer(tk.Frame):
+    """the picture shown large, a progress bar on top of it while it paints, the other pictures of the run underneath, and its buttons"""
+    def __init__(self, master, page):
+        super().__init__(master, bg=master["bg"]); T.on_change(lambda: self.configure(bg=self.master["bg"])); self.page = page
+        self.paths = []; self.current = None; self._img = None; self._ph = None; self._tph = []; self.busy = False
+        self.cv = tk.Canvas(self, bd=0, highlightthickness=1, cursor="hand2")                   # packed last: the picture takes what the buttons leave
+        self.cv.bind("<Configure>", lambda e: self._draw()); self.cv.bind("<Double-Button-1>", lambda e: self.current and _open_file(self.current))
+        self.cv.bind("<Button-3>", lambda e: self.current and self.page._actions(e, self.current, prefs.picture_info(self.current).get("seed", "")))
+        self.bar = T.ProgressBar(self.cv, width=360, height=22)
+        self.btns = _frame(self); self.btns.pack(side="bottom", pady=(4, 0)); self._buttons()
+        self.strip = _frame(self); self.strip.pack(side="bottom", pady=(2, 0))
+        self.info = T.Text(self, "", muted=True, font=T.f(8)); self.info.pack(side="bottom", pady=(3, 0))
+        self.cv.pack(side="top", fill="both", expand=True); self._style(); T.on_change(self._style)
+    def _style(self): self.cv.configure(bg=T.PALETTE["field"], highlightbackground=T.PALETTE["border"]); self._draw()
+    def _buttons(self):
+        rows = [[("Save a copy…", lambda p: self.page.save_copy(p)), ("Open", _open_file), ("Show in folder", lambda p: prefs.open_folder(os.path.dirname(p))),
+                 ("Delete", self._delete)],
+                [("Upscale 2x", lambda p: self.page.upscale_pic(p, 2)), ("Upscale 4x", lambda p: self.page.upscale_pic(p, 4)),
+                 ("Vary a little", lambda p: self.page.vary(p, 0.3)), ("Vary a lot", lambda p: self.page.vary(p, 0.6))],
+                [("Edit with words", lambda p: send_to(self.page.app, "Prompt to Edit", p)), ("Fix a part", lambda p: send_to(self.page.app, "Inpainting", p)),
+                 ("Use as start", lambda p: send_to(self.page.app, "Image to Image", p)), ("More ▸", None)]]
+        for row in rows:
+            r = _frame(self.btns); r.pack(pady=1)
+            for text, fn in row:
+                if fn is None:
+                    b = T.Button(r, text, lambda: None, width=14); b.command = lambda b=b: self._more(b)
+                else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), width=14, kind="danger" if text == "Delete" else "normal")
+                b.pack(side="left", padx=2)
+    def _more(self, b):
+        if not self.current: return
+        class E: x_root = b.winfo_rootx(); y_root = b.winfo_rooty() + b.winfo_height()
+        self.page._actions(E, self.current, prefs.picture_info(self.current).get("seed", ""))
+    def _delete(self, p):
+        if self.page.delete_pic(p):
+            self.paths = [x for x in self.paths if x != p]; self.show_results(self.paths) if self.paths else self.clear()
+    def clear(self):
+        self.paths = []; self.current = None; self._img = None; self._strip(); self.info.configure(text=""); self._draw()
+    def show_image(self, im, rough=False):
+        self._img = im.copy(); self._rough = rough; self._draw()
+    def show_results(self, paths):
+        self.paths = list(paths); self._strip(); self.pick(self.paths[0])
+    def pick(self, p):
+        from PIL import Image
+        try:
+            with Image.open(p) as im: self._img = im.convert("RGB"); self._img.load()
+        except Exception: return
+        self.current = p; self._rough = False; i = prefs.picture_info(p)
+        self.info.configure(text=f"{os.path.basename(p)}   ·   {self._img.width} x {self._img.height}" + (f"   ·   SEED {i['seed']}" if i.get("seed") else "")
+                            + "   ·   double-click to open, right-click for more")
+        self._draw(); self._strip()
+    def _strip(self):
+        from PIL import Image, ImageTk
+        for w in self.strip.winfo_children(): w.destroy()
+        self._tph = []
+        if len(self.paths) < 2: return
+        for p in self.paths:
+            try: im = Image.open(p); im.thumbnail((int(64 * T.Z), int(64 * T.Z))); ph = ImageTk.PhotoImage(im)
+            except Exception: continue
+            self._tph.append(ph); lb = tk.Label(self.strip, image=ph, bd=2, relief="solid" if p == self.current else "flat", bg=T.PALETTE["border"] if p == self.current else self["bg"], cursor="hand2")
+            lb.pack(side="left", padx=3); lb.bind("<Button-1>", lambda e, p=p: self.pick(p))
+    def _draw(self):
+        from PIL import ImageTk
+        self.cv.delete("pic", "hint"); W, H = max(10, self.cv.winfo_width()), max(10, self.cv.winfo_height())
+        if self._img is None:
+            self.cv.create_text(W / 2, H / 2, text="YOUR PICTURE APPEARS HERE", fill=T.PALETTE["muted"], font=T.f(11), tags="hint")
+        else:
+            im = self._img.copy(); im.thumbnail((W - 8, H - 8)); self._ph = ImageTk.PhotoImage(im)
+            self.cv.create_image(W / 2, H / 2, image=self._ph, tags="pic")
+            if getattr(self, "_rough", False): self.cv.create_text(W / 2, H - 14, text="ROUGH PREVIEW — STILL PAINTING", fill="white", font=T.f(8), tags="hint")
+        if self.busy: self.cv.coords("barwin", W / 2, 18); self.cv.tag_raise("barwin")
+    def progress(self, frac, text):
+        """the progress bar on top of the picture"""
+        self.bar.set(frac if frac else (None if frac is None else 0.0), text)
+        if not self.busy:
+            self.busy = True; self.cv.create_window(self.cv.winfo_width() / 2, 18, window=self.bar, tags="barwin")
+    def progress_done(self):
+        self.busy = False; self.cv.delete("barwin"); self._rough = False; self._draw()
+
 # ---------------------------------------------------------------- the page
 class ImagePage(tk.Frame):
     TITLE = "Text to Image"; INTRO = "Type what you want and pick a style. The core text model can write a fuller description first."
@@ -236,72 +315,95 @@ class ImagePage(tk.Frame):
     MODEL = "paint"                   # "paint": the picture model chosen in Settings; "klein": FLUX.2 Klein; "guide": SD 1.5 + a guide
     SIZE = True; COUNT = True; IMPROVE = False; UPSCALE_AFTER = True; SHOW_FOLLOW = True
     AMOUNT = None; AMOUNT_LABEL = "change"; AMOUNT_DEFAULT = None
+    VIEWER = False                    # the picture shown large on the right, with its buttons underneath (Text to Image)
     def __init__(self, master, app):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
         import imaging, styles; self.imaging = imaging; self.styles = styles
         self.job = None; self.stop_event = threading.Event(); self._ph = []; self._prev_ph = None; self.page_key = "AI Images/" + self.TITLE
-        self._mem = prefs.get(f"image_page:{self.TITLE}") or {}
+        self._mem = prefs.get(f"image_page:{self.TITLE}") or {}; self.viewer = None
         T.Title(self, self.TITLE).pack(pady=(0, 2)); T.Text(self, self.INTRO, muted=True, font=T.f(9)).pack()
         st = _frame(self); st.pack(pady=(4, 2))
         self.status = T.Text(st, "", font=T.f(9)); self.status.pack(side="left", padx=(0, 10))
+        self.dl_bar = T.ProgressBar(st, width=300)                               # a real bar while something downloads
         self.get_btn = T.Button(st, "Download", self.download, width=12)
-        if self.SPLIT:
+        if self.SPLIT or self.VIEWER:
             split = _frame(self); split.pack(fill="both", expand=True, pady=(4, 0))
-            self.left = _frame(split); self.left.pack(side="left", anchor="n", padx=(0, 14))
-            host = _frame(split); host.pack(side="left", fill="both", expand=True, anchor="n")
+            self.left = _frame(split); self.left.pack(side="left", anchor="n", padx=(0, 14), fill="y" if self.VIEWER else None)
+            if self.VIEWER:
+                self.viewer = Viewer(split, self); self.viewer.pack(side="left", fill="both", expand=True, anchor="n")
+                host = self.left
+            else:
+                host = _frame(split); host.pack(side="left", fill="both", expand=True, anchor="n")
         else: self.left = None; host = self
         self.host = host
-        if self.left is not None: self.build_left(self.left)
+        if self.SPLIT: self.build_left(self.left)
         else: self.build_top(host)
         T.Text(host, self.WORDS, font=T.f(10)).pack(anchor="w", pady=(4, 2))
-        self.prompt = T.Field(host, height=3); self.prompt.pack(fill="x")
+        self.prompt = T.Field(host, height=4 if self.VIEWER else 3, **({"width": 52} if self.VIEWER else {})); self.prompt.pack(fill="x")
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         self.lo_row = _frame(host); self.lo_row.pack(fill="x", pady=(4, 0))
         T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 8))
-        self.leave_out = self.var("leave_out", imaging.NEGATIVE); T.Entry(self.lo_row, self.leave_out, width=60).pack(side="left", fill="x", expand=True)
-        self.lo_note = T.Text(host, "", muted=True, font=T.f(8))
-        opts = _frame(host); opts.pack(pady=(6, 0), anchor="w" if self.SPLIT else "center")
+        self.leave_out = self.var("leave_out", imaging.NEGATIVE); T.Entry(self.lo_row, self.leave_out, width=44 if self.VIEWER else 60).pack(side="left", fill="x", expand=True)
+        self.lo_note = T.Text(host, "", muted=True, font=T.f(8)); self.lo_note.configure(wraplength=480 if self.VIEWER else 1000)
+        # the settings, laid out in a tidy grid (2 across beside the viewer, 3 across otherwise)
+        self.optbox = _frame(host); self.optbox.pack(pady=(8, 0), anchor="w" if (self.SPLIT or self.VIEWER) else "center"); ob = self.optbox
+        self._opts = []
+        def add(w, span=1): self._opts.append((w, span)); return w
         self.style = self.var("style", prefs.get("image_default_style") or "None")
-        self.style_choice = ListChoice(opts, "style", styles.names(), self.style); self.style_choice.pack(side="left", padx=3)
+        self.style_choice = add(ListChoice(ob, "style", styles.names(), self.style))
         if self.SIZE:
             self.size = self.var("size", prefs.get("image_default_size") or imaging.SIZES[0])
             if self.size.get() not in imaging.SIZES: self.size.set(imaging.SIZES[0])
-            ListChoice(opts, "size", imaging.SIZES, self.size).pack(side="left", padx=3)
+            add(ListChoice(ob, "size", imaging.SIZES, self.size))
         self.count = self.var("count", "1")
-        if self.COUNT: T.Choice(opts, "how many", ["1", "2", "4"], self.count).pack(side="left", padx=3)
+        if self.COUNT: add(T.Choice(ob, "how many", ["1", "2", "4"], self.count))
         else: self.count.set("1")
         self.quality = self.var("quality", "Normal")
         if self.quality.get().split()[0] in QUALITY: self.quality.set(self.quality.get().split()[0])
-        opts2 = _frame(host); opts2.pack(pady=(4, 0), anchor="w" if self.SPLIT else "center")
-        self.quality_choice = T.Choice(opts2, "quality", list(QUALITY), self.quality); self.quality_choice.pack(side="left", padx=3)
+        if self.quality.get() not in QUALITY: self.quality.set("Normal")
+        self.quality_choice = add(T.Choice(ob, "quality", list(QUALITY), self.quality))
         self.follow = self.var("follow", "Normal")
-        self.follow_choice = T.Choice(opts2, "follow my words", list(imaging.GUIDANCE), self.follow)
-        if self.SHOW_FOLLOW: self.follow_choice.pack(side="left", padx=3)
+        self.follow_choice = T.Choice(ob, "follow my words", list(imaging.GUIDANCE), self.follow)
+        if self.SHOW_FOLLOW: add(self.follow_choice)
         if self.AMOUNT:
             self.amount = self.var("amount", self.AMOUNT_DEFAULT or list(self.AMOUNT)[1])
             if self.amount.get() not in self.AMOUNT: self.amount.set(self.AMOUNT_DEFAULT or list(self.AMOUNT)[1])
-            T.Choice(opts2, self.AMOUNT_LABEL, list(self.AMOUNT), self.amount).pack(side="left", padx=3)
+            add(T.Choice(ob, self.AMOUNT_LABEL, list(self.AMOUNT), self.amount))
             self.amount.trace_add("write", lambda *a: self._model_changed())        # Sketch: following the lines exactly switches to SD 1.5
         self.upscale = self.var("upscale", prefs.get("image_auto_upscale") or "Off")
-        if self.UPSCALE_AFTER: T.Choice(opts2, "upscale", UPSCALE, self.upscale).pack(side="left", padx=3)
-        opts3 = _frame(host); opts3.pack(pady=(4, 0), anchor="w" if self.SPLIT else "center")
-        self.build_extra(opts3)
-        T.Text(opts3, "SEED", font=T.f(9)).pack(side="left", padx=(10, 4))
-        self.seed = self.var("seed", "random"); T.Entry(opts3, self.seed, width=11).pack(side="left")
-        T.Button(opts3, "Random", lambda: self.seed.set("random"), width=7).pack(side="left", padx=3)
+        if self.UPSCALE_AFTER: add(T.Choice(ob, "upscale", UPSCALE, self.upscale))
+        self.build_extra(ob)                                                         # a section's own settings (each packs into ob; moved into the grid below)
+        for w in ob.winfo_children():
+            if w not in [x for x, _ in self._opts] and w is not self.follow_choice: w.pack_forget(); add(w)
+        seed = _frame(ob); T.Text(seed, "SEED", font=T.f(9)).pack(side="left", padx=(0, 4))
+        self.seed = self.var("seed", "random"); T.Entry(seed, self.seed, width=11).pack(side="left")
+        T.Button(seed, "Random", lambda: self.seed.set("random"), width=7).pack(side="left", padx=3); add(seed)
         self.improve = tk.BooleanVar(value=self._mem.get("improve", prefs.get("image_improve_words") if prefs.get("image_improve_words") is not None else True))
         if self.IMPROVE:
-            T.Text(opts3, "  Fuller description", font=T.f(9)).pack(side="left", padx=(8, 4)); T.Toggle(opts3, self.improve).pack(side="left")
-        b = _frame(host); b.pack(pady=6)
-        self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14)); self.go_btn.pack(side="left", padx=6)
+            imp = _frame(ob); T.Text(imp, "FULLER DESCRIPTION", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(imp, self.improve).pack(side="left"); add(imp)
+        self._layout_opts()
+        b = _frame(host); b.pack(pady=8, anchor="w" if self.VIEWER else "center")
+        self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14)); self.go_btn.pack(side="left", padx=(0, 6))
         jobs.guard(self.go_btn, self.page_key, app, "your picture")
         T.Button(b, "Stop", self.stop, kind="danger", width=8).pack(side="left", padx=6)
-        T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()), width=20).pack(side="left", padx=6)
-        self.msg = T.Text(host, "", muted=True, font=T.f(9)); self.msg.pack()
-        self.used = T.Text(host, "", muted=True, font=T.f(8)); self.used.configure(wraplength=560 if self.SPLIT else 1000); self.used.pack()
-        self.results = _frame(self if not self.SPLIT else host); self.results.pack(fill="both", expand=True, pady=(4, 0))
-        self.style.trace_add("write", lambda *a: self._model_changed()); self.bind("<Map>", lambda e: self.refresh(), add="+")
+        if not self.VIEWER: T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()), width=20).pack(side="left", padx=6)
+        self.msg = T.Text(host, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
+        self.used = T.Text(host, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
+        self.used.pack(anchor="w" if self.VIEWER else "center")
+        self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
+        self.results = _frame(self if not self.SPLIT else host)
+        if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
+        self.style.trace_add("write", lambda *a: self._model_changed()); self.bind("<Map>", lambda e: e.widget is self and self.refresh(), add="+")
         self._model_changed(); self._tick()
+
+    def _layout_opts(self):
+        """put the visible settings into the grid, in order"""
+        cols = 2 if self.VIEWER else 3; hidden = getattr(self, "_hidden_opts", set())
+        for w, _ in self._opts: w.grid_forget()
+        i = 0
+        for w, span in self._opts:
+            if w in hidden: continue
+            w.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=3); i += 1
 
     # ---- building blocks for the sections
     def var(self, key, default): return tk.StringVar(value=self._mem.get(key, default))
@@ -328,12 +430,11 @@ class ImagePage(tk.Frame):
         self.style_choice.choices = self.styles.names()
         if self.style.get() not in self.style_choice.choices: self.style.set("None")
     def _model_changed(self):
-        """LEAVE OUT and FOLLOW MY WORDS only matter for Stable Diffusion (Z-Image and FLUX.2 ignore them): say so"""
+        """LEAVE OUT and FOLLOW MY WORDS only matter for Stable Diffusion (Z-Image and FLUX.2 ignore them): hidden for the others"""
         try: dit = self.imaging.spec(self.model_key())["dit"]
         except Exception: dit = False
-        if self.SHOW_FOLLOW:                                                     # Z-Image / FLUX.2 run at a fixed CFG: the setting would do nothing
-            if dit and self.follow_choice.winfo_manager(): self.follow_choice.pack_forget()
-            elif not dit and not self.follow_choice.winfo_manager(): self.follow_choice.pack(side="left", padx=3, after=self.quality_choice)
+        self._hidden_opts = {self.follow_choice} if dit else set()
+        if self.SHOW_FOLLOW: self._layout_opts()
         if dit:
             if self.lo_row.winfo_manager(): self.lo_row.pack_forget()
             self.lo_note.configure(text=f"{self.imaging.model_label(self.model_key()) or 'This model'} follows your words as written: say what you want rather than what to leave out.")
@@ -345,8 +446,13 @@ class ImagePage(tk.Frame):
     def _tick(self):
         if not self.winfo_exists(): return
         st = self.imaging.status(); need = self.needs()
-        if st["state"] in ("downloading", "error"):
-            pct = f" {st['progress'] * 100:.0f}%" if st.get("progress") else ""; text = f"{st['detail'].upper()}{pct}"
+        downloading = st["state"] == "downloading"
+        if downloading:
+            self.dl_bar.set(st.get("progress") or None, st["detail"].replace("Downloading ", "").split("…")[0][:40])
+            if not self.dl_bar.winfo_manager(): self.dl_bar.pack(side="left", padx=(0, 10), after=self.status)
+        elif self.dl_bar.winfo_manager(): self.dl_bar.pack_forget()
+        if downloading: text = "DOWNLOADING " + st["detail"].split("…")[-1].strip().upper()
+        elif st["state"] == "error": text = st["detail"].upper()
         elif need: text = "NEEDS: " + " AND ".join(n[1].upper() for n in need) + " — press Download"
         else:
             key = self.model_key(); text = f"READY: {self.imaging.model_label(key).upper()}"
@@ -422,10 +528,11 @@ class ImagePage(tk.Frame):
         args.update(kw); improve = self.IMPROVE and self.improve.get() and text; prompt = sty["prompt"]
         if sty["note"]: T.banner(self.app, sty["note"].upper(), "busy")
         def work(job):
-            def progress(f, t): job.say(t); q.put(lambda t=t: self.msg.configure(text=t.upper()))
+            def progress(f, t): job.say(t); q.put(lambda f=f, t=t: (self.msg.configure(text=t.upper()), self._progress(f, t)))
+            q.put(lambda: self._progress(None, "Starting…"))
             p = prompt
             if improve:
-                progress(0, "Writing a fuller description with the text model…"); fuller = self._wording(text, key)
+                job.say("Writing a fuller description…"); q.put(lambda: self._progress(None, "Writing a fuller description with the text model…")); fuller = self._wording(text, key)
                 p = self.styles.resolve(self.style.get(), fuller, key, allow_switch=bool(refs))["prompt"] if fuller != text else prompt
             if args.get("upscale"):
                 need = "upscale_art" if "art" in args["upscale"] else "upscale_photo"
@@ -434,21 +541,32 @@ class ImagePage(tk.Frame):
             q.put(lambda: self.used.configure(text=f"PAINTING FROM: {p}"))
             progress(0, "Painting…")
             return self.imaging.paint(p, on_progress=progress, preview=lambda path: q.put(lambda: self._preview(path)), **args)
-        def failed(e): q.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"COULDN'T PAINT — {e}")))
+        def failed(e): q.put(lambda e=e: (self.msg.configure(text=""), self._progress_done(), T.banner(self.app, f"COULDN'T PAINT — {e}")))
         self.job = jobs.submit("AI Images", f"{self.TITLE}: {(text or self.style.get())[:40]}", work, kind="image", page=self.page_key, engine="image",
                                on_done=lambda saved: q.put(lambda: self._show(saved)), on_error=failed, on_cancel=self._stop_now)
         self.msg.configure(text="GETTING READY…" if self.job.place() <= 1 and not jobs.running() else jobs.where(self.job).upper())
+        self._progress(None, "Waiting its turn…" if jobs.running() else "Getting ready…")
 
     def _stop_now(self): self.stop_event.set(); self.imaging.stop_now()
     def stop(self):
-        if self.job is not None and self.job.state in ("waiting", "running"): jobs.cancel(self.job); self.msg.configure(text="STOPPED")
+        if self.job is not None and self.job.state in ("waiting", "running"): jobs.cancel(self.job); self.msg.configure(text="STOPPED"); self._progress_done()
+
+    def _progress(self, frac, text):
+        """the bar while it paints: over the picture (Text to Image) or above the results"""
+        if self.viewer is not None: return self.viewer.progress(frac, text)
+        self.run_bar.set(frac if frac else None if frac is None else 0.0, text)
+        if not self.run_bar.winfo_manager(): self.run_bar.pack(before=self.results, pady=(2, 0))
+    def _progress_done(self):
+        if self.viewer is not None: return self.viewer.progress_done()
+        if self.run_bar.winfo_manager(): self.run_bar.pack_forget()
 
     def _preview(self, path):
-        """the rough picture of the run so far, in the results area"""
+        """the rough picture of the run so far"""
         from PIL import Image, ImageTk
         try:
             with Image.open(path) as im: im = im.convert("RGB"); im.load()
         except Exception: return
+        if self.viewer is not None: return self.viewer.show_image(im, rough=True)
         if self._prev_ph is None:
             for w in self.results.winfo_children(): w.destroy()
             T.Text(self.results, "PREVIEW (rough, while it paints)", font=T.f(8), muted=True).pack()
@@ -458,10 +576,14 @@ class ImagePage(tk.Frame):
 
     def _show(self, saved):
         from PIL import Image, ImageTk
-        self._prev_ph = None
+        self._prev_ph = None; self._progress_done()
+        if not saved: self.msg.configure(text="STOPPED"); return
+        note = self.imaging.last.get("note") or ""
+        self.msg.configure(text=f"DONE — {len(saved)} SAVED TO YOUR IMAGES FOLDER" + (f" ({note.upper()})" if note else ""))
+        T.banner(self.app, f"PAINTED — {len(saved)} saved to your Images folder" + (f" ({note})" if note else ""), "success")
+        if self.viewer is not None: return self.viewer.show_results(saved)
         for w in self.results.winfo_children(): w.destroy()
         self._ph = []; self.update_idletasks()
-        if not saved: self.msg.configure(text="STOPPED"); return
         th = min(220, max(110, self.results.winfo_height() - 40))
         row = _frame(self.results); row.pack()
         for p in saved:
@@ -472,9 +594,24 @@ class ImagePage(tk.Frame):
             self._ph.append(ph); lb = tk.Label(cell, image=ph, bg=self["bg"], cursor="hand2"); lb.pack()
             lb.bind("<Button-1>", lambda e, p=p, s=seed: self._actions(e, p, s)); lb.bind("<Button-3>", lambda e, p=p, s=seed: self._actions(e, p, s))
             T.Text(cell, f"SEED {seed} · click for more" if seed else "click for more", font=T.f(8), muted=True).pack(pady=(2, 0))
-        note = self.imaging.last.get("note") or ""
-        self.msg.configure(text=f"DONE — {len(saved)} SAVED TO YOUR IMAGES FOLDER" + (f" ({note.upper()})" if note else ""))
-        T.banner(self.app, f"PAINTED — {len(saved)} saved to your Images folder" + (f" ({note})" if note else ""), "success")
+
+    def save_copy(self, p):
+        """a copy of the picture wherever you like, in the format you pick (it's already in your Images folder)"""
+        dest = filedialog.asksaveasfilename(parent=self.app, initialfile=os.path.basename(p), defaultextension=".png", title="Save a copy",
+                                            filetypes=[("PNG (keeps the picture's details)", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp")])
+        if not dest: return
+        try:
+            from PIL import Image
+            if dest.lower().endswith(".png"): shutil.copyfile(p, dest)
+            else:
+                with Image.open(p) as im: im.convert("RGB").save(dest, quality=95)
+            T.banner(self.app, f"SAVED — {os.path.basename(dest)}", "success")
+        except Exception as e: T.banner(self.app, f"COULDN'T SAVE IT — {e}")
+
+    def delete_pic(self, p):
+        if T.popup(self.app, "DELETE THIS PICTURE?", f"{os.path.basename(p)} is removed from your Images folder.", (("Delete", "danger"), ("Cancel", "normal"))) != "Delete": return False
+        try: os.remove(p); T.banner(self.app, "DELETED", "success"); return True
+        except Exception as e: T.banner(self.app, f"COULDN'T DELETE IT — {e}"); return False
 
     # ---- what to do with a result
     def _actions(self, e, p, seed):
@@ -504,9 +641,9 @@ class ImagePage(tk.Frame):
             job.say(f"Upscaling {factor}x…"); return [self.imaging.upscale(p, factor, art, stop=self.stop_event)]
         self.stop_event.clear()
         self.job = jobs.submit("AI Images", f"Upscale {factor}x", work, kind="image", page=self.page_key, engine="image",
-                               on_done=lambda s: q.put(lambda: self._show([x for x in s if x])), on_error=lambda e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T UPSCALE — {e}")),
+                               on_done=lambda s: q.put(lambda: self._show([x for x in s if x])), on_error=lambda e: q.put(lambda e=e: (self._progress_done(), T.banner(self.app, f"COULDN'T UPSCALE — {e}"))),
                                on_cancel=self._stop_now)
-        self.msg.configure(text=f"UPSCALING {factor}X — " + jobs.where(self.job).upper())
+        self.msg.configure(text=f"UPSCALING {factor}X — " + jobs.where(self.job).upper()); self._progress(None, f"Upscaling {factor}x…")
 
     def vary(self, p, amount):
         info = prefs.picture_info(p); words = info.get("words") or self.prompt.get("1.0", "end").strip() or "the same picture"
@@ -519,8 +656,8 @@ class ImagePage(tk.Frame):
         self.stop_event.clear()
         self.job = jobs.submit("AI Images", "Vary a picture", lambda job: self.imaging.paint(words, on_progress=lambda f, t: job.say(t), **args), kind="image",
                                page=self.page_key, engine="image", on_done=lambda s: q.put(lambda: self._show(s)),
-                               on_error=lambda e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T VARY IT — {e}")), on_cancel=self._stop_now)
-        self.msg.configure(text="VARYING — " + jobs.where(self.job).upper())
+                               on_error=lambda e: q.put(lambda e=e: (self._progress_done(), T.banner(self.app, f"COULDN'T VARY IT — {e}"))), on_cancel=self._stop_now)
+        self.msg.configure(text="VARYING — " + jobs.where(self.job).upper()); self._progress(None, "Varying…")
 
     def receive(self, path):
         """a picture sent from another section's results"""
@@ -542,7 +679,7 @@ def send_to(app, title, path):
 
 # ---------------------------------------------------------------- the sections
 class TextPage(ImagePage):
-    TITLE = "Text to Image"; IMPROVE = True
+    TITLE = "Text to Image"; IMPROVE = True; VIEWER = True
     INTRO = "Type what you want and pick a style (Realistic photo, Cartoon, Anime, Black & white... or your own models from AI Training)."
     def request(self, words): return dict(size=self.size.get())
 
@@ -779,6 +916,7 @@ class InpaintPage(ImagePage):
         return dict(init_image=orig, mask=grown, size=self.imaging.fit_size(orig, key=key), strength=self.AMOUNT[self.amount.get()],
                     finish=lambda pic: Image.composite(pic.convert("RGB").resize(orig.size, Image.LANCZOS), orig, soft), **extra)
     def _show(self, saved):
+        self._progress_done()
         if saved:                                                                # the result goes back into the pad: keep fixing it
             self.receive(saved[-1]); self.msg.configure(text="DONE — BRUSH AGAIN TO KEEP FIXING IT")
             return T.banner(self.app, "PAINTED — saved to your Images folder; it's in the brush pad to keep fixing", "success")

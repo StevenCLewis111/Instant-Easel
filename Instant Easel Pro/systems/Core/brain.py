@@ -122,7 +122,37 @@ def gpu():
 # ---------------------------------------------------------------- downloading
 def _get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "InstantEasel", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
+    except urllib.error.HTTPError as e:
+        if "api.github.com" in url and e.code in (403, 429):
+            raise RuntimeError("GitHub is limiting how often this PC can look up downloads (it resets within an hour). Try again a bit later")
+        raise
+
+def github_files(repo, groups):
+    """the files to download from a GitHub project's releases: [(name, url, size)], one per group.
+    groups: [(name parts to look for, best first), required?]. The newest of the last 10 releases that has every file is used
+    (the very latest can still be uploading its files); if none has the optional ones too, the newest with the required ones"""
+    rels = _get_json(f"https://api.github.com/repos/{repo}/releases?per_page=10")
+    if isinstance(rels, dict): rels = [rels]
+    def pick(rel, alts):
+        for want in alts:
+            for a in rel.get("assets", []):
+                n = a["name"]
+                if want.lower() in n.lower() and n.endswith((".zip", ".tar.gz")) and not n.lower().startswith("cudart"):
+                    return n, a["browser_download_url"], a.get("size", 0)
+        return None
+    for only_required in (False, True):
+        for rel in rels:
+            if rel.get("draft"): continue
+            got = []
+            for alts, required in groups:
+                if only_required and not required: continue
+                hit = pick(rel, alts)
+                if not hit: break
+                got.append(hit)
+            else: return got
+    raise RuntimeError(f"no {repo.split('/')[-1]} download for this computer in its last {len(rels)} releases")
 
 def _fetch(url, dest, label, size_hint=0, report=None, tries=5):
     """download url to dest with progress. Robust: a dropped connection is retried (up to `tries` times, waiting a little longer
@@ -160,28 +190,38 @@ def _fetch(url, dest, label, size_hint=0, report=None, tries=5):
     if os.path.getsize(tmp) < 1024: os.remove(tmp); raise RuntimeError(f"{label}: the download was empty")
     os.replace(tmp, dest)
 
-def _runtime_asset():
-    """the right llama.cpp download for this computer"""
-    rel = _get_json("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest")
-    if sys.platform == "win32": wants = ("bin-win-vulkan-x64", "bin-win-cpu-x64")
-    elif sys.platform == "darwin": wants = ("bin-macos-arm64", "bin-macos-x64")
-    else: wants = ("bin-ubuntu-vulkan-x64", "bin-ubuntu-x64")
-    for w in wants:
-        for a in rel.get("assets", []):
-            if w in a["name"] and a["name"].endswith((".zip", ".tar.gz")): return a["name"], a["browser_download_url"], a.get("size", 0)
-    raise RuntimeError("no llama.cpp download found for this computer")
+def _runtime_files():
+    """the llama.cpp downloads for this computer. Windows releases now come in parts: the programs (the 'cpu' file) plus the
+    graphics-card part on its own (the 'vulkan' file, just ggml-vulkan.dll), so both are fetched and unpacked together"""
+    if sys.platform == "win32":
+        return github_files("ggml-org/llama.cpp", [(("bin-win-cpu-x64",), True), (("bin-win-vulkan-x64",), False)])
+    if sys.platform == "darwin": return github_files("ggml-org/llama.cpp", [(("bin-macos-arm64", "bin-macos-x64"), True)])
+    return github_files("ggml-org/llama.cpp", [(("bin-ubuntu-vulkan-x64", "bin-ubuntu-x64"), True)])
+
+def unpack(arc, dest):
+    if arc.endswith(".zip"):
+        with zipfile.ZipFile(arc) as z: z.extractall(dest)
+    else:
+        with tarfile.open(arc) as t: t.extractall(dest, filter="data")
 
 def _install_runtime():
-    name, url, size = _runtime_asset(); os.makedirs(RUNTIME, exist_ok=True); arc = os.path.join(ROOT, "runtime", name)
-    _fetch(url, arc, "the engine (llama.cpp)", size)
-    shutil.rmtree(RUNTIME, ignore_errors=True); os.makedirs(RUNTIME)
-    if name.endswith(".zip"):
-        with zipfile.ZipFile(arc) as z: z.extractall(RUNTIME)
-    else:
-        with tarfile.open(arc) as t: t.extractall(RUNTIME, filter="data")
-    os.remove(arc)
+    files = _runtime_files(); os.makedirs(os.path.join(ROOT, "runtime"), exist_ok=True)
+    new = RUNTIME + ".new"; shutil.rmtree(new, ignore_errors=True); os.makedirs(new)
+    for i, (name, url, size) in enumerate(files):
+        arc = os.path.join(ROOT, "runtime", name)
+        _fetch(url, arc, f"the engine (llama.cpp){f', part {i + 1} of {len(files)}' if len(files) > 1 else ''}", size)
+        unpack(arc, new); os.remove(arc)
+    exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+    if not any(exe_name in fs for _, _, fs in os.walk(new)):
+        shutil.rmtree(new, ignore_errors=True); raise RuntimeError("the engine downloaded but llama-server wasn't in it")
+    if sys.platform == "win32":                                              # every part next to llama-server.exe, so it finds its graphics-card part
+        home = next(d for d, _, fs in os.walk(new) if exe_name in fs)
+        for d, _, fs in os.walk(new):
+            if d != home:
+                for f in fs:
+                    if f.lower().endswith(".dll") and not os.path.exists(os.path.join(home, f)): shutil.move(os.path.join(d, f), os.path.join(home, f))
+    shutil.rmtree(RUNTIME, ignore_errors=True); os.replace(new, RUNTIME); _help.clear()   # the old engine stays until the new one is unpacked
     exe = server_exe()
-    if not exe: raise RuntimeError("the engine downloaded but llama-server wasn't in it")
     if sys.platform != "win32": os.chmod(exe, 0o755)
 
 def _pick_file(repo, quant):

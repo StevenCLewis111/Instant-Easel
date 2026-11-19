@@ -53,6 +53,7 @@ w, h = max(8, w // 16), max(8, h // 16)          # small pictures keep the test 
 for i in range(n):
     for s in range(1, steps + 1):
         print(f"  |====| {s}/{steps} - 0.01s/it", flush=True)
+        if behave == "slow": time.sleep(0.4)
         if "--preview-path" in a: png(val("--preview-path"), 16, 16)
     png(out.replace("%03d", f"{i:03d}") if "%03d" in out else (out if i == 0 else out.replace(".png", f"_{i + 1}.png")), w, h)
 print("save result image", flush=True)
@@ -193,6 +194,18 @@ check("  Inpainting: Extend makes the picture wider and marks the new strip", pg
 c = run_page("Image Prompting", lambda pg: (pg.slots[0].set(pic), pg.take.set("Style and feel"), words(pg, "a lighthouse")))
 check("  Image Prompting sends the reference picture", "--ref-image" in c)
 pg = sec["Text to Image"]
+check("Text to Image: the picture shows large in the viewer, with its buttons", pg.viewer is not None and pg.viewer.current and os.path.exists(pg.viewer.current), pg.viewer and pg.viewer.current)
+# leaving the tab mid-run must not cancel or restart the job
+app.show("AI Images"); app.pages["AI Images"].select("Text to Image"); reset("slow"); words(pg, "a slow lighthouse"); pg.go(); bar_seen = False
+t0 = time.time(); hops = ["AI Chat", "Settings", "Drawing", "AI Images"]; i = 0
+while (pg.job is None or pg.job.state in ("waiting", "running")) and time.time() - t0 < 40:
+    app.update(); time.sleep(0.05); bar_seen = bar_seen or pg.viewer.busy
+    if time.time() - t0 > 0.5 * (i + 1) and i < len(hops): app.goto(hops[i]); i += 1
+for _ in range(10): app.update(); time.sleep(0.02)
+check("a progress bar sits on the picture while it paints", bar_seen)
+check("leaving the tab mid-run neither cancels nor restarts the picture", pg.job.state == "done" and len(calls()) == 1 and i >= 3, (pg.job.state, len(calls()), i))
+check("…and the picture is there when you come back", pg.viewer.current and "slow" in os.path.basename(pg.viewer.current).lower() or pg.viewer.current is not None)
+reset()
 check("results: every section can send a picture on (Prompt to Edit takes it)", (IP.send_to(app, "Prompt to Edit", os.path.join(prefs.save_folder(), os.listdir(prefs.save_folder())[0])) or True)
       and sec["Prompt to Edit"].slot.image is not None)
 app.destroy()

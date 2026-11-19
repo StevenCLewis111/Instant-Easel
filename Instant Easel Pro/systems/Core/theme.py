@@ -636,6 +636,36 @@ BANNER_COLORS = {"error": ("#8f1d1d", "#ef5350"), "success": ("#1b6b32", "#4ee07
 BANNER_FONT = ("Arial", 16, "bold")                                                    # design size; scales with the window
 _banner_q = _queue.Queue(); _banner_roots = set()
 
+class ProgressBar(tk.Canvas):
+    """a real progress bar: set(0.42, "Downloading… 1.2 of 2.9 GB") fills it 42% with the words on top; set(None, "Starting…")
+    shows a moving stripe for work that can't count its steps yet. clear() empties it"""
+    def __init__(self, master, width=260, height=20, color="#28a745"):
+        super().__init__(master, width=int(width * Z), height=int(height * Z), bd=0, highlightthickness=1)
+        self.frac = 0.0; self.text = ""; self.color = color; self._phase = 0; self._anim = None
+        self._style(); on_change(self._style); self.bind("<Configure>", lambda e: self._draw())
+    def _style(self):
+        try: self.configure(bg=PALETTE["field"], highlightbackground=PALETTE["border"]); self._draw()
+        except tk.TclError: pass
+    def set(self, frac, text=""):
+        self.frac, self.text = frac, text
+        if frac is None and self._anim is None: self._tick()
+        self._draw()
+    def clear(self): self.set(0.0, "")
+    def _tick(self):
+        if self.frac is not None or not self.winfo_exists(): self._anim = None; return
+        self._phase = (self._phase + 0.04) % 1.4; self._draw(); self._anim = self.after(40, self._tick)
+    def _draw(self):
+        try:
+            self.delete("all"); w, h = max(2, self.winfo_width()), max(2, self.winfo_height())
+            if self.frac is None:
+                x = (self._phase - 0.4) * w; self.create_rectangle(max(0, x), 0, min(w, x + w * 0.4), h, fill=self.color, width=0)
+            elif self.frac > 0: self.create_rectangle(0, 0, w * min(1.0, self.frac), h, fill=self.color, width=0)
+            label = self.text + (f"  {self.frac * 100:.0f}%" if self.frac else "")
+            if label.strip():
+                self.create_text(w / 2 + 1, h / 2 + 1, text=label, fill="black", font=f(8))
+                self.create_text(w / 2, h / 2, text=label, fill="white", font=f(8))
+        except tk.TclError: pass
+
 def banner(widget, text, kind="error", seconds=BANNER_SECONDS):
     """show a message banner. kind: "success" (green), "busy" (amber: waiting / running / a warning) or "error" / anything else (red)"""
     if _threading.current_thread() is _threading.main_thread(): _show_banner(widget, text, kind, seconds)

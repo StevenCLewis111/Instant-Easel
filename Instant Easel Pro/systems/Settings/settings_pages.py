@@ -188,6 +188,8 @@ class AIModelsPage(SettingsPage):
         r = _frame(self.body); r.pack(anchor="w", padx=(30, 0), pady=(2, 0))
         T.Button(r, "Start", self._start, width=7).pack(side="left", padx=(0, 4)); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
         self.state = T.Text(r, "", font=T.f(10)); self.state.pack(side="left", padx=10)
+        bars = _frame(self.body); bars.pack(anchor="w", padx=(30, 0))                          # real bars while the models download
+        self.text_bar = T.ProgressBar(bars, width=420); self.img_bar = T.ProgressBar(bars, width=420, color="#335bb0")
         head("EACH TAB'S MODEL")
         chat = {"core": ("Core text model (recommended)", "AI Chat talks to the core model.")}
         if brain.model_file("custom-AI_Chat"): chat["custom-AI_Chat"] = ("Your own model file", "A .gguf text model you added with Add manually.")
@@ -340,10 +342,14 @@ class AIModelsPage(SettingsPage):
     def _tick(self, once=False):
         if not self.winfo_exists(): return
         st = self.brain.status(); ist = self.imaging.status()
-        pct = lambda x: f" ({x['progress'] * 100:.0f}%)" if x["state"] == "downloading" and x.get("progress") else ""
-        line = f"TEXT: {st['detail'] or st['state'] or ''}{pct(st)}"
-        if ist["state"] in ("downloading", "error"): line += f"     IMAGES: {ist['detail']}{pct(ist)}"
+        line = "TEXT: " + ("downloading (below)" if st["state"] == "downloading" else (st["detail"] or st["state"] or ""))
+        if ist["state"] == "error": line += f"     IMAGES: {ist['detail']}"
         self.state.configure(text=line)
+        for bar, x, who in ((self.text_bar, st, "TEXT"), (self.img_bar, ist, "IMAGES")):
+            if x["state"] == "downloading":
+                bar.set(x.get("progress") or None, f"{who}: " + (x["detail"] or "").replace("Downloading ", "")[:60])
+                if not bar.winfo_manager(): bar.pack(anchor="w", pady=2)
+            elif bar.winfo_manager(): bar.pack_forget()
         if not once: self.after(1000, self._tick)
 
 # ---------------------------------------------------------------- AI Images: how the image generator works

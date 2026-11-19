@@ -179,15 +179,12 @@ def fit_size(im, long_side=None, key=None):
 
 # ---------------------------------------------------------------- downloading
 def _runtime_asset():
+    """the stable-diffusion.cpp download for this computer, from the newest of its recent releases that has it"""
     import brain
-    rel = brain._get_json("https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest")
     if sys.platform == "win32": wants = ("win-vulkan-x64", "win-avx2-x64", "win-cpu-x64")
     elif sys.platform == "darwin": wants = ("Darwin-macOS",)
     else: wants = ("Linux-Ubuntu-24.04-x86_64-vulkan", "Linux-Ubuntu-24.04-x86_64.zip", "Linux")
-    for w in wants:
-        for a in rel.get("assets", []):
-            if w.lower() in a["name"].lower() and a["name"].endswith((".zip", ".tar.gz")): return a["name"], a["browser_download_url"], a.get("size", 0)
-    raise RuntimeError("no stable-diffusion.cpp download found for this computer")
+    return brain.github_files("leejet/stable-diffusion.cpp", [(wants, True)])[0]
 
 def _install_runtime():
     import brain
