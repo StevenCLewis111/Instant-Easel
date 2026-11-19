@@ -26,7 +26,7 @@ BASIC_COLORS = [(230, 30, 40), (250, 130, 20), (250, 220, 30), (40, 200, 60), (3
 PALETTES = {"Warm": [(120, 30, 20), (200, 70, 30), (240, 140, 50), (250, 200, 90)], "Cool": [(20, 40, 90), (40, 100, 180), (80, 170, 220), (170, 230, 240)],
             "Pastel": [(250, 190, 200), (250, 230, 170), (190, 230, 200), (190, 200, 250)], "Earth": [(70, 50, 30), (130, 90, 50), (150, 140, 80), (200, 180, 140)]}
 
-LEFT_W, RIGHT_W = 276, 258                                                   # side panel widths (design pixels): the canvas gets everything else
+LEFT_W, RIGHT_W = 276, 282                                                   # side panel widths (design pixels): the canvas gets everything else
 
 def slim(btn): btn.configure(padx=5, pady=3, font=T.f(9)); return btn            # narrow buttons for the side panels
 
@@ -269,7 +269,7 @@ class DrawStudio(StudioExtras, tk.Frame):
     def _left(self, body):
         L = self._edged_panel(body, "left"); self.L = L; self._fixed_width(L, LEFT_W)
         sw = tk.Frame(L, bg=L["bg"]); sw.pack(fill="x", pady=(0, 4)); self.view_btns = {}
-        for name in ("Brushes", "Options"):
+        for name in ("Brushes", "Adjustments"):
             b = skin.button(small(T.Button(sw, name, lambda n=name: self._left_view(n), width=10)), piece="bar"); b.pack(side="left", expand=True); self.view_btns[name] = b
         self.lib_view = tk.Frame(L, bg=L["bg"]); self.opt_view = tk.Frame(L, bg=L["bg"])
         T.on_change(lambda: (self.lib_view.configure(bg=L["bg"]), self.opt_view.configure(bg=L["bg"])))
@@ -418,16 +418,30 @@ class DrawStudio(StudioExtras, tk.Frame):
         COLOR header, the painted colour ring, colour swatch / hex / Pick, colour swatches, palettes and HISTORY"""
         R = self._edged_panel(body, "right"); self._fixed_width(R, RIGHT_W); self._artp = True; self._R = R
         self._art_items = []; T.on_change(self._art_redraw, zoom=True); self._lay_off = 0; self._show_hist = True
-        IW = self._IW = RIGHT_W - 2 * 8 - 4                                                    # design width inside the panel
+        IW = self._IW = RIGHT_W - 2 * 8 - 4 - 24                                               # design width inside the panel (less the Options scroll bar)
         def frame(parent=None, **pack):
             f = tk.Frame(parent if parent is not None else here[0], bg=R["bg"]); f.pack(**pack); T.on_change(lambda: f.configure(bg=R["bg"])); return f
         # ---- Color / Layers: two views, switched by the buttons at the top (as Brushes / Options on the left)
         sw = tk.Frame(R, bg=R["bg"]); sw.pack(fill="x", pady=(0, 4)); T.on_change(lambda: sw.configure(bg=R["bg"])); self.right_btns = {}
-        for name in ("Color", "Layers"):
+        for name in ("Color", "Options"):
             b = skin.button(small(T.Button(sw, name, lambda n=name: self._right_view(n), width=10)), piece="bar"); b.pack(side="left", expand=True); self.right_btns[name] = b
         self.col_view = tk.Frame(R, bg=R["bg"]); self.lay_view = tk.Frame(R, bg=R["bg"])
         T.on_change(lambda: (self.col_view.configure(bg=R["bg"]), self.lay_view.configure(bg=R["bg"])))
-        here = [self.lay_view]; LV = self.lay_view
+        # Options (layers + text) scrolls: its scroll bar on the right, a border line left of it, the contents in a scrolling canvas
+        ov = self.lay_view; g = T.ScrollBox.GAP
+        osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(g, 0), pady=g); T.Line(ov, vertical=True).pack(side="right", fill="y")
+        ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True)
+        LV = tk.Frame(ocv, bg=R["bg"]); owin = ocv.create_window(0, 0, window=LV, anchor="nw")
+        osb.command = ocv.yview; ocv.configure(yscrollcommand=osb.set)
+        def ofit(e=None):
+            try:
+                ocv.itemconfigure(owin, width=ocv.winfo_width()); ocv.configure(scrollregion=(0, 0, ocv.winfo_width(), max(LV.winfo_reqheight(), ocv.winfo_height())))
+            except tk.TclError: pass
+        LV.bind("<Configure>", ofit, add="+"); ocv.bind("<Configure>", ofit, add="+")
+        T.wheel_area(ov, lambda n: osb.can_scroll() and ocv.yview_scroll(n, "units"))
+        T.on_change(lambda: (ocv.configure(bg=R["bg"]), LV.configure(bg=R["bg"])))
+        self._opt_canvas = ocv
+        here = [LV]
         # ---- layers
         r = frame(fill="x", pady=(0, 3)); bs = (IW - 5 * 4) // 6
         for piece, cmd, tip in (("layer_add", self.add_layer, "New layer"), ("layer_dup", self.dup_layer, "Duplicate layer"),
@@ -547,7 +561,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._col_groups = [top_row, wf, basic, pal_group, hist_group]                  # evenly spaced down the panel (each takes an equal share of the room)
         for g in self._col_groups: g.pack_forget()
         for g in self._col_groups: g.pack(expand=True)                                   # (each centred in its share)
-        self._right_view(prefs.get("draw_right_view") if prefs.get("draw_right_view") in ("Color", "Layers") else "Color")
+        self._right_view({"Layers": "Options"}.get(prefs.get("draw_right_view"), prefs.get("draw_right_view")) if prefs.get("draw_right_view") in ("Color", "Layers", "Options") else "Color")
 
     @staticmethod
     def _title(parent, text):
@@ -857,7 +871,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         else: T.banner(self.app, f"COMING SOON — {it['name']} isn't built yet")
 
     def _right_view(self, name):
-        """the right panel: the Color view (ring, swatches, palettes, history) or the Layers view"""
+        """the right panel: the Color view (ring, swatches, palettes, history) or the Options view (layers and text)"""
         for n, b in self.right_btns.items(): skin.select(b, n == name)
         for w in (self.col_view, self.lay_view): w.pack_forget()
         (self.col_view if name == "Color" else self.lay_view).pack(fill="both", expand=True); prefs.set("draw_right_view", name)

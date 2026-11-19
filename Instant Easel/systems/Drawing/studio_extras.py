@@ -6,7 +6,7 @@ studio_extras.py: the Draw studio's select / crop / text tools (mixed into DrawS
       (floating, ready to move), Ctrl+A selects everything, Esc drops the selection.
   Crop (C): drag the box to keep (outside goes dark); drag inside it to move it, drag a corner to resize it. Enter or a double-click
       crops every layer to it; Esc cancels. Ctrl+Z undoes a crop.
-  Text (T): click where the text goes: a box with a blinking cursor appears and the TEXT panel (under Layers) takes your typing.
+  Text (T): click where the text goes: a box with a blinking cursor appears and the TEXT panel (right side, Options) takes your typing.
       Font, size, bold, italic, underline, alignment and colour change it live on the canvas. Drag inside the box to move it, the
       right-edge handle to set how wide it wraps, the corner handle to make the letters bigger or smaller. It is painted onto the
       layer when you click somewhere else, press Place, or change tool (Esc throws it away).
@@ -451,12 +451,12 @@ class StudioExtras:
             self._txt_commit()
         if not hasattr(self, "txt_box"): return
         self.txt = dict(x=p[0], y=p[1], width=None, mask=None, ends=[], key=None)
-        if self._right_view_name() != "Layers": self._right_view("Layers")
+        if self._right_view_name() != "Options": self._right_view("Options")
         self.txt_box.delete("1.0", "end"); self.txt_box.focus_set(); self._txt_changed()
 
     def _right_view_name(self):
-        try: return "Layers" if self.lay_view.winfo_manager() else "Color"
-        except (AttributeError, tk.TclError): return "Layers"
+        try: return "Options" if self.lay_view.winfo_manager() else "Color"
+        except (AttributeError, tk.TclError): return "Options"
 
     def _txt_hit(self, p):
         t = self.txt
