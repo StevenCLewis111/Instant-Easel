@@ -79,7 +79,9 @@ class OptionPanel(tk.Frame):
         self.ltitle = T.Text(self, "Options", font=T.f(10, "underline")); self.ltitle.grid(row=0, column=0, pady=(tp, 0))   # titles: centred, underlined
         self.rtitle = T.Text(self, "", font=T.f(10, "underline")); self.rtitle.grid(row=0, column=4, pady=(tp, 0))
         for c, w in ((1, T.Line(self)), (3, T.Line(self)), (5, T.Line(self))): w.grid(row=0, column=c, rowspan=2, sticky="ns")
-        for c, w in ((0, self.left.cv), (2, self.left.sb), (4, self.right.cv), (6, self.right.sb)): w.grid(row=1, column=c, sticky="nsew")
+        g = T.ScrollBox.GAP                                                          # the same gap round each scroll bar as everywhere else
+        for c, w in ((0, self.left.cv), (4, self.right.cv)): w.grid(row=1, column=c, sticky="nsew")
+        for c, w in ((2, self.left.sb), (6, self.right.sb)): w.grid(row=0, rowspan=2, column=c, sticky="ns", padx=g, pady=g)
         self.columnconfigure(0, weight=1, uniform="op"); self.columnconfigure(4, weight=1, uniform="op"); self.rowconfigure(1, weight=1)
         self.inner = self.left.inner
         self.left.inner.bind("<Configure>", lambda e: self._soon(), add="+"); self.right.inner.bind("<Configure>", lambda e: self._soon(), add="+")

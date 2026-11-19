@@ -516,7 +516,7 @@ class ScrollBox(tk.Frame):
     """a scrolling list in a box: border all round, a divider, then the scroll bar in its own gutter with the same gap on every side.
         box = ScrollBox(parent, bg="panel2"); box.pack(...)
         cv = tk.Canvas(box.body, ...); cv.pack(fill="both", expand=True); box.attach(cv)"""
-    GAP = 12                                                     # space round the scroll bar (design pixels; zoom scales it)
+    GAP = 4                                                      # space round the scroll bar, each side (the same as the Drawing layer list)
     def __init__(self, master, bg=None, **kw):
         super().__init__(master, bd=0, highlightthickness=1, **kw); self.bg_key = bg
         self.body = tk.Frame(self, bd=0, highlightthickness=0); self.body.pack(side="left", fill="both", expand=True)

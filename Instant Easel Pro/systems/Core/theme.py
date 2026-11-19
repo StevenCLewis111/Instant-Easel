@@ -517,7 +517,7 @@ class ScrollBox(tk.Frame):
     """a scrolling list in a box: border all round, a divider, then the scroll bar in its own gutter with the same gap on every side.
         box = ScrollBox(parent, bg="panel2"); box.pack(...)
         cv = tk.Canvas(box.body, ...); cv.pack(fill="both", expand=True); box.attach(cv)"""
-    GAP = 12                                                     # space round the scroll bar (design pixels; zoom scales it)
+    GAP = 4                                                      # space round the scroll bar, each side (the same as the Drawing layer list)
     def __init__(self, master, bg=None, **kw):
         super().__init__(master, bd=0, highlightthickness=1, **kw); self.bg_key = bg
         self.body = tk.Frame(self, bd=0, highlightthickness=0); self.body.pack(side="left", fill="both", expand=True)
@@ -543,7 +543,7 @@ class ScrollArea(tk.Frame):
     PAD = 4                                                      # gap inside the border (design pixels)
     def __init__(self, master, **kw):
         super().__init__(master, bd=0, highlightthickness=1, **kw); self.cap = None; self._busy = False; self._job = None
-        p = max(2, int(round(self.PAD * Z)))
+        p = ScrollBox.GAP
         self.cv = tk.Canvas(self, bd=0, highlightthickness=0, width=10, height=10)
         self.vsb = Scrollbar(self, "vertical", command=self.cv.yview); self.hsb = Scrollbar(self, "horizontal", command=self.cv.xview)
         self.cv.configure(yscrollcommand=self.vsb.set, xscrollcommand=self.hsb.set)
@@ -575,7 +575,7 @@ class ScrollArea(tk.Frame):
             if W < 2 or H < 2: return
             self.cv.itemconfigure(self._win, width=max(iw, W), height=max(ih, H))      # narrower contents stretch to the width
             self.cv.configure(scrollregion=(0, 0, max(iw, W), max(ih, H)))
-            p = max(2, int(round(self.PAD * Z)))
+            p = ScrollBox.GAP
             for sb, need, kw in ((self.vsb, ih > H + 1, dict(row=0, column=1, sticky="ns", padx=(0, p), pady=p)),
                                  (self.hsb, iw > W + 1, dict(row=1, column=0, sticky="ew", padx=p, pady=(0, p)))):
                 if need and not sb.winfo_manager(): sb.grid(**kw)
