@@ -260,14 +260,28 @@ class Viewer(tk.Frame):
                  ("Vary a little", lambda p: self.page.vary(p, 0.3)), ("Vary a lot", lambda p: self.page.vary(p, 0.6))],
                 [("Edit with words", lambda p: send_to(self.page.app, "Prompt to Edit", p)), ("Fix a part", lambda p: send_to(self.page.app, "Inpainting", p)),
                  ("Use as start", lambda p: send_to(self.page.app, "Image to Image", p)), ("More ▸", None)]]
+        self._bl = []; r = self.btns
         for row in rows:
-            r = _frame(self.btns); r.pack(pady=1)
             for text, fn in row:
                 if fn is None:
-                    b = T.Button(r, text, lambda: None, width=14); b.command = lambda b=b: self._more(b)
-                else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), width=14, kind="danger" if text == "Delete" else "normal")
+                    b = T.Button(r, text, lambda: None, width=12); b.command = lambda b=b: self._more(b)
+                else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), width=12, kind="danger" if text == "Delete" else "normal")
                 if skin.file_kind(text): skin.file_button(b, height=36)                 # painted New / Open / Save button
-                b.pack(side="left", padx=2)
+                self._bl.append(b)
+        self._bcols = None; self._grid_btns(4)
+        self.bind("<Configure>", lambda e: e.widget is self and self._fit_btns(), add="+")
+    def _grid_btns(self, cols):
+        """the picture's buttons: 4 across, or 2 across when the picture box is narrow, so none get cut off"""
+        if cols == self._bcols: return
+        self._bcols = cols
+        for i, b in enumerate(self._bl): b.grid(row=i // cols, column=i % cols, padx=2, pady=1)
+    def _fit_btns(self):
+        try:
+            W = self.winfo_width()
+            if W < 50: return
+            wide = sum(sorted((b.winfo_reqwidth() + 4 for b in self._bl), reverse=True)[:4])   # the widest row of 4 it could make
+            self._grid_btns(4 if wide <= W else 2)
+        except tk.TclError: pass
     def _more(self, b):
         if not self.current: return
         class E: x_root = b.winfo_rootx(); y_root = b.winfo_rooty() + b.winfo_height()
@@ -364,7 +378,7 @@ class ImagePage(tk.Frame):
         self.host = host
         if self.SPLIT: self.build_left(self.left)
         else: self.build_top(host)
-        T.Text(host, self.WORDS, font=T.f(10)).pack(anchor="w", pady=(4, 2))
+        self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
         self.prompt = T.Field(host, height=4 if self.VIEWER else 3, **({"width": 52} if self.VIEWER else {})); self.prompt.pack(fill="x")
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         self.lo_row = _frame(host); self.lo_row.pack(fill="x", pady=(4, 0))
@@ -409,18 +423,20 @@ class ImagePage(tk.Frame):
         if self.IMPROVE:
             imp = _frame(ob); T.Text(imp, "FULLER DESCRIPTION", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(imp, self.improve).pack(side="left"); add(imp)
         self._layout_opts()
-        b = _frame(host); b.pack(pady=8, anchor="w" if self.VIEWER else "center")
+        b = ob if self.VIEWER else _frame(host)                                      # beside the viewer: Paint it / Stop sit in the settings grid
+        if not self.VIEWER: b.pack(pady=8, anchor="center")
         self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14))
         jobs.guard(self.go_btn, self.page_key, app, "your picture")
-        stop = T.Button(b, "Stop", self.stop, kind="danger", width=14)
-        if self.VIEWER:                                                              # beside the viewer: Stop under Paint it, both on the left edge
-            self.go_btn.pack(anchor="w"); stop.pack(anchor="w", pady=(6, 0))
+        stop = T.Button(b, "Stop", self.stop, kind="danger", width=14); self.stop_btn = stop
+        if self.VIEWER: self._layout_opts()                                          # to the right of the seed row and the toggle, Stop under Paint it
         else:
             self.go_btn.pack(side="left", padx=(0, 6)); stop.configure(width=8); stop.pack(side="left", padx=6)
             skin.file_button(T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()))).pack(side="left", padx=6)
-        self.msg = T.Text(host, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
-        self.used = T.Text(host, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
+        mh = host
+        self.msg = T.Text(mh, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
+        self.used = T.Text(mh, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
         self.used.pack(anchor="w" if self.VIEWER else "center")
+        if self.VIEWER: host.bind("<Configure>", lambda e: e.widget is host and self._fit_opts(), add="+")
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
         self.results = _frame(self if not self.SPLIT else host)
         if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
@@ -432,13 +448,34 @@ class ImagePage(tk.Frame):
     def _layout_opts(self):
         """put the visible settings into the grid, in order"""
         # beside the viewer: one column, lined up on the left; each list opens in the empty space to its right
-        cols = 1 if self.VIEWER else 3; hidden = getattr(self, "_hidden_opts", set())
+        cols = getattr(self, "_opt_cols", 1) if self.VIEWER else 3; hidden = getattr(self, "_hidden_opts", set())
         for w, _ in self._opts: w.grid_forget()
         i = 0
         for w, span in self._opts:
             if w in hidden: continue
             if self.VIEWER and isinstance(w, T.Choice) and not getattr(w, "open_right", False): open_right(w)
             w.grid(row=i // cols, column=i % cols, sticky="w", padx=(0, 4) if self.VIEWER else 4, pady=3); i += 1
+        if self.VIEWER and getattr(self, "stop_btn", None) is not None:              # Paint it / Stop: right of the last two rows (the seed and the toggle)
+            last = (i - 1) // cols; top = max(0, last - 1)
+            self.go_btn.grid(row=top, column=cols, sticky="w", padx=(16, 0), pady=3)
+            self.stop_btn.grid(row=top + 1, column=cols, sticky="w", padx=(16, 0), pady=3)
+        if self.VIEWER and not getattr(self, "_fitting", False): self.after_idle(self._fit_opts)   # (settings shown/hidden: check it still fits)
+
+    def _fit_opts(self):
+        """beside the viewer the settings are one column; on a short window they spread to 2 (then 3) columns so the column
+        never runs past the bottom of the window and Paint it / Stop stay in view"""
+        if getattr(self, "_fitting", False): return
+        try:
+            H = self.host.winfo_height()
+            if H < 50: return
+            shown = [w for w, _ in self._opts if w not in getattr(self, "_hidden_opts", set())]; n = max(1, len(shown)); cols = getattr(self, "_opt_cols", 1)
+            rows_now = -(-n // cols); rowh = self.optbox.winfo_reqheight() / max(1, rows_now)
+            rest = self.host.winfo_reqheight() - self.optbox.winfo_reqheight()
+            want = next((c for c in (1, 2, 3) if rest + rowh * -(-n // c) <= H), 3)
+            if want != cols:
+                self._fitting = True; self._opt_cols = want; self._layout_opts()
+                self.after(50, lambda: setattr(self, "_fitting", False))
+        except tk.TclError: pass
 
     # ---- building blocks for the sections
     def var(self, key, default): return tk.StringVar(value=self._mem.get(key, default))
