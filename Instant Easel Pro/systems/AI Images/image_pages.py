@@ -50,6 +50,12 @@ class ListChoice(T.Choice):
         try: m.tk_popup(x, y)
         finally: m.grab_release()
 
+def head_row(master):
+    """a label row of fixed height (it can hold a painted button) — used on both sides so the boxes under them start level"""
+    r = _frame(master); r.pack(side="top", fill="x", pady=(4, 2)); r.pack_propagate(False)
+    fit = lambda: r.winfo_exists() and r.configure(height=max(16, int(round(32 * T.Z))))
+    fit(); T.on_change(fit, zoom=True); return r
+
 def open_right(choice):
     """make any setting button open its whole list to its right (top lined up with the button) instead of stepping through"""
     choice.open_right = True
@@ -247,7 +253,12 @@ class Viewer(tk.Frame):
         self.cv.bind("<Configure>", lambda e: self._draw()); self.cv.bind("<Double-Button-1>", lambda e: self.current and _open_file(self.current))
         self.cv.bind("<Button-3>", lambda e: self.current and self.page._actions(e, self.current, prefs.picture_info(self.current).get("seed", "")))
         self.bar = T.ProgressBar(self.cv, width=360, height=22)
-        T.Text(self, "YOUR PICTURE", font=T.f(10)).pack(side="top", anchor="w", pady=(4, 2))   # same as WHAT YOU WANT: the two boxes line up
+        head = head_row(self)                                                    # same height as WHAT YOU WANT's row: the two boxes' tops line up
+        T.Text(head, "YOUR PICTURE", font=T.f(10)).pack(side="left", anchor="s")
+        self._head_btns = []
+        for text, fn in (("Save a copy…", lambda p: self.page.save_copy(p)), ("Open", _open_file)):   # Save at the top right, Open to its left
+            b = skin.file_button(T.Button(head, text, lambda fn=fn: self.current and fn(self.current)), height=30)
+            b.pack(side="right", padx=(6, 0)); self._head_btns.append(b)
         self.barea = T.ScrollArea(self); self.barea.pack(side="bottom", fill="x", pady=(6, 0)); self.btns = self.barea.inner; self._buttons()
         self.bind("<Configure>", lambda e: e.widget is self and self.winfo_viewable() and self.barea.set_height(self.winfo_height() * 0.4), add="+")
         self.strip = _frame(self); self.strip.pack(side="bottom", pady=(2, 0))
@@ -255,8 +266,7 @@ class Viewer(tk.Frame):
         self.cv.pack(side="top", fill="both", expand=True); self._style(); T.on_change(self._style)
     def _style(self): self.cv.configure(bg=T.PALETTE["field"], highlightbackground=T.PALETTE["border"]); self._draw()
     def _buttons(self):
-        rows = [[("Save a copy…", lambda p: self.page.save_copy(p)), ("Open", _open_file), ("Show in folder", lambda p: prefs.open_folder(os.path.dirname(p))),
-                 ("Delete", self._delete)],
+        rows = [[("Show in folder", lambda p: prefs.open_folder(os.path.dirname(p))), ("Delete", self._delete)],
                 [("Upscale 2x", lambda p: self.page.upscale_pic(p, 2)), ("Upscale 4x", lambda p: self.page.upscale_pic(p, 4)),
                  ("Vary a little", lambda p: self.page.vary(p, 0.3)), ("Vary a lot", lambda p: self.page.vary(p, 0.6))],
                 [("Edit with words", lambda p: send_to(self.page.app, "Prompt to Edit", p)), ("Fix a part", lambda p: send_to(self.page.app, "Inpainting", p)),
@@ -269,8 +279,9 @@ class Viewer(tk.Frame):
                 else: b = T.Button(r, text, lambda fn=fn: self.current and fn(self.current), kind="danger" if text == "Delete" else "normal")
                 if skin.file_kind(text): skin.file_button(b, height=36)                 # painted New / Open / Save button
                 self._bl.append(b)
-        for c in range(4): r.columnconfigure(c, weight=1)                         # 4 across; spare width shared out between the columns
-        for i, b in enumerate(self._bl): b.grid(row=i // 4, column=i % 4, padx=1, pady=2)
+        order = self._bl[2:] + self._bl[:2]                                         # 4 across: the edits first, Show in folder / Delete last
+        for c in range(4): r.columnconfigure(c, weight=1)                         # spare width shared out between the columns
+        for i, b in enumerate(order): b.grid(row=i // 4, column=i % 4, padx=1, pady=2)
     def _more(self, b):
         if not self.current: return
         class E: x_root = b.winfo_rootx(); y_root = b.winfo_rooty() + b.winfo_height()
@@ -354,7 +365,7 @@ class ImagePage(tk.Frame):
         st = _frame(self); st.pack(pady=(4, 2))
         self.status = T.Text(st, "", font=T.f(9)); self.status.pack(side="left", padx=(0, 10))
         self.dl_bar = T.ProgressBar(st, width=300)                               # a real bar while something downloads
-        self.get_btn = T.Button(st, "Download", self.download, width=12)
+        self.get_btn = T.Button(self if self.VIEWER else st, "Download", self.download, width=12)
         if self.SPLIT or self.VIEWER:
             split = _frame(self); split.pack(fill="both", expand=True, pady=(4, 0))
             if self.VIEWER:                                                          # two equal halves, whatever the window size
@@ -369,7 +380,9 @@ class ImagePage(tk.Frame):
         self.host = host
         if self.SPLIT: self.build_left(self.left)
         else: self.build_top(host)
-        self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
+        if self.VIEWER:
+            self._words_label = head_row(host); T.Text(self._words_label, self.WORDS, font=T.f(10)).pack(side="left", anchor="s")
+        else: self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
         self.prompt = T.Field(host, height=3, **({"width": 10} if self.VIEWER else {}))   # (beside the viewer it fills whatever height is left)
         self.prompt.pack(fill="both" if self.VIEWER else "x", expand=bool(self.VIEWER))
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
@@ -418,12 +431,14 @@ class ImagePage(tk.Frame):
         if self.IMPROVE:
             imp = _frame(ob); T.Text(imp, "FULLER DESCRIPTION", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(imp, self.improve).pack(side="left"); add(imp); self._imp_row = imp
         self._layout_opts()
-        b = ob if self.VIEWER else _frame(host)                                      # beside the viewer: Paint it / Stop sit in the settings grid
-        if not self.VIEWER: b.pack(pady=8, anchor="center")
+        b = _frame(host)
+        if self.VIEWER:                                                              # beside the viewer: above the settings box, Paint it centred in the left half, Stop in the right
+            self.gobar = b; b.columnconfigure(0, weight=1, uniform="go"); b.columnconfigure(1, weight=1, uniform="go")
+        else: b.pack(pady=8, anchor="center")
         self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14))
         jobs.guard(self.go_btn, self.page_key, app, "your picture")
         stop = T.Button(b, "Stop", self.stop, kind="danger", width=14); self.stop_btn = stop
-        if self.VIEWER: self._layout_opts()                                          # to the right of the seed row and the toggle, Stop under Paint it
+        if self.VIEWER: self.go_btn.grid(row=0, column=0); stop.grid(row=0, column=1)
         else:
             self.go_btn.pack(side="left", padx=(0, 6)); stop.configure(width=8); stop.pack(side="left", padx=6)
             skin.file_button(T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()))).pack(side="left", padx=6)
@@ -433,10 +448,10 @@ class ImagePage(tk.Frame):
         self.used = T.Text(mh, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
         self.used.pack(anchor="w" if self.VIEWER else "center")
         if self.VIEWER:                                                              # everything under the words box is placed first, from the bottom up,
-            for w in (self.optarea, self.used, self.msg, self.lo_row):               # so the words box only gets the height that's left and nothing is cut off;
+            for w in (self.optarea, self.gobar, self.used, self.msg, self.lo_row):   # so the words box only gets the height that's left and nothing is cut off;
                                                                                          # the settings box last, so its bottom lines up with the picture buttons' box
                 w.pack_configure(side="bottom", before=self._words_label)
-            self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=(8, 0))
+            self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=(6, 0)); self.gobar.pack_configure(fill="x", pady=(8, 0))
             host.bind("<Configure>", lambda e: e.widget is host and self.after(20, self._fit_left), add="+")
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
         self.results = _frame(self if not self.SPLIT else host)
@@ -452,7 +467,7 @@ class ImagePage(tk.Frame):
         for w, _ in self._opts: w.grid_forget()
         if self.VIEWER:
             # beside the viewer: two equal columns, everything on the left edge of its cell, the same at every window size.
-            # The settings fill the rows in order; then the seed row with Paint it beside it, and the toggle with Stop beside it.
+            # The settings fill the rows in order; the seed row and the fuller-description toggle share the last row.
             ob = self.optbox; ob.columnconfigure(0, weight=1, uniform="opt"); ob.columnconfigure(1, weight=1, uniform="opt")
             tail = [getattr(self, "_seed_row", None), getattr(self, "_imp_row", None)]
             i = 0
@@ -461,9 +476,8 @@ class ImagePage(tk.Frame):
                 if isinstance(w, T.Choice) and not getattr(w, "open_right", False): open_right(w)
                 w.grid(row=i // 2, column=i % 2, sticky="w", pady=3); i += 1
             r = -(-i // 2)
-            for k, (w, b) in enumerate(zip(tail, (getattr(self, "go_btn", None), getattr(self, "stop_btn", None)))):
-                if w is not None: w.grid(row=r + k, column=0, sticky="w", pady=3)
-                if b is not None: b.grid(row=r + k, column=1, sticky="w", pady=3)
+            for k, w in enumerate(tail):
+                if w is not None: w.grid(row=r, column=k, sticky="w", pady=3)
             return
         cols = 3; i = 0
         for w, span in self._opts:
@@ -541,8 +555,10 @@ class ImagePage(tk.Frame):
         self.status.configure(text=text)
         if self.job is not None and self.job.state == "waiting": self.msg.configure(text=jobs.where(self.job).upper())
         show = bool(need) and st["state"] != "downloading"
-        if show and not self.get_btn.winfo_manager(): self.get_btn.pack(side="left")
-        elif not show and self.get_btn.winfo_manager(): self.get_btn.pack_forget()
+        if show and not self.get_btn.winfo_manager():
+            if self.VIEWER: self.get_btn.place(x=0, y=0)                            # the top left corner of the page
+            else: self.get_btn.pack(side="left")
+        elif not show and self.get_btn.winfo_manager(): (self.get_btn.place_forget if self.VIEWER else self.get_btn.pack_forget)()
         self.after(800, self._tick)
 
     def download(self):
