@@ -51,24 +51,25 @@ class ListChoice(T.Choice):
         finally: m.grab_release()
 
 class _Pane:
-    """a scrolling column (no border of its own): widgets go in .inner, kept centred left-to-right; its scroll bar is .sb"""
+    """a scrolling column (no border of its own): widgets go in .inner, lined up on the left; its scroll bar is .sb"""
     def __init__(self, master):
         self.cv = tk.Canvas(master, bd=0, highlightthickness=0, width=10, height=10)
         self.sb = T.Scrollbar(master, "vertical", command=self.cv.yview); self.cv.configure(yscrollcommand=self.sb.set)
-        self.inner = tk.Frame(self.cv, bd=0, highlightthickness=0); self.win = self.cv.create_window(0, 0, window=self.inner, anchor="n")
+        self.inner = tk.Frame(self.cv, bd=0, highlightthickness=0); self.win = self.cv.create_window(0, 0, window=self.inner, anchor="nw")
         self.inner.bind("<Configure>", lambda e: self.fit(), add="+"); self.cv.bind("<Configure>", lambda e: self.fit(), add="+")
         T.wheel_area(self.cv, lambda n: self.sb.can_scroll() and self.cv.yview_scroll(n, "units"))
     def fit(self):
         try:
-            W, H = self.cv.winfo_width(), self.cv.winfo_height(); ih = self.inner.winfo_reqheight()
-            self.cv.coords(self.win, max(W, self.inner.winfo_reqwidth()) / 2, 0)
-            self.cv.configure(scrollregion=(0, 0, max(W, self.inner.winfo_reqwidth()), max(ih, H)))
+            m = max(6, int(round(10 * T.Z)))                                         # a gap all round: nothing touches the border
+            W, H = self.cv.winfo_width(), self.cv.winfo_height(); ih = self.inner.winfo_reqheight() + 2 * m
+            self.cv.coords(self.win, m, m)
+            self.cv.configure(scrollregion=(0, 0, max(W, self.inner.winfo_reqwidth() + 2 * m), max(ih, H)))
             if ih <= H: self.cv.yview_moveto(0)
         except tk.TclError: pass
 
 class OptionPanel(tk.Frame):
     """the settings box beside the viewer:
-        [ setting buttons, one under another, centred | scroll bar | that setting's choices, centred | scroll bar ]
+        [ setting buttons, one under another | scroll bar | that setting's choices | scroll bar ]   (both lined up on the left)
     with a border line either side of the middle scroll bar and left of the right one. Clicking a setting lists its choices on the
     right; clicking a choice picks it. Each side scrolls on its own when it has more than fits."""
     def __init__(self, master):
@@ -97,12 +98,12 @@ class OptionPanel(tk.Frame):
         self.current = choice; box = self.right.inner
         for w in box.winfo_children(): w.destroy()
         if choice is None:
-            T.Text(box, "Click a setting\non the left to see\nits choices here", muted=True, font=T.f(9)).pack(pady=8); return
-        T.Text(box, (choice.label or "Choices").upper(), font=T.f(9)).pack(pady=(6, 4))
+            T.Text(box, "Click a setting\non the left to see\nits choices here", muted=True, font=T.f(9)).pack(anchor="w"); return
+        T.Text(box, (choice.label or "Choices").upper(), font=T.f(9)).pack(anchor="w", pady=(0, 4))
         now = choice.var.get()
         for c in choice.choices:
             b = T.Button(box, ("● " if c == now else "") + str(c), lambda c=c: choice.var.set(c))
-            b.pack(pady=2, padx=6, fill="x")
+            b.pack(pady=2, anchor="w")
         self.right.cv.yview_moveto(0)
     def set_height(self, h):
         h = None if h is None else max(10, int(h))
@@ -112,7 +113,7 @@ class OptionPanel(tk.Frame):
     def _fit(self):
         self._job = None
         try:
-            ih = self.left.inner.winfo_reqheight() + 2
+            ih = self.left.inner.winfo_reqheight() + 2 * max(6, int(round(10 * T.Z)))
             want = ih if self.cap is None else min(ih, self.cap)
             for pn in (self.left, self.right):
                 if int(float(pn.cv.cget("height"))) != want: pn.cv.configure(height=want)
@@ -557,12 +558,12 @@ class ImagePage(tk.Frame):
         hidden = getattr(self, "_hidden_opts", set())
         for w, _ in self._opts: w.grid_forget()
         if self.VIEWER:
-            # one column, centred, scrolling down: the settings in order, then the seed row and the fuller-description toggle
+            # one column, lined up on the left, scrolling down: the settings in order, then the seed row and the fuller-description toggle
             tail = [w for w in (getattr(self, "_seed_row", None), getattr(self, "_imp_row", None)) if w is not None]
             i = 0
             for w in [w for w, _ in self._opts if w not in hidden and w not in tail] + tail:
                 if isinstance(w, T.Choice) and not getattr(w, "open_right", False): self.optarea.attach(w)
-                w.grid(row=i, column=0, pady=3, padx=6); i += 1
+                w.grid(row=i, column=0, pady=3, sticky="w"); i += 1
             if self.optarea.current in hidden: self.optarea.show(None)
             return
         cols = 3; i = 0
