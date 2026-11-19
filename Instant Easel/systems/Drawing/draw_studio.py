@@ -430,7 +430,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         # Options (layers + text) scrolls: its scroll bar on the right, a border line left of it, the contents in a scrolling canvas
         ov = self.lay_view; g = T.ScrollBox.GAP
         osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(g, 0), pady=g); T.Line(ov, vertical=True).pack(side="right", fill="y")
-        ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True)
+        ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True, padx=(0, g))   # a gap before the line
         LV = tk.Frame(ocv, bg=R["bg"]); owin = ocv.create_window(0, 0, window=LV, anchor="nw")
         osb.command = ocv.yview; ocv.configure(yscrollcommand=osb.set)
         def ofit(e=None):
@@ -1207,7 +1207,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if self._pv_job is None: self._pv_job = self.after(40, self._preview_now)
 
     def _fit_preview(self, pinned):
-        pw = max(80, pinned.winfo_width() - 6)
+        pw = max(80, int((pinned.winfo_width() - 6) * 0.62))                     # the brush picture smaller: more room for the brush list
         if abs(pw - self._pw) > 2: self._pw = pw; self._preview()
 
     def _preview_now(self):
