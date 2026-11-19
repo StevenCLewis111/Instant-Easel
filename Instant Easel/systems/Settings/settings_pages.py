@@ -74,8 +74,6 @@ class DisplayPage(SettingsPage):
     def build(self):
         self.choice("Window mode", "window_mode", ["Maximized", "Windowed", "Full screen"], "How the app opens. Windowed is the fixed-size window, centred.",
                     after=lambda: self.app.apply_window_mode())
-        self.choice("Title bar", "title_bar", ["Painted", "Windows"], "Painted: the app's own blue title bar with its painted buttons. "
-                    "Windows: the standard one (blue on Windows 11). Changes when the app next opens.")
         self.choice("Text size", "text_size", ["Small", "Normal", "Large"], "Applies the next time the app opens.")
         self.toggle("Show hints and tips", "show_hints", "The key hints along the bottom of pages. Applies the next time the app opens.")
         self.toggle("Startup splash screen", "show_splash")

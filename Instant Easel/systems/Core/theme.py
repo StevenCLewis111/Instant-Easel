@@ -457,7 +457,10 @@ class Scrollbar(tk.Canvas):
         return (self.hi - self.lo) < 0.999
     def _a(self): return max(10, int(round(16 * Z)))                                   # thickness, and the size of the arrow buttons
     def _total(self): return max(1, self.winfo_height() if self.vertical else self.winfo_width())
-    def _len(self): return max(1, self._total() - 2 * self._a())                       # the track between the arrows
+    def _end(self):
+        """how long each arrow button is along the bar: the painted arrows are shorter than the bar is thick"""
+        ap = _art(); return ap.scroll_arrow_len(self._a()) if ap is not None else self._a()
+    def _len(self): return max(1, self._total() - 2 * self._end())                     # the track between the arrows
     def _thumb(self):
         L = self._len(); frac = self.hi - self.lo; size = min(L, max(int(28 * Z), int(frac * L)))
         return ((L - size) * (self.lo / (1 - frac)) if frac < 0.9999 else 0), size
@@ -487,7 +490,7 @@ class Scrollbar(tk.Canvas):
         self._arrow(0, a, total); self._arrow(1, a, total)
     def _at(self, e): return e.y if self.vertical else e.x
     def _zone(self, e):
-        c = self._at(e); return 0 if c < self._a() else 1 if c > self._total() - self._a() else None
+        c = self._at(e); return 0 if c < self._end() else 1 if c > self._total() - self._end() else None
     def _warm(self, z):
         if z != self._hot: self._hot = z; self._draw()
     def _step(self, z):
@@ -497,13 +500,13 @@ class Scrollbar(tk.Canvas):
         if not self.can_scroll(): return                                         # everything fits: arrows, track and slider do nothing
         z = self._zone(e)
         if z is not None: self._step(z); self._rep = self.after(350, self._tick, z); return          # an arrow: step, and keep stepping while held
-        pos, size = self._thumb(); c = self._at(e) - self._a()
+        pos, size = self._thumb(); c = self._at(e) - self._end()
         if pos <= c <= pos + size: self._off = c - pos; self._draw()
         elif self.command: self.command("scroll", 1 if c > pos else -1, "pages")
     def _drag(self, e):
         if self._off is None or not self.command: return
         room = self._len() - self._thumb()[1]
-        if room > 0: self.command("moveto", min(1.0, max(0.0, (self._at(e) - self._a() - self._off) / room)) * (1 - (self.hi - self.lo)))
+        if room > 0: self.command("moveto", min(1.0, max(0.0, (self._at(e) - self._end() - self._off) / room)) * (1 - (self.hi - self.lo)))
     def _release(self, e):
         if self._rep: self.after_cancel(self._rep); self._rep = None
         self._off = None; self._draw()

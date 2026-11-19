@@ -14,7 +14,6 @@ import paths
 from PIL import Image, ImageTk
 import theme as T
 import features, draw_studio, prefs, settings_pages as SP
-import titlebar
 import crash, skin, ui_art as UA
 
 APP_NAME = "Instant Easel"
@@ -188,9 +187,6 @@ class InstantEasel(tk.Tk):
         sys.excepthook = prefs.log_error; self.report_callback_exception = self._on_error
         T.SCALE = prefs.size("text_size"); T.init_fonts(self); self.title(APP_NAME)
         self._mode = "fixed"; self._guard_until = 0.0; self._was_iconic = False; self._sub_hwnd = None; self._wndproc_ptr = None; self._orig_wndproc = None
-        self._painted = titlebar.enabled(); self.titlebar = None                    # the app's own blue title bar (titlebar.py) instead of Windows'
-        if self._painted: titlebar.frameless(self)
-        titlebar.colour_popups(self)                                                   # pop-up windows: the blue title bar (Windows 11)
         self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<F11>", lambda e: self.set_fullscreen(self._mode != "fullscreen"))
         self.bind("<Escape>", lambda e: self._mode == "fullscreen" and self._to_maximized())           # Esc: full screen -> maximized (title bar back)
         self.bind("<Map>", self._on_map, add="+"); self.bind("<Unmap>", self._on_unmap, add="+"); self.bind("<Configure>", self._on_root_configure, add="+")
@@ -206,9 +202,7 @@ class InstantEasel(tk.Tk):
         self.configure(bg=T.PALETTE["bg"]); T.on_change(lambda: self.configure(bg=T.PALETTE["bg"]))
         # zoom layout: the app is designed at DESIGN size; the window can be any size and everything (text, buttons, spacing) scales with it
         self.view_cv = tk.Canvas(self, highlightthickness=0, bg=T.PALETTE["bg"], bd=0)
-        vr = 1 if self._painted else 0
-        if self._painted: self.titlebar = titlebar.TitleBar(self); self.titlebar.grid(row=0, column=0, sticky="ew")
-        self.view_cv.grid(row=vr, column=0, sticky="nsew"); self.rowconfigure(vr, weight=1); self.columnconfigure(0, weight=1)
+        self.view_cv.grid(row=0, column=0, sticky="nsew"); self.rowconfigure(0, weight=1); self.columnconfigure(0, weight=1)
         self.content = tk.Frame(self.view_cv, bg=T.PALETTE["bg"]); self.content.pack_propagate(False)
         self._cwin = self.view_cv.create_window((0, 0), window=self.content, anchor="center"); self._zoom_job = None  # DESIGN x zoom, centred by _layout_view
         T.on_change(lambda: (self.view_cv.configure(bg=T.PALETTE["bg"]), self.content.configure(bg=T.PALETTE["bg"])))
@@ -440,8 +434,7 @@ class InstantEasel(tk.Tk):
 
     def _fixed_geo(self):
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight(); w, h = fixed_window_size(sw, sh)
-        th = titlebar.BAR_H if self._painted else 0                                 # the painted title bar sits inside the window, above the app
-        return w, h, f"{w}x{h + th}+{max(0, (sw - w) // 2)}+{max(0, (sh - h - th) // 2)}"   # centred the same way Retro TV places its window
+        return w, h, f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2)}"   # centred the same way Retro TV places its window
 
     def _start_zoom(self):
         """zoom for the size the window is about to open at, set before any widget is built (_rezoom corrects it if it opens differently)"""
@@ -479,8 +472,6 @@ class InstantEasel(tk.Tk):
     def _to_fixed(self):
         """the windowed size: exact, centred, nothing remembered or adjusted"""
         self._guard(); self._mode = "fixed"
-        if self._painted:
-            self._bar(True); _, _, geo = self._fixed_geo(); self.geometry(geo); self.update_idletasks(); return
         if self.attributes("-fullscreen"): self.attributes("-fullscreen", False)
         try:
             if self.state() in ("zoomed", "iconic"): self.state("normal")
@@ -490,17 +481,8 @@ class InstantEasel(tk.Tk):
         _, _, geo = self._fixed_geo(); self.geometry(geo); self.update_idletasks()
         self._win_prep(); self.geometry(geo)                                              # again after the frame style changed, so the inside is exact
 
-    def _bar(self, on):
-        """the painted title bar shown (windowed, maximized) or hidden (full screen), with the right button pictures"""
-        if self.titlebar is None: return
-        if on and not self.titlebar.winfo_manager(): self.titlebar.grid(row=0, column=0, sticky="ew")
-        if not on and self.titlebar.winfo_manager(): self.titlebar.grid_remove()
-        self.titlebar.refresh()
-
     def _to_maximized(self):
         self._guard(); self._mode = "maximized"
-        if self._painted:                                                       # no Windows frame: fill the screen above the taskbar ourselves
-            x, y, w, h = titlebar.work_area(self); self._bar(True); self.geometry(f"{w}x{h}+{x}+{y}"); return
         if self.attributes("-fullscreen"): self.attributes("-fullscreen", False)
         try: self.state("zoomed")
         except tk.TclError: self.attributes("-zoomed", True)
@@ -523,8 +505,6 @@ class InstantEasel(tk.Tk):
 
     def _to_fullscreen(self):
         self._guard(); self._mode = "fullscreen"
-        if self._painted:
-            self._bar(False); self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0"); self.lift(); return
         self.attributes("-fullscreen", True)
         self.after_idle(self._win_prep)
 
@@ -546,7 +526,6 @@ class InstantEasel(tk.Tk):
         if first: self._hide()
         if first and prefs.get("window_mode") != "Windowed":                     # while still hidden: lay out once at the windowed size, so the
             self.deiconify(); self._to_fixed(); self._settle(0.8); self._size_mascots()   # header's guy and girl get their windowed size and
-        if first and self._painted: self.deiconify(); titlebar.keep_on_taskbar(self)   # (still see-through) taskbar button for the frameless window
         self.deiconify(); self.apply_window_mode(); self.after(50, self._win_prep)       # place to keep (scaled) when maximized or full screen
         if first:
             self._settle(); self.warm_up(); self._ready = True
@@ -562,8 +541,6 @@ class InstantEasel(tk.Tk):
 
     def _on_map(self, e):
         if e.widget is not self: return
-        if self._painted and not self.overrideredirect(): self.overrideredirect(True)    # (other systems give it its frame while it's down)
-        if not self._painted: titlebar.colour_windows_bar(self)                          # Windows' own title bar in the buttons' blue (Windows 11)
         self._win_prep()
         if self._was_iconic:                                                              # back from the taskbar: the fixed window, centred
             self._was_iconic = False
@@ -571,7 +548,7 @@ class InstantEasel(tk.Tk):
 
     def _on_root_configure(self, e):
         """catches mode changes that skip the title-bar buttons (Win+Up / Win+Down, double-click on the title, other systems)"""
-        if e.widget is not self or time.monotonic() < self._guard_until or self._painted: return   # (painted bar: its own buttons say what happened)
+        if e.widget is not self or time.monotonic() < self._guard_until: return
         try: st = self.state()
         except tk.TclError: return
         if st == "iconic" or self.attributes("-fullscreen"): return

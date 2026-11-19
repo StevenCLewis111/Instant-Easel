@@ -149,16 +149,22 @@ def slider_image(W, H, v, K=None):
         _pil[key] = out
     return _pil[key]
 
+def scroll_arrow_len(a):
+    """how long each painted arrow button is along the bar (a = the bar's thickness): the thumb moves between the two"""
+    up = src("scroll_up"); return max(4, round(up.height * a / up.width))
+
 def scrollbar_image(a, total, pos, size, hot, active, vertical=True):
-    """the painted scroll bar: arrow button at each end, the dark track between, the glossy thumb (pos, size along the track)"""
+    """the painted scroll bar: arrow button at each end, the dark track between, the glossy thumb (pos, size along the track,
+    measured from the bottom of the top arrow)"""
     key = ("sb", a, total, int(pos), int(size), hot, active, vertical)
     if key in _pil: return _pil[key]
-    out = Image.new("RGBA", (a, total)); up, dn = src("scroll_up"), src("scroll_down"); bh = max(4, round(up.height * a / up.width))
+    out = Image.new("RGBA", (a, total)); up, dn = src("scroll_up"), src("scroll_down"); bh = scroll_arrow_len(a)
     tw = max(4, round(a * 0.6)); tx = (a - tw) // 2; t0, t1 = max(0, bh - 3), max(bh, total - bh + 3)
     if t1 - t0 > 6: out.alpha_composite(vbar("scroll_track", tw, t1 - t0, 0.5), (tx, t0))
     if size > 4:
-        th_w = max(3, round(tw * 0.74)); th = vbar("scroll_thumb", th_w, max(6, int(size)), 0.5)
-        out.alpha_composite(shade(th, 1.18) if active else th, ((a - th_w) // 2, int(a + pos)))
+        th_w = max(3, tw - 2 * max(1, round(tw * 0.13)))                # narrower than the track by the same amount each side,
+        th = vbar("scroll_thumb", th_w, max(6, int(size)), 0.5)         # so it sits exactly in the middle of it
+        out.alpha_composite(shade(th, 1.18) if active else th, (tx + (tw - th_w) // 2, int(bh + pos)))
     for end, im in ((0, up), (1, dn)):
         b = im.resize((a, bh), Image.LANCZOS); b = shade(b, 1.2) if hot == end else b
         out.alpha_composite(b, (0, 0 if end == 0 else total - bh))
