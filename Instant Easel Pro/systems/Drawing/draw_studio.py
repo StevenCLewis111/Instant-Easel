@@ -12,13 +12,16 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import theme as T, brushes, prefs, brush_catalog as BC, ui_art as UA, art_panel as AP, skin
 from paint_window import GROUPS, WHOLE_STROKE
+from studio_extras import StudioExtras, SEL_TOOLS
 
 import paths; HERE = paths.APP                                    # (fonts/)
 MODES = ["normal", "multiply", "screen", "overlay"]
 TOOLS = [("Brush", "brush", "b"), ("Eraser", "eraser", "e"), ("Pick", "pick", "i"), ("Fill", "fill", "g"),
-         ("Line", "line", "l"), ("Rect", "rect", None), ("Oval", "oval", None), ("Text", "text", "t")]
+         ("Line", "line", "l"), ("Rect", "rect", None), ("Oval", "oval", None), ("Text", "text", "t"),
+         ("Select", "sel_rect", "m"), ("Select oval", "sel_oval", None), ("Crop", "crop", "c")]
 
-TOOL_ICONS = {"brush": "brush", "eraser": "eraser", "pick": "eyedropper", "fill": "paint bucket", "line": "line", "rect": "rect", "oval": "oval", "text": "text"}
+TOOL_ICONS = {"brush": "brush", "eraser": "eraser", "pick": "eyedropper", "fill": "paint bucket", "line": "line", "rect": "rect", "oval": "oval", "text": "text",
+              "sel_rect": "select rect", "sel_oval": "select oval", "crop": "crop"}
 BASIC_COLORS = [(230, 30, 40), (250, 130, 20), (250, 220, 30), (40, 200, 60), (30, 210, 230), (40, 90, 230), (150, 60, 220), (240, 60, 200)]
 PALETTES = {"Warm": [(120, 30, 20), (200, 70, 30), (240, 140, 50), (250, 200, 90)], "Cool": [(20, 40, 90), (40, 100, 180), (80, 170, 220), (170, 230, 240)],
             "Pastel": [(250, 190, 200), (250, 230, 170), (190, 230, 200), (190, 200, 250)], "Earth": [(70, 50, 30), (130, 90, 50), (150, 140, 80), (200, 180, 140)]}
@@ -47,11 +50,12 @@ def blend_layer(bg, layer, sl=(slice(None), slice(None))):
     else: c = L
     return bg * (1 - a) + c * a
 
-class DrawStudio(tk.Frame):
+class DrawStudio(StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
         self.color = (196, 92, 44); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.opacity = 0.5   # brushes start half see-through
+        self._x_init()                                                              # select / crop / text state (studio_extras)
         self.mirror = tk.BooleanVar(value=False); self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
         self.mirror_y = tk.BooleanVar(value=False); self.use_pressure = tk.BooleanVar(value=False)                      # Brush Options switches
         self.color_mode = tk.StringVar(value="Normal"); self.blend_mode = tk.StringVar(value="Brush default"); self._hue = 0.0
@@ -154,7 +158,9 @@ class DrawStudio(tk.Frame):
         cv.bind("<Enter>", lambda e: cv.focus_set())
         for ev in ("<Motion>", "<B1-Motion>", "<Enter>"): cv.bind(ev, lambda e: self._tip_move(e), add="+")   # the brush tip follows the mouse
         cv.bind("<Leave>", lambda e: self._tip_hide(e.widget), add="+")
-        cv.bind("<Escape>", lambda e: (self.toggle_big(), "break")[1] if self._big else None)
+        cv.bind("<Escape>", lambda e: self.x_key(e) or ((self.toggle_big(), "break")[1] if self._big else None))
+        for k in ("<Delete>", "<BackSpace>", "<Return>", "<Control-a>", "<Control-c>", "<Control-x>", "<Control-v>"): cv.bind(k, lambda e: self.x_key(e))
+        cv.bind("<Double-Button-1>", lambda e: (self.tool == "crop" and self._crop is not None and self._crop_hit(self.to_img(e)) == "in" and self._crop_apply()) or None)
         for key, fn in (("<Control-z>", lambda e: (self.undo(), "break")[1]), ("<Control-y>", lambda e: (self.redo(), "break")[1]), ("<bracketleft>", lambda e: self.set_size(self.size / 1.2)),
                         ("<bracketright>", lambda e: self.set_size(self.size * 1.2))):
             cv.bind(key, fn)
@@ -360,6 +366,7 @@ class DrawStudio(tk.Frame):
         self.lop_row = self._slider_row(R, "Opacity:", 1.0, lambda v: self._set_layer(opacity=v), "100%"); self.lop_s = self.lop_row.slider
         self.lop_row.entry.bind("<Return>", lambda e: self._typed(self.lop_row, lambda x: (self._sync_slider(self.lop_row, x / 100), self._set_layer(opacity=min(1, max(0, x / 100))))))
         self.lop_lbl = types.SimpleNamespace(configure=lambda text: self.lop_row.var.set(text))
+        self._text_panel(R)
         # ---- colour: its parts spread evenly down the rest of the panel and centred; the spacing shrinks first when there's less room
         col = tk.Frame(R, bg=R["bg"]); col.pack(fill="both", expand=True, pady=(6, 0)); T.on_change(lambda: col.configure(bg=R["bg"]))
         def part():
@@ -458,6 +465,7 @@ class DrawStudio(tk.Frame):
         self.lop_row = types.SimpleNamespace(slider=sl, var=var, entry=box.entry); self.lop_s = sl
         box.entry.bind("<Return>", lambda e: self._typed(self.lop_row, lambda x: (self._sync_slider(self.lop_row, x / 100), self._set_layer(opacity=min(1, max(0, x / 100))))))
         self.lop_lbl = types.SimpleNamespace(configure=lambda text: var.set(text))
+        self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
         # ---- COLOR header
         def header(word, H, arrow=None):
             def render(b):
@@ -763,14 +771,17 @@ class DrawStudio(tk.Frame):
         if self.mirror.get(): self.cv.create_line(ox + w * z / 2, oy, ox + w * z / 2, oy + h * z, fill=T.PALETTE["border"], dash=(4, 4))
         if self.mirror_y.get(): self.cv.create_line(ox, oy + h * z / 2, ox + w * z, oy + h * z / 2, fill=T.PALETTE["border"], dash=(4, 4))
         self._tip_redraw()
+        if getattr(self, "_x_ready", False): self._x_overlay()                  # selection ants, crop box, text box
 
     # ------------------------------------------------------------------ tools
     def set_tool(self, t):
+        if hasattr(self, "tool"): self._x_leaving(t)                             # finish a selection / crop / text first
         self.tool = t
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
-        self.cv.configure(cursor="none" if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm"}.get(t, "crosshair"))
+        self.cv.configure(cursor="none" if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
+                                                                           "sel_oval": "tcross", "crop": "sizing"}.get(t, "crosshair"))
         self._tip_redraw()
 
     # ------------------------------------------------------------------ the brush tip under the mouse
@@ -853,7 +864,7 @@ class DrawStudio(tk.Frame):
 
     def _fit_layer_rows(self):
         """the layer list's box is half the Layers view tall; it shows as many rows as fit, the rest scroll"""
-        try: H = max(self._apx(80), self.lay_view.winfo_height() // 2)
+        try: H = max(self._apx(70), self.lay_view.winfo_height() // 4)
         except tk.TclError: return
         if abs(self._lay_frame.winfo_height() - H) > 2: self._lay_frame.configure(height=H)
         n = max(2, (H - self._apx(10)) // max(1, self._apx(26) + 2))
@@ -1038,6 +1049,7 @@ class DrawStudio(tk.Frame):
 
     def _swap(self, src, dst):
         if not src: return
+        if src[-1][0] == "whole": return self._swap_whole(src, dst)              # a crop
         i, y0, y1, x0, x1, a, al = src.pop()
         if i >= len(self.layers): return
         L = self.layers[i]; sl = (slice(y0, y1), slice(x0, x1))
@@ -1087,16 +1099,12 @@ class DrawStudio(tk.Frame):
             self._begin_edit(); self._fill(p); r = self._commit_edit()
             if r: self._recomp(r); self._draw()
             return
-        if t == "text":
-            s = simpledialog.askstring("Text", "Text to place:", parent=self)
-            if s:
-                self._begin_edit(); self._text(p, s); r = self._commit_edit()
-                if r: self._recomp(r); self._draw()
-            return
+        if t == "text" or t in SEL_TOOLS or t == "crop": return self.x_down(e, p)     # text box, selection, crop (studio_extras)
         self._begin_edit(); self.points = [p]; self._pending = []; self._last_pt = p
         if self._live(): self._paint([p, p]); self._show_change(self._bbox([p]))
 
     def drag(self, e):
+        if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_drag(e, self.to_img(e))
         if self._edit is None and self.tool not in ("line", "rect", "oval"): return     # press happened somewhere else
         p = self.to_img(e); t = self.tool
         if t in ("pick", "fill", "text"): return
@@ -1119,6 +1127,7 @@ class DrawStudio(tk.Frame):
         self._paint(pts); self._show_change(self._bbox(pts))
 
     def up(self, e):
+        if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_up(e, self.to_img(e))
         if self._tick_job is not None: self.after_cancel(self._tick_job); self._tick_job = None
         self._tick()
         p = self.to_img(e); t = self.tool
