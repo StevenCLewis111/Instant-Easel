@@ -470,7 +470,24 @@ class InstantEasel(tk.Tk):
     # ---- the three modes
     def _guard(self, ms=500): self._guard_until = time.monotonic() + ms / 1000      # ignore the window's own echo of a change we just made
 
-    def _to_fixed(self):
+    def _transition(self, change):
+        """a window mode change without the "window drops, then the UI catches up" look: the window goes see-through, changes size,
+        the UI is re-laid out and zoomed for the new size while nobody can see it, then it fades back in finished"""
+        if not getattr(self, "_ready", False) or getattr(self, "_in_transition", False): return change()   # (start-up has its own hiding)
+        self._in_transition = True
+        try:
+            self._hide(); self.update_idletasks()
+            change(); self._settle(0.9)
+            if self._zoom_job: self.after_cancel(self._zoom_job); self._zoom_job = None
+            self._rezoom(); self.update_idletasks()
+        finally:
+            self._in_transition = False; self._unhide(steps=4)
+
+    def _to_fixed(self): self._transition(self._do_fixed)
+    def _to_maximized(self): self._transition(self._do_maximized)
+    def _to_fullscreen(self): self._transition(self._do_fullscreen)
+
+    def _do_fixed(self):
         """the windowed size: exact, centred, nothing remembered or adjusted"""
         self._guard(); self._mode = "fixed"
         if self.attributes("-fullscreen"): self.attributes("-fullscreen", False)
@@ -482,12 +499,12 @@ class InstantEasel(tk.Tk):
         _, _, geo = self._fixed_geo(); self.geometry(geo); self.update_idletasks()
         self._win_prep(); self.geometry(geo)                                              # again after the frame style changed, so the inside is exact
 
-    def _to_maximized(self):
+    def _do_maximized(self):
         self._guard(); self._mode = "maximized"
         if self.attributes("-fullscreen"): self.attributes("-fullscreen", False)
         try: self.state("zoomed")
         except tk.TclError: self.attributes("-zoomed", True)
-        self.after_idle(self._after_maximize)
+        self.update_idletasks(); self._after_maximize()
 
     def _after_maximize(self):
         """keep the title bar (- [][] X), no drag-resize edge, and make sure it really covers the work area"""
@@ -504,10 +521,10 @@ class InstantEasel(tk.Tk):
                         u.SetWindowPos(ctypes.c_void_p(hwnd), None, wa.l, wa.t, ww, wh, 0x0004 | 0x0020 | 0x0040)
             except Exception: pass
 
-    def _to_fullscreen(self):
+    def _do_fullscreen(self):
         self._guard(); self._mode = "fullscreen"
         self.attributes("-fullscreen", True)
-        self.after_idle(self._win_prep)
+        self.update_idletasks(); self._win_prep()
 
     def set_fullscreen(self, on):
         self._to_fullscreen() if on else self._to_maximized()                    # leaving full screen lands on maximized, like Esc
@@ -597,8 +614,8 @@ class InstantEasel(tk.Tk):
                         self.q.put(self._to_fixed); return 0
                     if cmd == 0xF120 and self._mode == "maximized" and not u.IsIconic(hw):    # [][] while maximized: full screen
                         self.q.put(self._to_fullscreen); return 0
-                    if cmd == 0xF030 and self._mode == "fixed":                               # []: maximize (Windows does it, we tidy up after)
-                        self._mode = "maximized"; self._guard_until = time.monotonic() + 0.5; self.q.put(self._after_maximize)
+                    if cmd == 0xF030 and self._mode == "fixed":                               # []: maximize, done our way (hidden while it re-lays out)
+                        self.q.put(self._to_maximized); return 0
             except Exception: pass
             return u.CallWindowProcW(orig["p"], hw, msg, wp, lp)
         ptr = WNDPROC(proc)

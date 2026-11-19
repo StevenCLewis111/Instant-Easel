@@ -939,7 +939,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         if o["spacing"] is not None: b["spacing"] = max(0.01, o["spacing"] / 100)
         if o["hardness"] is not None: b["tipargs"]["hard"] = min(0.98, o["hardness"] / 100)
         if o["rotation"] is not None: b["jitter_angle"] = math.radians(o["rotation"])
-        if o["angle"] is not None: b["tipargs"]["angle"] = math.radians(o["angle"])
+        if o["angle"] is not None:                                                # an angle you set is kept exactly: the tip no longer turns with the stroke
+            b["tipargs"]["angle"] = math.radians(o["angle"]); b["angle_follow"] = False
         if self.blend_mode.get() != "Brush default" and b["mode"] != "erase": b["mode"] = self.blend_mode.get().lower()
         if self.color_mode.get() == "Color Jitter": b["color_jitter"] = max(b["color_jitter"], 0.18)
         return b

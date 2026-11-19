@@ -170,12 +170,13 @@ class Canvas:
             vx, vy = state.get("dir", (None, None)); dist = state.get("dist", 0.0); sm = []
             for j, (x, y, p, ang) in enumerate(out):
                 cx, cy = math.cos(ang), math.sin(ang)
-                if vx is None: vx, vy = cx, cy
+                if j: dist += math.hypot(x - out[j - 1][0], y - out[j - 1][1])
+                if dist < size * 0.5: vx, vy = 1.0, 0.0                          # a click or the first bit of a stroke: always the same way round
+                elif vx is None: vx, vy = cx, cy
                 else:
                     if cx * vx + cy * vy < 0: cx, cy = -cx, -cy                  # a flat tip looks the same turned half way round
                     k = min(1.0, step / max(size * 1.2, 1.0)); vx, vy = vx + (cx - vx) * k, vy + (cy - vy) * k
                     n_ = math.hypot(vx, vy) or 1.0; vx, vy = vx / n_, vy / n_
-                if j: dist += math.hypot(x - out[j - 1][0], y - out[j - 1][1])
                 sm.append((x, y, p, math.atan2(vy, vx), dist))
             if out: state["dir"] = (vx, vy); state["dist"] = dist + (math.hypot(pts[-1][0] - out[-1][0], pts[-1][1] - out[-1][1]) if len(pts) > 1 else 0)
             out = [q[:4] for q in sm]; travel = [q[4] for q in sm]
