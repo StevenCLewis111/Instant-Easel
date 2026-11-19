@@ -32,3 +32,8 @@ my-models/
 memory/
 EXE Build/my-models/
 EXE Build/memory/
+
+# this PC's hardware check (Settings > AI Models): every PC makes its own
+.json/pc_scan.json
+EXE Build/.json/pc_scan.json
+/recovery/

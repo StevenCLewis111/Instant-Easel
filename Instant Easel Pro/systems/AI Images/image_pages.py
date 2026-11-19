@@ -11,10 +11,12 @@ the same picture again, so you can change one thing at a time; every result show
 saved inside each PNG. Each page remembers its last settings.
 
 Every picture is saved into your Images folder the moment it's made, so any tab can pick it up from there.
+Paint it puts the picture in the app's line of AI jobs (jobs.py): it waits its turn if another tab is using the AI, and the button is
+greyed out until it's done.
 """
 import os, threading, tkinter as tk
 from tkinter import filedialog
-import theme as T, prefs, skin
+import theme as T, prefs, skin, jobs
 
 QUALITY = {"Fast (12 steps)": 12, "Normal (20 steps)": 20, "Best (30 steps)": 30}
 CHANGE = {"A little": 0.35, "Some": 0.55, "A lot": 0.75}
@@ -77,7 +79,7 @@ class PaintPage(tk.Frame):
     def __init__(self, master, app):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
         import imaging, image_models as IM; self.imaging = imaging; self.IM = IM
-        self.thread = None; self.stop_event = threading.Event(); self.start_image = None; self._ph = []
+        self.job = None; self.stop_event = threading.Event(); self.start_image = None; self._ph = []; self.page_key = "AI Images/" + self.TITLE
         mem = prefs.get(f"image_page:{self.TITLE}") or {}; self._mem = mem
         def var(key, default):
             v = tk.StringVar(value=mem.get(key, default)); return v
@@ -108,7 +110,9 @@ class PaintPage(tk.Frame):
         self.leave_out = var("leave_out", self.imaging.NEGATIVE); T.Entry(lo, self.leave_out, width=70).pack(side="left", fill="x", expand=True)
         opts = _frame(host); opts.pack(pady=(8, 0))
         if not self.SOURCE:
-            self.size = var("size", list(self.imaging.SIZES)[0]); T.Choice(opts, "size", list(self.imaging.SIZES), self.size).pack(side="left", padx=4)
+            self.size = var("size", list(self.imaging.SIZES)[0])
+            if self.size.get() not in self.imaging.SIZES: self.size.set(self.size.get().split()[0] if self.size.get().split()[0] in self.imaging.SIZES else "Square")
+            T.Choice(opts, "size", list(self.imaging.SIZES), self.size).pack(side="left", padx=4)
         self.count = var("count", "1")
         if not self.MASK: T.Choice(opts, "how many", ["1", "2", "4"], self.count).pack(side="left", padx=4)     # Inpainting: one at a time, into the pad
         else: self.count.set("1")
@@ -133,6 +137,7 @@ class PaintPage(tk.Frame):
             T.Text(r2, "Let the core text model improve my words", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Toggle(r2, self.improve).pack(side="left")
         b = _frame(host); b.pack(pady=8)
         self.go_btn = skin.button(T.Button(b, "Paint it", self.go, width=14)); self.go_btn.pack(side="left", padx=6)
+        jobs.guard(self.go_btn, self.page_key, app, "your picture")
         T.Button(b, "Stop", self.stop, kind="danger", width=8).pack(side="left", padx=6)
         if not self.MASK: T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()), width=22).pack(side="left", padx=6)
         self.msg = T.Text(host, "", muted=True); self.msg.pack()
@@ -148,7 +153,11 @@ class PaintPage(tk.Frame):
     def _tick(self):
         if not self.winfo_exists(): return
         st = self.imaging.status(); pct = f" {st['progress'] * 100:.0f}%" if st["state"] in ("downloading", "painting") and st.get("progress") else ""
-        self.status.configure(text=f"{(st['detail'] or st['state'] or '').upper()}{pct}")
+        text = f"{(st['detail'] or st['state'] or '').upper()}{pct}"
+        if st["state"] == "ready" and not self.SOURCE:
+            w, h = self.imaging.pixels(self.size.get()); text += f"   {w} x {h}"
+        self.status.configure(text=text)
+        if self.job is not None and self.job.state == "waiting": self.msg.configure(text=jobs.where(self.job).upper())
         show = st["state"] in ("not-installed", "error")
         if show and not self.get_btn.winfo_manager(): self.get_btn.pack(side="left")
         elif not show and self.get_btn.winfo_manager(): self.get_btn.pack_forget()
@@ -198,7 +207,7 @@ class PaintPage(tk.Frame):
         prefs.set(f"image_page:{self.TITLE}", keep)
 
     def go(self):
-        if self.thread is not None and self.thread.is_alive(): return
+        if jobs.busy(self.page_key): return
         text = self.prompt.get("1.0", "end").strip()
         if not text and not self.SOURCE: return T.banner(self.app, "TYPE WHAT YOU WANT FIRST")
         if not text and self.SOURCE == "picture" and not self.MASK: return T.banner(self.app, "SAY WHAT TO CHANGE FIRST")
@@ -224,18 +233,23 @@ class PaintPage(tk.Frame):
             soft = grown.filter(ImageFilter.GaussianBlur(edge))                                     # feathered edge for putting it back
             kw.update(mask=grown, finish=lambda pic: Image.composite(pic.convert("RGB").resize(orig.size, Image.LANCZOS), orig, soft))
             if not text: words = REMOVE_WORDS; kw["negative"] = (negative + ", " if negative else "") + "person, object, text, logo"
-        self.msg.configure(text="GETTING READY…")
-        def work():
-            try:
-                wording = self._wording(words)
-                q.put(lambda: self.used.configure(text=f"PAINTING FROM: {wording}"))
-                saved = self.imaging.paint(wording, on_progress=lambda f, t: q.put(lambda t=t: self.msg.configure(text=t.upper())), **kw)
-                q.put(lambda: self._show(saved))
-            except Exception as e:
-                prefs.log_error(type(e), e, e.__traceback__); q.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"COULDN'T PAINT — {e}")))
-        self.thread = threading.Thread(target=work, name="paint", daemon=True); self.thread.start()
+        if model and self.imaging.kind() == "zimage":
+            T.banner(self.app, f"{model.upper()} IS MADE FOR STABLE DIFFUSION 1.5 — Z-Image Turbo paints without it (choose Stable Diffusion 1.5 in Settings > AI Models to use it)", "busy")
+        def work(job):
+            def progress(f, t): job.say(t); q.put(lambda t=t: self.msg.configure(text=t.upper()))
+            if not self.SOURCE and self.improve.get(): progress(0, "Improving your words with the text model…")
+            wording = self._wording(words)
+            q.put(lambda: self.used.configure(text=f"PAINTING FROM: {wording}"))
+            progress(0, "Painting…"); return self.imaging.paint(wording, on_progress=progress, **kw)
+        def failed(e): q.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"COULDN'T PAINT — {e}")))
+        self.job = jobs.submit("AI Images", f"{self.TITLE}: {(text or words)[:40]}", work, kind="image", page=self.page_key, engine="image",
+                               on_done=lambda saved: q.put(lambda: self._show(saved)), on_error=failed, on_cancel=self._stop_now)
+        self.msg.configure(text="GETTING READY…" if self.job.place() <= 1 and not jobs.running() else jobs.where(self.job).upper())
 
-    def stop(self): self.stop_event.set(); self.imaging.stop_now()
+    def _stop_now(self): self.stop_event.set(); self.imaging.stop_now()
+    def stop(self):
+        if self.job is not None and self.job.state in ("waiting", "running"):
+            jobs.cancel(self.job); self.msg.configure(text="STOPPED")
 
     def _show(self, saved):
         from PIL import Image, ImageTk
@@ -257,8 +271,9 @@ class PaintPage(tk.Frame):
                 T.Text(row, f"SEED {seed}", font=T.f(8), muted=True).pack(side="left", padx=(0, 6))
                 T.Button(row, "Use this seed", lambda s=seed: (self.seed.set(s), T.banner(self.app, f"SEED {s} SET — change the words a little and paint again", "success")),
                          width=12).pack(side="left")
-        self.msg.configure(text=f"DONE — {len(saved)} SAVED TO YOUR IMAGES FOLDER" if saved else "STOPPED")
-        if saved: T.banner(self.app, f"PAINTED — {len(saved)} saved to your Images folder", "success")
+        note = self.imaging.last.get("note") or ""
+        self.msg.configure(text=(f"DONE — {len(saved)} SAVED TO YOUR IMAGES FOLDER" + (f" ({note.upper()})" if note else "")) if saved else "STOPPED")
+        if saved: T.banner(self.app, f"PAINTED — {len(saved)} saved to your Images folder" + (f" ({note})" if note else ""), "success")
 
 class FromPicturePage(PaintPage):
     TITLE = "Image to Image"; SOURCE = "picture"; WORDS = "WHAT TO CHANGE"

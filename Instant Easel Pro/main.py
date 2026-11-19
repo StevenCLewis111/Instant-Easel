@@ -218,7 +218,8 @@ class InstantEasel(tk.Tk):
         T.on_change(lambda: (self.view_cv.configure(bg=T.PALETTE["bg"]), self.content.configure(bg=T.PALETTE["bg"])))
         self.view_cv.bind("<Configure>", self._on_window_size)
         self.frame = T.Panel(self.content, pad=16); self.frame.pack(fill="both", expand=True, padx=EDGE, pady=EDGE); self.frame.configure(pady=0)   # the same gap on all four sides   # the title sits right under the top border
-        names = [m for m, _, _ in features.MENUS]
+        self.menus = features.visible_menus()                                    # tabs this PC can't use (AI Videos on a small card) are left out
+        names = [m for m, _, _ in self.menus]
         top = tk.Frame(self.frame, bg=self.frame["bg"]); top.pack(fill="x", pady=(0, 10)); self.top = top    # guy | logo over tabs | girl
         T.on_change(lambda: top.configure(bg=self.frame["bg"]))
         top.columnconfigure(0, weight=1); top.columnconfigure(2, weight=1)
@@ -259,13 +260,23 @@ class InstantEasel(tk.Tk):
         self.edit = dict(original=None, proxy=None, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM), listeners=[])   # shared by the Edit tools
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
-        for i, (m, _, tools) in enumerate(features.MENUS):
-            if self._splash: self._splash.step(i / (len(features.MENUS) + 1), f"LOADING {m.upper()}…")
+        for i, (m, _, tools) in enumerate(self.menus):
+            if self._splash: self._splash.step(i / (len(self.menus) + 1), f"LOADING {m.upper()}…")
             self.pages[m] = Section(self.body, self, m, tools, built)
         st = prefs.get("start_tab"); st = prefs.get("last_tab") if st == "Last used" else st
         st = features.OLD_TAB_NAMES.get(st, st)                                                 # settings saved with the old tab names still work
         self.show(st if st in self.pages else "AI Images"); self.tabs.active = st if st in self.pages else "AI Images"; self.tabs._style()
         if prefs.get("check_updates_on_start"): self.after(4000, lambda: self.pages["Settings"].pages["Updates"].check())
+        import jobs; self.jobs_pill = jobs.Pill(self)                                          # the AI jobs line: '1 RUNNING · 2 WAITING', click for the list
+        self.after(5000, self._rescan_pc)
+
+    def _rescan_pc(self):
+        """check the PC again in the background (a new graphics card or more memory shows up next time the app opens)"""
+        import hardware, catalog
+        def changed(old, new):
+            if catalog.hidden_tabs(old) != catalog.hidden_tabs(new) or [o["key"] for o in catalog.options("AI Images", old)] != [o["key"] for o in catalog.options("AI Images", new)]:
+                self.q.put(lambda: T.banner(self, f"YOUR PC CHANGED — {hardware.describe(new)}. Close and reopen the app to update what it offers", "success"))
+        hardware.rescan_async(on_done=changed)
 
     def _size_mascots(self):
         """the logo spans exactly the tab row (Images' left edge to Settings' right edge); the guy and girl's flat bottoms sit on the tab row's bottom"""

@@ -311,6 +311,7 @@ class Button(_Painted, tk.Label):
         self.configure(bg=bg if self.enabled or self._bar else "#2a2f3c", fg="white" if self.enabled else "#6c7080", highlightbackground=ring, highlightcolor=ring)
     def invoke(self):
         if self.enabled and self.command: self.command()
+        elif not self.enabled and getattr(self, "on_blocked", None): self.on_blocked()      # greyed while busy: say why (jobs.guard)
     def state(self, s):
         self.enabled = "disabled" not in str(s) or "!disabled" in str(s); self._style()
 
@@ -631,12 +632,12 @@ class Hints(tk.Frame):
 #     T.banner(widget, "SAVED — sunset.png", "success")                      # green
 import threading as _threading, queue as _queue
 BANNER_SECONDS = 15
-BANNER_COLORS = {"error": ("#8f1d1d", "#ef5350"), "success": ("#1b6b32", "#4ee07a")}     # fill, outline
+BANNER_COLORS = {"error": ("#8f1d1d", "#ef5350"), "success": ("#1b6b32", "#4ee07a"), "busy": ("#6b5200", "#f5c400")}     # fill, outline (busy: amber)
 BANNER_FONT = ("Arial", 16, "bold")                                                    # design size; scales with the window
 _banner_q = _queue.Queue(); _banner_roots = set()
 
 def banner(widget, text, kind="error", seconds=BANNER_SECONDS):
-    """show a message banner. kind: "success" (green) or "error" / "warning" / anything else (red)"""
+    """show a message banner. kind: "success" (green), "busy" (amber: waiting / running / a warning) or "error" / anything else (red)"""
     if _threading.current_thread() is _threading.main_thread(): _show_banner(widget, text, kind, seconds)
     else: _banner_q.put((widget, text, kind, seconds))                         # from a background thread: the window's own loop shows it
 

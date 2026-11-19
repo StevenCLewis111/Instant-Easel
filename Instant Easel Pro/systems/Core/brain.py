@@ -21,19 +21,13 @@ brain.py: Instant Easel Pro's core text model. One English model is the base of 
     brain.teach("AI Chat", "q", "a")       brain.examples(tab)  brain.forget(tab)  brain.transfer(src, dst)
 """
 import os, sys, json, re, shutil, threading, time, datetime, subprocess, socket, zipfile, tarfile, atexit, urllib.request, urllib.error
-import paths
+import paths, catalog, hardware
 
-# ---------------------------------------------------------------- the models
-CORES = {
-    "4b": dict(label="Qwen3.5 4B", repo="bartowski/Qwen_Qwen3.5-4B-GGUF", quant="Q4_K_M", size=3.0e9, layers=99,
-               note="About 3 GB. Fits fully on a 6 GB graphics card, so it's quick."),
-    "9b": dict(label="Qwen3.5 9B", repo="bartowski/Qwen_Qwen3.5-9B-GGUF", quant="Q4_K_M", size=5.7e9, layers=24,
-               note="About 5.7 GB. Smarter; on a 6 GB card part of it runs on the processor, so it's slower (needs 16 GB+ PC memory)."),
-}
-TAB_MODELS = {                             # text models a tab can use instead of the core
-    "coder7b": dict(label="Qwen2.5 Coder 7B", repo="bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", quant="Q4_K_M", size=4.7e9, layers=99,
-                    note="Made for code. About 4.7 GB; fits on a 6 GB card."),
-}
+# ---------------------------------------------------------------- the models (catalog.py has the ladders and what each needs)
+def _spec_from(e): return dict(label=e["label"], repo=e["repo"], quant=None, size=e["size"] * 1e9, layers=e["layers"], note=e["note"])
+CORES = {e["key"]: _spec_from(e) for e in catalog.LADDERS["core"]}
+TAB_MODELS = {e["key"]: _spec_from(e) for e in catalog.LADDERS["AI Coding"]}      # text models a tab can use instead of the core
+_safe_from_now = set()                    # models that ran out of memory this session: they start in Safe from then on
 CHAT_SYSTEM = "You are the helper inside Instant Easel Pro, a creative app. Answer clearly and plainly."
 SYSTEMS = {"AI Chat": CHAT_SYSTEM,
            "AI Coding": "You are a careful programming assistant. Give working code first, then a short explanation.",
@@ -56,7 +50,17 @@ def _prefs():
     import prefs; return prefs
 
 def core_key():
-    k = _prefs().get("core_model"); return k if k in CORES or (k == "custom-core" and model_file(k)) else "4b"
+    """the chosen core model; if none is chosen yet, the best one already downloaded, else the best one for this PC (catalog.py)"""
+    k = _prefs().get("core_model")
+    if k in CORES or (k == "custom-core" and model_file(k)): return k
+    return pick("core", CORES)
+
+def pick(area, keys):
+    for e in catalog.options(area):                                            # best first: one that's already here
+        if e["key"] in keys and model_file(e["key"]): return e["key"]
+    for e in catalog.ladder(area):                                             # (or downloaded though it's big for this PC)
+        if e["key"] in keys and model_file(e["key"]): return e["key"]
+    b = catalog.best(area); return b["key"] if b and b["key"] in keys else next(iter(keys))
 
 def spec(key):
     """what we know about a model; a model you added yourself ("custom-...") is named after its file"""
@@ -170,9 +174,20 @@ def _pick_file(repo, quant):
     if not pick: raise RuntimeError(f"{repo} has no {quant} file")
     return pick[0]
 
+def download_size(key):
+    """bytes the download of `key` will take on this PC (the file that suits this PC's card: catalog.variant)"""
+    e = catalog.entry("core", key) or catalog.entry("AI Coding", key)
+    return catalog.variant(e)[1] * 1e9 if e else (spec(key) or {}).get("size", 0)
+
 def _install_model(key):
-    s = spec(key); f = _pick_file(s["repo"], s["quant"]); d = _model_dir(key); os.makedirs(d, exist_ok=True)
-    _fetch(f"https://huggingface.co/{s['repo']}/resolve/main/{f}", os.path.join(d, os.path.basename(f)), s["label"], s["size"])
+    s = spec(key); e = catalog.entry("core", key) or catalog.entry("AI Coding", key)
+    quant = s.get("quant") or (catalog.variant(e)[0] if e else "Q4_K_M")
+    try: f = _pick_file(s["repo"], quant)
+    except RuntimeError:
+        if quant == "Q4_K_M": raise
+        f = _pick_file(s["repo"], "Q4_K_M")                                    # that size isn't there: the usual one
+    d = _model_dir(key); os.makedirs(d, exist_ok=True)
+    _fetch(f"https://huggingface.co/{s['repo']}/resolve/main/{f}", os.path.join(d, os.path.basename(f)), s["label"], download_size(key))
     with open(os.path.join(d, "source.json"), "w") as fh: json.dump(dict(repo=s["repo"], file=f, when=datetime.datetime.now().isoformat(timespec="seconds")), fh)
 
 def download(on_done=None, key=None):
@@ -181,7 +196,7 @@ def download(on_done=None, key=None):
     def work():
         try:
             import storage
-            ok, msg = storage.room("Shared models", 0 if model_file(key) else spec(key)["size"])
+            ok, msg = storage.room("Shared models", 0 if model_file(key) else download_size(key))
             if not ok: raise RuntimeError(msg)
             if not server_exe(): _install_runtime()
             if not model_file(key): _install_model(key)
@@ -217,6 +232,10 @@ def _http(path, body=None, timeout=300):
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r: return json.load(r)
 
+def free_card():
+    """take the text model off the graphics card (before a picture is painted, so the image engine has the whole card)"""
+    stop()
+
 def stop():
     p = _server["proc"]
     if p is not None and p.poll() is None:
@@ -228,29 +247,58 @@ def stop():
     if _state["state"] == "ready": _set(None, "")
 atexit.register(stop)
 
-def start(key=None):
+_help = {}
+def _engine_help():
+    """the engine's own option list (newer engines can fit a model to the free card memory by themselves: --fit)"""
+    if "text" not in _help:
+        try: _help["text"] = subprocess.run([server_exe(), "--help"], capture_output=True, text=True, timeout=30,
+                                            creationflags=0x08000000 if sys.platform == "win32" else 0).stdout
+        except Exception: _help["text"] = ""
+    return _help["text"]
+
+def _mode_args(mode, s):
+    """the engine options for a speed mode. Fast: all on the card. Balanced: the engine fits it to the free card memory.
+    Safe: the same with 2 GB kept free and a shorter memory (context). processor: nothing on the card"""
+    h = _engine_help(); fit = "--fit" in h
+    args = {"Fast": ["-ngl", "99", "-c", "8192"],
+            "Balanced": (["--fit", "on"] if fit else ["-ngl", str(s["layers"])]) + ["-c", "8192"],
+            "Safe": (["--fit", "on", "--fit-target", "2048"] if fit else ["-ngl", str(min(s["layers"], 12))]) + ["-c", "4096"],
+            "processor": ["-ngl", "0", "-c", "4096"]}[mode]
+    if "--threads" in h or not h: args += ["-t", str(hardware.threads_for_ai())]      # the processor's real cores
+    return args
+
+def _plan(key, f, wanted):
+    """the modes to try, best first, after checking what memory is free right now (compress before it runs out)"""
+    size = os.path.getsize(f) / 2 ** 30 if f and os.path.exists(f) else 0
+    pc, free = hardware.pc(), hardware.free()
+    if not pc.get("vram_gb"): return ["processor"]                                # no graphics card for AI
+    mode = "Safe" if key in _safe_from_now else wanted
+    if mode == "Fast" and free["vram_gb"] < size + 1.0: mode = "Balanced"          # it wouldn't all fit on the card now: let the engine fit it
+    if free["ram_gb"] < 1.5:
+        import jobs; jobs.note(f"PC MEMORY IS NEARLY FULL ({free['ram_gb']:.1f} GB free) — the text model may be slow. Close other programs to help")
+    return list(dict.fromkeys([mode, "Safe", "processor"]))
+
+def start(key=None, mode=None):
     """make sure the engine is running `key` (the core by default); swaps models if another one is loaded"""
     key = key or core_key()
     with _lock:
         if ready() and _server["key"] == key: return
         stop(); exe, f, s = server_exe(), model_file(key), spec(key)
         if not exe or not f: raise RuntimeError(f"{s['label']} isn't downloaded yet (Settings > AI Models)")
-        mode = _prefs().get("speed_text") or "Balanced"                            # Fast / Balanced / Safe
-        first = {"Fast": 99, "Balanced": s["layers"], "Safe": min(s["layers"], 12)}.get(mode, s["layers"])
-        ctx = "4096" if mode == "Safe" else "8192"                                 # Safe: a shorter memory too, so it needs less room
-        for layers in dict.fromkeys((first, 0)):                                   # the graphics card first; the processor if that fails
-            _set("loading", f"Starting {s['label']}{' on the processor' if not layers else ''}…", 0.0, s["label"])
+        for m in _plan(key, f, mode or _prefs().get("speed_text") or "Balanced"):    # the graphics card first; the processor if all else fails
+            _set("loading", f"Starting {s['label']}{' on the processor' if m == 'processor' else ''}…", 0.0, s["label"])
             port = _free_port(); log = open(paths.log_file("text_engine.log"), "a", encoding="utf-8", errors="replace")
-            log.write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} {s['label']} {mode} layers={layers} context={ctx} ===\n"); log.flush()
-            cmd = [exe, "-m", f, "-ngl", str(layers), "-c", ctx, "--jinja", "--host", "127.0.0.1", "--port", str(port)]
+            args = _mode_args(m, s)
+            log.write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} {s['label']} {m} {' '.join(args)} ===\n"); log.flush()
+            cmd = [exe, "-m", f, *args, "--jinja", "--host", "127.0.0.1", "--port", str(port)]
             p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=os.path.dirname(exe),
                                  creationflags=0x08000000 if sys.platform == "win32" else 0)
-            _server.update(proc=p, port=port, key=key); t0 = time.time()
+            _server.update(proc=p, port=port, key=key, mode=m); t0 = time.time()
             while time.time() - t0 < 300 and p.poll() is None:
                 try:
                     if _http("/health", timeout=5).get("status") == "ok":
-                        where = "processor" if not layers else ("graphics card" if layers >= 99 else "graphics card + processor")
-                        _set("ready", f"{s['label']} ready ({where}, {mode}).", 1.0, s["label"]); return
+                        where = {"processor": "processor", "Fast": "graphics card"}.get(m, "graphics card, fitted to its free memory")
+                        _set("ready", f"{s['label']} ready ({where}, {m}).", 1.0, s["label"]); return
                 except (urllib.error.URLError, ConnectionError, OSError, ValueError): pass
                 time.sleep(0.5)
             stop()
@@ -319,15 +367,28 @@ def lookup(tab, text, k=3):
     idx = library_index(tab); idx.sync_folder(library_dir(tab))
     return [(r["source"], r["text"]) for r in idx.search(text, k=k, kinds=("library",))]
 
+def _chat(tab, body):
+    """one answer from the engine. If the engine stops part-way (almost always: it ran out of memory), it's started again in Safe
+    (less on the card, a shorter memory) and asked once more, and that model stays in Safe for the rest of the session"""
+    for attempt in (1, 2):
+        with _lock:
+            before = _state["detail"]; _set("busy", "Thinking…")
+            try: return _http("/v1/chat/completions", body)
+            except Exception as e:
+                if ready() or attempt == 2: raise
+                key = _server.get("key") or tab_model(tab); _safe_from_now.add(key)
+                with open(paths.log_file("text_engine.log"), "a", encoding="utf-8") as log:
+                    log.write(f"\n=== the engine stopped mid-answer ({e.__class__.__name__}); starting again in Safe ===\n")
+                import jobs; jobs.note("THE TEXT MODEL RAN OUT OF MEMORY — starting it again in Safe mode and asking once more")
+                stop(); start(key, mode="Safe")
+            finally:
+                if _state["state"] == "busy": _set("ready", before)
+
 def complete(tab, messages, max_tokens=800, temperature=0.7):
     """one answer for a full list of messages (system first) from the tab's model"""
     start(tab_model(tab))
-    with _lock:
-        before = _state["detail"]; _set("busy", "Thinking…")
-        try:
-            r = _http("/v1/chat/completions", dict(messages=messages, max_tokens=max_tokens, temperature=temperature, top_p=0.8,
-                                                  chat_template_kwargs=dict(enable_thinking=False)))
-        finally: _set("ready", before)
+    r = _chat(tab, dict(messages=messages, max_tokens=max_tokens, temperature=temperature, top_p=0.8,
+                        chat_template_kwargs=dict(enable_thinking=False)))
     out = r["choices"][0]["message"].get("content") or ""
     return re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip()
 
@@ -337,11 +398,6 @@ def ask(tab, text, system=None, max_tokens=600, use_library=True):
     found = lookup(tab, text) if use_library else []
     if found: sysmsg += "\n\nUse these notes from the user's library when they help:\n" + "\n---\n".join(f"[{f}]\n{c}" for f, c in found)
     msgs = [dict(role="system", content=sysmsg)] + _shots(tab, text) + [dict(role="user", content=text)]
-    with _lock:
-        before = _state["detail"]; _set("busy", "Thinking…")
-        try:
-            r = _http("/v1/chat/completions", dict(messages=msgs, max_tokens=max_tokens, temperature=0.7, top_p=0.8,
-                                                  chat_template_kwargs=dict(enable_thinking=False)))
-        finally: _set("ready", before)
+    r = _chat(tab, dict(messages=msgs, max_tokens=max_tokens, temperature=0.7, top_p=0.8, chat_template_kwargs=dict(enable_thinking=False)))
     out = r["choices"][0]["message"].get("content") or ""
     return re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip()

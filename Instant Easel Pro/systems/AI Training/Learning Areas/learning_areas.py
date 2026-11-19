@@ -386,11 +386,14 @@ class AreaPage(tk.Frame):
             style += (f" Write {g('language')} unless the question asks for another language." if g("language") not in (None, "Any") else "")
             style += " Explain the code briefly after it." if g("explain") else " Just the code, no explanation."
         system = brain.SYSTEMS.get(self.tab, brain.CHAT_SYSTEM) + style; lib = bool(g("use_library")) if self.tab == "AI Chat" else True
-        T.banner(self.app, "THINKING — the first answer takes longer while the model loads", "success")
-        def work():
-            try: ans = brain.ask(self.tab, question, system=system, use_library=lib); q.put(lambda: Answer(self.app, question, ans, self.tab))
-            except Exception as e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T ANSWER — {e}"))
-        threading.Thread(target=work, daemon=True).start()
+        import jobs
+        key = f"{self.tab}/ask"
+        if jobs.busy(key): return T.banner(self.app, f"BUSY — your last question is {jobs.where(jobs.busy(key))}", "busy")
+        j = jobs.submit(self.tab, f"Ask: {question[:40]}", lambda job: brain.ask(self.tab, question, system=system, use_library=lib), kind="text", page=key,
+                        engine=brain.tab_model(self.tab), on_done=lambda ans: q.put(lambda: Answer(self.app, question, ans, self.tab)),
+                        on_error=lambda e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T ANSWER — {e}")))
+        T.banner(self.app, "THINKING — the first answer takes longer while the model loads" if j.place() == 1 and not jobs.running()
+                 else f"QUEUED — your question is {jobs.where(j)}; it's answered as soon as the AI is free", "success" if j.place() == 1 else "busy")
 
 class Dialog(tk.Toplevel):
     """a question box (and an answer box when b is given). .result = (a, b) or None"""

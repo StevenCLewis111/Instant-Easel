@@ -3,7 +3,7 @@ workspace_page.py: AI Coding > Projects and AI Chat > Chats. The conversation on
 """
 import os, threading, tkinter as tk
 from tkinter import filedialog
-import theme as T, prefs, skin
+import theme as T, prefs, skin, jobs
 
 GUIDE = {"user_rules.md": "Your rules for every project. Short and specific; 'Never ...' works better than 'prefer ...'.",
          "project.md": "What this project does, its rules, what never to do, what to look for, and its commands. Loaded in every request: "
@@ -39,6 +39,7 @@ class WorkspacePage(tk.Frame):
         self.entry.bind("<Control-Return>", lambda e: (self.send(), "break")[1])
         r = _frame(left); r.pack(fill="x", pady=(6, 0))
         self.send_btn = skin.button(T.Button(r, "Send", self.send, width=10)); self.send_btn.pack(side="left")
+        jobs.guard(self.send_btn, self._key(), app, "your message")
         T.Button(r, "Save last answer", self.save_last, width=18).pack(side="left", padx=8)
         T.Text(r, "Ctrl+Enter sends.  'remember: ...' keeps a note.", muted=True, font=T.f(8)).pack(side="left", padx=8)
         self.msg = T.Text(r, "", muted=True, font=T.f(9)); self.msg.pack(side="right")
@@ -110,27 +111,32 @@ class WorkspacePage(tk.Frame):
         if n and T.popup(self.app, f"DELETE {n.upper()}?", "Its conversation, memory, notes and library are deleted.", (("Delete", "danger"), ("Cancel", "normal"))) == "Delete":
             self.ws.delete(n); self._refresh_list()
 
+    def _key(self): return f"{self.ws.tab}/talk"
+    def _queue(self, title, work, done, failed_word, waiting_text):
+        """put a job for this page in the app's line of AI jobs (one runs at a time; the Send button is greyed until it's done)"""
+        import brain; qq = self.app.q; self.busy = True
+        def finished(result): self.busy = False; qq.put(lambda: done(result))
+        def failed(e): self.busy = False; qq.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"{failed_word} — {e}")))
+        j = jobs.submit(self.ws.tab, title, work, kind="text", page=self._key(), engine=brain.tab_model(self.ws.tab), on_done=finished, on_error=failed,
+                        on_cancel=lambda: setattr(self, "busy", False))
+        self.msg.configure(text=waiting_text if j.place() == 1 and not jobs.running() else jobs.where(j).upper()); return j
+
     def send(self):
         n = self.name(); q = self.entry.get("1.0", "end").strip()
         if not n: return T.banner(self.app, f"MAKE A {self.WORD.upper()} FIRST — + New {self.WORD}")
-        if not q or self.busy: return
+        if not q or jobs.busy(self._key()): return
         import brain
         if not brain.installed(brain.tab_model(self.ws.tab)): return T.banner(self.app, "THE TEXT MODEL ISN'T DOWNLOADED YET — Settings > AI Models")
-        self.busy = True; self.entry.delete("1.0", "end"); self._line("you", q); self.talk.see("end"); qq = self.app.q
+        self.entry.delete("1.0", "end"); self._line("you", q); self.talk.see("end"); qq = self.app.q
         web = {"Off": "off", "When needed": "when needed", "Always": "always"}[self.web.get()]
-        def work():
-            try:
-                ans, urls = self.ws.ask(n, q, web=web, on_step=lambda t: qq.put(lambda t=t: self.msg.configure(text=t.upper())))
-                self.last = (q, ans)
-                def done():
-                    self._line("ai", ans)
-                    if urls: self.talk.insert("end", "From the web: " + ", ".join(urls) + "\n\n", "muted")
-                    self.talk.see("end"); self.msg.configure(text=""); self._stats()
-                qq.put(done)
-            except Exception as e:
-                prefs.log_error(type(e), e, e.__traceback__); qq.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"COULDN'T ANSWER — {e}")))
-            finally: self.busy = False
-        threading.Thread(target=work, daemon=True).start()
+        def work(job):
+            def step(t): job.say(t); qq.put(lambda t=t: self.msg.configure(text=t.upper()))
+            return self.ws.ask(n, q, web=web, on_step=step)
+        def done(result):
+            ans, urls = result; self.last = (q, ans); self._line("ai", ans)
+            if urls: self.talk.insert("end", "From the web: " + ", ".join(urls) + "\n\n", "muted")
+            self.talk.see("end"); self.msg.configure(text=""); self._stats()
+        self._queue(f"Answer: {q[:40]}", work, done, "COULDN'T ANSWER", "THINKING…")
 
     def save_last(self):
         if not self.last: return T.banner(self.app, "NOTHING TO SAVE YET")
@@ -145,26 +151,19 @@ class WorkspacePage(tk.Frame):
 
     def propose(self):
         n = self.name()
-        if not n or self.busy: return
-        self.busy = True; qq = self.app.q; self.msg.configure(text="DRAFTING A MEMORY UPDATE…")
-        def work():
-            try:
-                draft = self.ws.propose_memory(n)
-                qq.put(lambda: (self.msg.configure(text=""), Editor(self.app, "Update this " + self.WORD + "'s memory?", "Its draft from the conversation. Edit, then Save to "
-                                "keep it (or Cancel).", draft, lambda text: (self.ws.write(n, "project.md", text), self._stats()))))
-            except Exception as e: qq.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"COULDN'T DRAFT IT — {e}")))
-            finally: self.busy = False
-        threading.Thread(target=work, daemon=True).start()
+        if not n: return
+        if jobs.busy(self._key()): return self.send_btn.on_blocked()
+        def done(draft):
+            self.msg.configure(text=""); Editor(self.app, "Update this " + self.WORD + "'s memory?", "Its draft from the conversation. Edit, then Save to "
+                                               "keep it (or Cancel).", draft, lambda text: (self.ws.write(n, "project.md", text), self._stats()))
+        self._queue("Draft a memory update", lambda job: self.ws.propose_memory(n), done, "COULDN'T DRAFT IT", "DRAFTING A MEMORY UPDATE…")
 
     def compress(self):
         n = self.name()
-        if not n or self.busy: return
-        self.busy = True; qq = self.app.q; self.msg.configure(text="COMPRESSING…")
-        def work():
-            try: did = self.ws.compress(n, force=True); qq.put(lambda: (self.show(), self.msg.configure(text=""), T.banner(self.app, "COMPRESSED — older messages are in the summary" if did else "NOTHING TO COMPRESS YET", "success")))
-            except Exception as e: qq.put(lambda e=e: (self.msg.configure(text=""), T.banner(self.app, f"COULDN'T COMPRESS — {e}")))
-            finally: self.busy = False
-        threading.Thread(target=work, daemon=True).start()
+        if not n: return
+        if jobs.busy(self._key()): return self.send_btn.on_blocked()
+        def done(did): self.show(); self.msg.configure(text=""); T.banner(self.app, "COMPRESSED — older messages are in the summary" if did else "NOTHING TO COMPRESS YET", "success")
+        self._queue("Compress the conversation", lambda job: self.ws.compress(n, force=True), done, "COULDN'T COMPRESS", "COMPRESSING…")
 
     def add_files(self):
         n = self.name()

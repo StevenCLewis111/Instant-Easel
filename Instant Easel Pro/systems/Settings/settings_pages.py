@@ -51,7 +51,8 @@ class GeneralPage(SettingsPage):
         self.choice("File format", "save_format", ["PNG", "JPEG", "WebP"], "PNG keeps every detail (larger files). JPEG and WebP are smaller.")
         self.choice("JPEG / WebP quality", "jpeg_quality", ["75", "85", "92", "100"])
         self.entry("File names", "name_pattern", note="{date}, {time} and {n} (number) are filled in. Example: instant-easel-pro-2026-11-15-163000-1.png")
-        self.choice("Open on start", "start_tab", ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Drawing", "Editing", "Settings", "Last used"])
+        import features
+        self.choice("Open on start", "start_tab", [m for m, _, _ in features.visible_menus()] + ["Last used"])
         self.toggle("Confirm before quitting", "confirm_exit")
         self.buttons(("Create desktop shortcut", self.shortcut, "normal"))
     def shortcut(self):
@@ -164,50 +165,78 @@ class AIStoragePage(SettingsPage):
         threading.Thread(target=work, daemon=True).start()
 
 # ---------------------------------------------------------------- AI models: the core text model + each tab's own model
-IMAGE_MODELS = {"sd15": ("Stable Diffusion 1.5", "2.1 GB. The best free image model for a 6 GB card, and your image models (Cartoon, Fashion...) train on top of it."),
-                "sdxl": ("Stable Diffusion XL", "Sharper pictures, but needs about 8 GB; on a 6 GB card it's slow and can't be trained. Add it with Add manually."),
-                "file": ("Your own model file", "A .safetensors image model you added with Add manually.")}
-VIDEO_MODELS = {"none": ("Wan 2.2 5B (recommended)", "The best free video model that fits a home PC, but it needs a graphics card with 16 GB or more. "
-                                                     "Your card has 6 GB, so making videos waits for a bigger card (or a rented one)."),
-                "file": ("Your own model file", "A video model file you added with Add manually (kept for when video making is built).")}
-
 class AIModelsPage(SettingsPage):
-    TITLE = "AI Models"; NOTE = ("One core text model understands you in every AI tab. Each tab can add its own model for what it makes. "
-                                 "Download recommended picks the best free model for your PC; Add manually uses a model file you have. "
-                                 "Either way it's installed and set up for you.")
+    TITLE = "AI Models"; NOTE = ("This PC was checked, so each AI only offers models that will really run on it: the best one first (marked), then the "
+                                 "smaller ones, never a bigger one. Download gets the chosen model in the size that suits your graphics card. "
+                                 "Add manually uses a model file you have.")
     def build(self):
-        import brain, imaging; self.brain = brain; self.imaging = imaging
+        import brain, imaging, hardware, catalog; self.brain = brain; self.imaging = imaging; self.hw = hardware; self.cat = catalog
+        self.slot_vars = {}
         def head(text): T.Text(self.body, text, font=T.f(11)).pack(anchor="w", pady=(8, 2))
+        head("YOUR PC")
+        r = _frame(self.body); r.pack(fill="x", anchor="w")
+        self.pc_line = T.Text(r, hardware.describe(), font=T.f(10)); self.pc_line.pack(side="left")
+        T.Button(r, "Check again", self._rescan, width=12).pack(side="left", padx=10)
+        pc = hardware.pc(); warn = f"Held back right now: {pc['throttled']}. AI runs slower until it's plugged in / on a full-power plan. " if pc.get("throttled") else ""
+        self.pc_note = T.Text(self.body, warn + f"Checked {pc.get('when', '')}. "
+                              + ("" if catalog.can("AI Videos") else "Making videos needs a graphics card with 16 GB or more, so the AI Videos tab is hidden."),
+                              muted=True, font=T.f(9)); self.pc_note.configure(wraplength=900); self.pc_note.pack(anchor="w", padx=(30, 0))
         head("CORE TEXT MODEL  (every AI tab uses it)")
-        cores = {k: v["label"] for k, v in brain.CORES.items()}
-        if brain.model_file("custom-core"): cores["custom-core"] = brain.spec("custom-core")["label"] + " (yours)"
-        self.cores = cores; self.core_v = tk.StringVar(value=cores.get(brain.core_key(), cores["4b"]))
-        r = self._row("CORE", "built")
-        self.core_choice = T.Choice(r, "", list(cores.values()), self.core_v); self.core_choice.pack(side="left", padx=(8, 8))
-        self.core_v.trace_add("write", lambda *a: self._switch(next(k for k, v in self.cores.items() if v == self.core_v.get())))
-        T.Button(r, "Download recommended", lambda: self._dl_text(None), width=20).pack(side="left", padx=4)
-        T.Button(r, "Add manually", lambda: self._add_text("custom-core", "core_model"), width=13).pack(side="left", padx=4)
-        T.Button(r, "Start", self._start, width=7).pack(side="left", padx=4); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
-        self._speed(r, "speed_text", restart=True)
-        self.core_note = T.Text(self.body, "", muted=True, font=T.f(9)); self.core_note.pack(anchor="w", padx=(30, 0))
-        self.state = T.Text(self.body, "", font=T.f(10)); self.state.pack(anchor="w", padx=(30, 0))
-        self.card = T.Text(self.body, "Your graphics card: checking…", muted=True, font=T.f(9)); self.card.pack(anchor="w", padx=(30, 0))
+        cores = self._choices("core", custom=("custom-core", "Your own model file (core)"))
+        cur = brain.core_key() if brain.core_key() in cores else self._default("core", cores)
+        self._row_with("CORE", "built", "core_model", cores, cur, download=self._dl_text, add=lambda: self._add_text("custom-core", "core_model"), speed="speed_text")
+        r = _frame(self.body); r.pack(anchor="w", padx=(30, 0), pady=(2, 0))
+        T.Button(r, "Start", self._start, width=7).pack(side="left", padx=(0, 4)); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
+        self.state = T.Text(r, "", font=T.f(10)); self.state.pack(side="left", padx=10)
         head("EACH TAB'S MODEL")
-        coder = brain.TAB_MODELS["coder7b"]
-        self._slot("AI Chat", "built", {"core": ("Core text model (recommended)", "Chat talks to the core model; it's the best free choice for your card."),
-                                        "custom-AI_Chat": ("Your own model file", "A .gguf text model you added with Add manually.")},
-                   rec=lambda: self._dl_text(None, select=("model_AI_Chat", "core")), add=lambda: self._add_text("custom-AI_Chat", "model_AI_Chat"))
-        self._slot("AI Coding", "built", {"core": ("Core text model", "The core model writes and explains code too."),
-                                          "coder7b": (coder["label"] + " (recommended)", coder["note"] + " The best free coding model that fits your card."),
-                                          "custom-AI_Coding": ("Your own model file", "A .gguf coding model you added with Add manually.")},
-                   rec=lambda: self._dl_text("coder7b", select=("model_AI_Coding", "coder7b")), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"))
-        self._slot("AI Images", "built", IMAGE_MODELS, rec=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image")
-        T.Text(self.body, "SPEED: Fast puts everything on the graphics card (quickest; a big model can run out of room and crash). Safe puts more on the "
-               "processor and uses less memory: slower, but big models work. Balanced is the right split for each model.", muted=True, font=T.f(8),
+        chat = {"core": ("Core text model (recommended)", "AI Chat talks to the core model.")}
+        if brain.model_file("custom-AI_Chat"): chat["custom-AI_Chat"] = ("Your own model file", "A .gguf text model you added with Add manually.")
+        self._row_with("AI CHAT", "built", "model_AI_Chat", chat, prefs.get("model_AI_Chat") if prefs.get("model_AI_Chat") in chat else "core",
+                       download=lambda k: self._dl_text(brain.core_key()), add=lambda: self._add_text("custom-AI_Chat", "model_AI_Chat"))
+        coding = self._choices("AI Coding", custom=("custom-AI_Coding", "Your own model file"))
+        coding["core"] = ("Core text model", "The core model writes and explains code too.")
+        self._row_with("AI CODING", "built", "model_AI_Coding", coding, prefs.get("model_AI_Coding") if prefs.get("model_AI_Coding") in coding else self._default("AI Coding", coding),
+                       download=lambda k: self._dl_text(brain.core_key() if k == "core" else k), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"))
+        images = self._choices("AI Images", custom=("file", "Your own model file"))
+        self._row_with("AI IMAGES", "built", "model_AI_Images", images, imaging.choice() if imaging.choice() in images else self._default("AI Images", images),
+                       download=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image")
+        T.Text(self.body, "SPEED: Fast puts everything on the graphics card. Balanced lets the engine fit the model to the card's free memory. Safe keeps "
+               "more in PC memory: slower, but big models fit. Before every run the app checks the free memory and steps down by itself (Fast → "
+               "Balanced → Safe), and if a run still runs out of memory it's tried again in Safe instead of failing.", muted=True, font=T.f(8),
                wraplength=900).pack(anchor="w", pady=(8, 0))
-        self._slot("AI Videos", "planned", VIDEO_MODELS, rec=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
-        threading.Thread(target=self._find_card, daemon=True).start()
+        if catalog.can("AI Videos"):
+            videos = self._choices("AI Videos", custom=("file", "Your own model file"))
+            self._row_with("AI VIDEOS", "planned", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
+                           download=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
         self._tick()
+
+    # ---- what's offered: the models that fit this PC (best first), plus any you already downloaded
+    def _choices(self, area, custom=None):
+        out = {}; best = self.cat.best(area)
+        for e in self.cat.options(area):
+            tag = " (best for your PC)" if best and e["key"] == best["key"] else ""
+            _, size = self.cat.variant(e)
+            how = "Add it with Add manually. " if e.get("manual") else f"About {size:g} GB to download. "
+            out[e["key"]] = (e["label"] + tag, how + self.cat.describe_fit(e)[0].upper() + self.cat.describe_fit(e)[1:] + ". " + e["note"])
+        for e in self.cat.ladder(area):                                       # downloaded before, though it's more than this PC really has
+            if e["key"] not in out and self._downloaded(area, e["key"]):
+                out[e["key"]] = (e["label"] + " (downloaded)", "Downloaded already, but it needs more than this PC has, so it may be slow or not start. " + e["note"])
+        if custom and (self._downloaded(area, custom[0]) or custom[0] == "file"): out[custom[0]] = (custom[1], "A model file you added with Add manually.")
+        return out
+
+    def _downloaded(self, area, key):
+        if area in ("core", "AI Coding", "AI Chat"): return bool(self.brain.model_file(key))
+        if area == "AI Images":
+            if key == "zimage": return bool(self.imaging.zimage_parts())
+            if key == "sd15": return os.path.exists(os.path.join(self.imaging.IMAGE, self.imaging.SD15["file"]))
+            if key == "file": return any(f != self.imaging.SD15["file"] for f in os.listdir(self.imaging.IMAGE)) if os.path.isdir(self.imaging.IMAGE) else False
+        return False
+
+    def _default(self, area, choices):
+        """not chosen yet: the best one already downloaded, else the best one for this PC"""
+        for k in choices:
+            if self._downloaded(area, k) and k not in ("file",) and not k.startswith("custom"): return k
+        b = self.cat.best(area); return b["key"] if b and b["key"] in choices else next(iter(choices))
 
     def _row(self, name, status):
         import learning_areas as LA
@@ -222,76 +251,90 @@ class AIModelsPage(SettingsPage):
             if restart and self.brain.ready(): self.brain.stop(); T.banner(self.app, f"SPEED: {v.get().upper()} — the model starts that way next time it's used", "success")
         v.trace_add("write", changed)
 
-    def _slot(self, tab, status, choices, rec, add, folder=None, speed=None):
-        key = "model_" + tab.replace(" ", "_"); cur = prefs.get(key) if prefs.get(key) in choices else list(choices)[0]
-        r = self._row(tab.upper(), status)
+    def _row_with(self, tab, status, key, choices, cur, download, add, folder=None, speed=None):
+        """one AI: its model choice (what fits this PC), Download (the chosen one), Add manually, and its speed"""
+        r = self._row(tab, status)
         v = tk.StringVar(value=choices[cur][0]); ch = T.Choice(r, "", [c[0] for c in choices.values()], v); ch.pack(side="left", padx=(8, 8))
         note = T.Text(self.body, choices[cur][1], muted=True, font=T.f(9)); note.configure(wraplength=860); note.pack(anchor="w", padx=(30, 0))
+        def chosen(): return next(k for k, c in choices.items() if c[0] == v.get())
         def changed(*a):
-            k = next(k for k, c in choices.items() if c[0] == v.get()); prefs.set(key, k); note.configure(text=choices[k][1])
-        v.trace_add("write", changed); self.__dict__.setdefault("slot_vars", {})[key] = (v, choices)
-        T.Button(r, "Download recommended", rec, width=20).pack(side="left", padx=4)
+            k = chosen(); note.configure(text=choices[k][1])
+            if key == "core_model": self._switch(k)
+            else: prefs.set(key, k)
+        v.trace_add("write", changed); self.slot_vars[key] = (v, choices)
+        T.Button(r, "Download", lambda: download(chosen()), width=10).pack(side="left", padx=4)
         T.Button(r, "Add manually", add, width=13).pack(side="left", padx=4)
         if folder: T.Button(r, "Open folder", lambda: prefs.open_folder(folder), width=11).pack(side="left", padx=4)
-        if speed: self._speed(r, speed)
+        if speed: self._speed(r, speed, restart=(speed == "speed_text"))
 
     def _select(self, key, value):
-        prefs.set(key, value); pair = getattr(self, "slot_vars", {}).get(key)
-        if pair: pair[0].set(pair[1][value][0])
+        prefs.set(key, value); pair = self.slot_vars.get(key)
+        if pair and value in pair[1]: pair[0].set(pair[1][value][0])
     def _done(self, title):
         q = self.app.q
         return lambda ok, m: q.put(lambda: T.banner(self.app, (f"{title} — " if ok else "COULDN'T SET IT UP — ") + m, "success" if ok else "error"))
+    def _rescan(self):
+        self.pc_line.configure(text="CHECKING THIS PC…")
+        def done(old, new):
+            def show():
+                if not self.winfo_exists(): return
+                for w in self.body.winfo_children(): w.destroy()
+                self.build(); T.banner(self.app, f"CHECKED — {self.hw.describe(new)}", "success")
+            self.app.q.put(show)
+        self.hw.rescan_async(on_done=done)
 
     # ---- text models (core, chat, coding)
-    def _dl_text(self, key, select=None):
-        if select: self._select(*select)
-        if key is None and self.brain.core_key() not in self.brain.CORES: self.core_v.set(self.cores["4b"])      # your own core: the recommended one instead
-        key = key or self.brain.core_key()
+    def _dl_text(self, key):
+        if key in ("file",) or str(key).startswith("custom"): return T.banner(self.app, "THAT'S YOUR OWN FILE — use Add manually to choose it", "busy")
         self.brain.download(on_done=self._done("INSTALLED"), key=key)
-        T.banner(self.app, "DOWNLOADING — it's installed and set up when it finishes (progress below)", "success"); self._tick(once=True)
+        T.banner(self.app, f"DOWNLOADING {self.brain.spec(key)['label'].upper()} — about {self.brain.download_size(key) / 1e9:.1f} GB; it's set up when it finishes (progress below)", "success")
+        self._tick(once=True)
     def _add_text(self, slot, pref_key):
         p = filedialog.askopenfilename(parent=self.app, title="Choose a text model file (.gguf)", filetypes=[("Text models", "*.gguf"), ("All files", "*.*")])
         if not p: return
         import learning_areas as LA
         if not LA.fits(self.app, "Shared models", [p]): return
-        self.brain.add_file(slot, p, on_done=self._done("INSTALLED"))
-        if pref_key == "core_model":
-            self.cores["custom-core"] = self.brain.spec("custom-core")["label"] + " (yours)"; self.core_choice.choices = list(self.cores.values())
-            self.core_v.set(self.cores["custom-core"])
-        else: self._select(pref_key, slot)
+        self.brain.add_file(slot, p, on_done=self._done("INSTALLED")); prefs.set(pref_key, slot)
+        T.banner(self.app, "ADDED — reopen this page to see it in the list", "success")
     # ---- image and video models
-    def _dl_images(self):
-        self._select("model_AI_Images", "sd15"); self.imaging.download(on_done=self._done("INSTALLED"))
-        T.banner(self.app, "DOWNLOADING — the image engine and Stable Diffusion 1.5 (about 2.2 GB); it's set up when it finishes", "success")
+    def _dl_images(self, key):
+        e = self.cat.entry("AI Images", key)
+        if key == "file" or (e and e.get("manual")): return T.banner(self.app, "ADD THIS ONE WITH ADD MANUALLY — choose its model file (.safetensors)", "busy")
+        self._select("model_AI_Images", key); self.imaging.download(on_done=self._done("INSTALLED"), key=key)
+        quant, _ = self.cat.variant(e)
+        T.banner(self.app, f"DOWNLOADING — the image engine and {e['label']}{f' ({quant}, the size that suits your card)' if key == 'zimage' else ''}, "
+                 f"about {self.imaging.download_size(key) / 1e9:.1f} GB; it's set up when it finishes", "success")
     def _add_image(self):
         p = filedialog.askopenfilename(parent=self.app, title="Choose an image model file", filetypes=[("Image models", "*.safetensors *.ckpt *.gguf"), ("All files", "*.*")])
         if not p: return
         import learning_areas as LA
         if not LA.fits(self.app, "Shared models", [p]): return
         self.imaging.add_file(p, on_done=self._done("INSTALLED")); self._select("model_AI_Images", "file")
-    def _dl_video(self):
-        T.popup(self.app, "NOT ON THIS CARD YET", "The recommended video model (Wan 2.2 5B) needs a graphics card with 16 GB or more; yours has 6 GB.\n"
-                "Nothing was downloaded. When you have a bigger card, this button will install it.", (("OK", "normal"),))
+    def _dl_video(self, key):
+        T.popup(self.app, "VIDEO MAKING ISN'T BUILT YET", "Your PC can run the video model, but making videos is still being built.\n"
+                "Nothing was downloaded. When it's ready, this button will install it.", (("OK", "normal"),))
     def _add_video(self):
         p = filedialog.askopenfilename(parent=self.app, title="Choose a video model file", filetypes=[("Video models", "*.safetensors *.gguf"), ("All files", "*.*")])
         if not p: return
         d = os.path.join(self.brain.ROOT, "video"); os.makedirs(d, exist_ok=True); shutil.copy(p, d); self._select("model_AI_Videos", "file")
         T.banner(self.app, f"KEPT — {os.path.basename(p)} is ready for when video making is built", "success")
 
-    def _find_card(self):
-        cards = self.brain.gpu(); txt = "Your graphics card: " + (", ".join(f"{c['name']} ({c['gb']} GB reported)" for c in cards) if cards else "not found (the model runs on the processor)")
-        self.app.q.put(lambda: self.card.winfo_exists() and self.card.configure(text=txt))
     def _switch(self, key):
         prefs.set("core_model", key)
         if self.brain.ready(): self.brain.stop()
         self._tick(once=True)
     def _start(self):
-        self.brain.load_async(on_done=lambda ok, m: self.app.q.put(lambda: T.banner(self.app, ("READY — " if ok else "COULDN'T START — ") + m, "success" if ok else "error")))
+        """start the text model as a job in the AI line, so it never lands on the card while a picture is being painted"""
+        import jobs
+        if jobs.busy("Settings/start"): return T.banner(self.app, "BUSY — the text model is already starting", "busy")
+        q = self.app.q; brain = self.brain
+        jobs.submit("Settings", "Start the text model", lambda job: brain.start(), kind="text", page="Settings/start", engine=brain.core_key(),
+                    on_done=lambda r: q.put(lambda: T.banner(self.app, "READY — " + brain.status()["detail"], "success")),
+                    on_error=lambda e: q.put(lambda e=e: T.banner(self.app, f"COULDN'T START — {e}")))
     def _stop(self): self.brain.stop(); self._tick(once=True)
     def _tick(self, once=False):
         if not self.winfo_exists(): return
         st = self.brain.status(); ist = self.imaging.status()
-        self.core_note.configure(text=self.brain.spec(self.brain.core_key())["note"])
         pct = lambda x: f" ({x['progress'] * 100:.0f}%)" if x["state"] == "downloading" and x.get("progress") else ""
         line = f"TEXT: {st['detail'] or st['state'] or ''}{pct(st)}"
         if ist["state"] in ("downloading", "error"): line += f"     IMAGES: {ist['detail']}{pct(ist)}"

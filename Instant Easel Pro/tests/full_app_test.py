@@ -49,12 +49,17 @@ def run():
         assert ds.flatten().size == tuple(ds.size_wh)
     step("Draw: every tool, mirror, undo/redo, layers, colour, zoom, pan", draw_all)
     step("Theme sliders", lambda: [app.pages["Settings"].pages["Theme"].change("bg", v / 20) or app.update() for v in range(20)])
-    for tab in ("AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Settings"):
+    import catalog; hidden, hidden_pages = catalog.hidden_tabs()                  # tabs this PC can't use aren't built (AI Videos on a small card)
+    step("tabs this PC can't use are hidden" + (f" ({', '.join(sorted(hidden))})" if hidden else ""),
+         lambda: (assert_(not (hidden & set(app.pages)), "a hidden tab was built"), assert_(not any(p in sec.pages for sec in app.pages.values() for p in hidden_pages), "a hidden page was built")))
+    for tab in [t for t in ("AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Settings") if t not in hidden]:
         sec = app.pages[tab]
         for name in sec.pages: step(f"{tab} > {name}", lambda s=sec, n=name: (app.show(tab), s.select(n), app.update()))
     step("window: maximized -> full screen -> fixed -> maximized", lambda: (app._to_maximized(), app.update(), app._to_fullscreen(), app.update(), app._to_fixed(), app.update(), app.apply_window_mode(), app.update()))
     step("zoom changes", lambda: [main.zoom_to(app, z) or app.update() for z in (1.2, 0.7, 0.78)])
     app.after(2500, done)
+def assert_(ok, msg):
+    if not ok: raise AssertionError(msg)
 def done():
     print("\n".join(steps))
     new = open(_LOG, encoding="utf-8", errors="replace").read()[_LOG0:] if os.path.exists(_LOG) else ""

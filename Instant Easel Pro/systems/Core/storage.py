@@ -14,8 +14,8 @@ import os, shutil, json
 import paths
 
 AREAS = {
-    "Shared models": [("my-models", "runtime"), ("my-models", "text", "4b"), ("my-models", "text", "9b"), ("my-models", "text", "coder7b"),
-                      ("my-models", "text", "custom"), ("my-models", "image"), ("my-models", "video")],
+    "Shared models": [("my-models", "runtime")] + [("my-models", "text", k) for k in ("27b", "9b", "4b", "2b", "coder14b", "coder7b", "coder3b")]
+                     + [("my-models", "text", "custom"), ("my-models", "image"), ("my-models", "video")],
     "AI Chat": [("my-models", "text", "tabs", "AI_Chat"), ("memory", "chat")],
     "AI Coding": [("my-models", "text", "tabs", "AI_Coding"), ("memory", "coding")],
     "AI Images": [("my-library", "Image models"), ("my-models", "text", "tabs", "AI_Images")],

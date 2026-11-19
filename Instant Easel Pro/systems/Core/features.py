@@ -148,6 +148,14 @@ MENUS = [
 
 TAB_ORDER = ["AI Images", "AI Videos", "AI Chat", "AI Coding", "AI Training", "Drawing", "Editing", "Settings"]   # the tabs, left to right
 MENUS = sorted(MENUS, key=lambda m: TAB_ORDER.index(m[0]) if m[0] in TAB_ORDER else len(TAB_ORDER))
+def visible_menus(pc=None):
+    """the menus this PC can use: a tab (or page) whose AI needs more than the PC has (AI Videos on a small graphics card) isn't shown.
+    See catalog.hidden_tabs; the PC check is hardware.py"""
+    try:
+        import catalog; tabs, pages = catalog.hidden_tabs(pc)
+    except Exception: return MENUS
+    return [(m, d, [f for f in fs if f["name"] not in pages]) for m, d, fs in MENUS if m not in tabs]
+
 OLD_TAB_NAMES = {"Images": "AI Images", "Videos": "AI Videos", "Chat": "AI Chat", "Code": "AI Coding", "Training": "AI Training", "Draw": "Drawing"}
 
 MODELS_DESIGN = """
