@@ -578,9 +578,10 @@ class ImagePage(tk.Frame):
             w.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=3); i += 1
 
     def _place_dl(self):
-        """Download at the left, halfway between the page's top border and the top of the boxes below"""
+        """Download at the left, halfway between the page's top border and the WHAT YOU WANT words below it"""
         try:
-            band = self.prompt.winfo_rooty() - self.winfo_rooty()                   # down to the words box's top border
+            lab = self._words_label.winfo_children()[0] if self._words_label.winfo_children() else self._words_label
+            band = lab.winfo_rooty() - self.winfo_rooty()                            # down to the WHAT YOU WANT words below it
             if band <= 0: band = self._split.winfo_y() + int(40 * T.Z)
             self.get_btn.place(x=0, y=max(0, (band - self.get_btn.winfo_reqheight()) // 2))
         except (tk.TclError, AttributeError): self.get_btn.place(x=0, y=0)
