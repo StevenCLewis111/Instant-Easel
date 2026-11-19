@@ -75,9 +75,12 @@ class OptionPanel(tk.Frame):
     def __init__(self, master):
         super().__init__(master, bd=0, highlightthickness=1); self.cap = None; self.current = None; self._job = None
         self.left, self.right = _Pane(self), _Pane(self)
-        cells = [self.left.cv, T.Line(self), self.left.sb, T.Line(self), self.right.cv, T.Line(self), self.right.sb]
-        for c, w in enumerate(cells): w.grid(row=0, column=c, sticky="nsew", pady=0)
-        self.columnconfigure(0, weight=1, uniform="op"); self.columnconfigure(4, weight=1, uniform="op"); self.rowconfigure(0, weight=1)
+        tp = max(4, int(round(8 * T.Z)))
+        self.ltitle = T.Text(self, "Options", font=T.f(10, "underline")); self.ltitle.grid(row=0, column=0, pady=(tp, 0))   # titles: centred, underlined
+        self.rtitle = T.Text(self, "", font=T.f(10, "underline")); self.rtitle.grid(row=0, column=4, pady=(tp, 0))
+        for c, w in ((1, T.Line(self)), (3, T.Line(self)), (5, T.Line(self))): w.grid(row=0, column=c, rowspan=2, sticky="ns")
+        for c, w in ((0, self.left.cv), (2, self.left.sb), (4, self.right.cv), (6, self.right.sb)): w.grid(row=1, column=c, sticky="nsew")
+        self.columnconfigure(0, weight=1, uniform="op"); self.columnconfigure(4, weight=1, uniform="op"); self.rowconfigure(1, weight=1)
         self.inner = self.left.inner
         self.left.inner.bind("<Configure>", lambda e: self._soon(), add="+"); self.right.inner.bind("<Configure>", lambda e: self._soon(), add="+")
         self._style(); T.on_change(self._style)
@@ -87,19 +90,21 @@ class OptionPanel(tk.Frame):
         try:
             self.configure(bg=bg, highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"])
             for pn in (self.left, self.right): pn.cv.configure(bg=bg); pn.inner.configure(bg=bg)
+            for t in (self.ltitle, self.rtitle): t._style()                          # the titles take the box's colour
         except tk.TclError: pass
     def attach(self, choice):
         """this setting button lists its choices on the right instead of stepping through them"""
         choice.open_right = True
+        if self.current is None: self.after_idle(lambda c=choice: self.current is None and self.show(c))   # the first setting's choices show to begin with
         opener = lambda e=None, c=choice: self.show(c)
         choice.bind("<Button-1>", opener); choice.bind("<Return>", opener)
         choice.var.trace_add("write", lambda *a, c=choice: self.current is c and self.after_idle(lambda: self.show(c)))
     def show(self, choice):
         self.current = choice; box = self.right.inner
         for w in box.winfo_children(): w.destroy()
+        self.rtitle.configure(text=(choice.label or "Choices").title() if choice is not None else "Choices")
         if choice is None:
             T.Text(box, "Click a setting\non the left to see\nits choices here", muted=True, font=T.f(9)).pack(anchor="w"); return
-        T.Text(box, (choice.label or "Choices").upper(), font=T.f(9)).pack(anchor="w", pady=(0, 4))
         now = choice.var.get()
         for c in choice.choices:
             b = T.Button(box, ("● " if c == now else "") + str(c), lambda c=c: choice.var.set(c))
@@ -113,7 +118,7 @@ class OptionPanel(tk.Frame):
     def _fit(self):
         self._job = None
         try:
-            ih = self.left.inner.winfo_reqheight() + 2 * max(6, int(round(10 * T.Z)))
+            ih = self.left.inner.winfo_reqheight() + 2 * max(6, int(round(10 * T.Z)))   # (the titles sit above, outside the scrolling part)
             want = ih if self.cap is None else min(ih, self.cap)
             for pn in (self.left, self.right):
                 if int(float(pn.cv.cget("height"))) != want: pn.cv.configure(height=want)
@@ -454,7 +459,7 @@ class ImagePage(tk.Frame):
         self.dl_bar = T.ProgressBar(st, width=300)                               # a real bar while something downloads
         self.get_btn = T.Button(self if self.VIEWER else st, "Download", self.download, width=12)
         if self.SPLIT or self.VIEWER:
-            split = _frame(self); split.pack(fill="both", expand=True, pady=(4, 0))
+            split = _frame(self); split.pack(fill="both", expand=True, pady=(4, 0)); self._split = split
             if self.VIEWER:                                                          # two equal halves, whatever the window size
                 split.columnconfigure(0, weight=1, uniform="half"); split.columnconfigure(1, weight=1, uniform="half"); split.rowconfigure(0, weight=1)
                 self.left = _frame(split); self.left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
@@ -545,6 +550,7 @@ class ImagePage(tk.Frame):
             self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=0)
             self.gobar.pack_configure(fill="x", pady=(10, 10))                       # Paint it / Stop: the same gap above (to LEAVE OUT) as below (to the box)
             host.bind("<Configure>", lambda e: e.widget is host and self.after(20, self._fit_left), add="+")
+            self.bind("<Configure>", lambda e: e.widget is self and self.get_btn.winfo_manager() and self.after(30, self._place_dl), add="+")
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
         self.results = _frame(self if not self.SPLIT else host)
         if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
@@ -570,6 +576,14 @@ class ImagePage(tk.Frame):
         for w, span in self._opts:
             if w in hidden: continue
             w.grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=3); i += 1
+
+    def _place_dl(self):
+        """Download at the left, halfway between the page's top border and the top of the boxes below"""
+        try:
+            band = self.prompt.winfo_rooty() - self.winfo_rooty()                   # down to the words box's top border
+            if band <= 0: band = self._split.winfo_y() + int(40 * T.Z)
+            self.get_btn.place(x=0, y=max(0, (band - self.get_btn.winfo_reqheight()) // 2))
+        except (tk.TclError, AttributeError): self.get_btn.place(x=0, y=0)
 
     def _fit_left(self):
         """the settings area gets what the column has left after the words box's 3 lines; past that it scrolls"""
@@ -644,7 +658,7 @@ class ImagePage(tk.Frame):
         if self.job is not None and self.job.state == "waiting": self.msg.configure(text=jobs.where(self.job).upper())
         show = bool(need) and st["state"] != "downloading"
         if show and not self.get_btn.winfo_manager():
-            if self.VIEWER: self.get_btn.place(x=0, y=0)                            # the top left corner of the page
+            if self.VIEWER: self._place_dl()                                         # top left, centred up and down in the band above the boxes
             else: self.get_btn.pack(side="left")
         elif not show and self.get_btn.winfo_manager(): (self.get_btn.place_forget if self.VIEWER else self.get_btn.pack_forget)()
         self.after(800, self._tick)
