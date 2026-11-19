@@ -117,6 +117,8 @@ AREAS = {
               S("Skip tiny pictures", "built", "Pictures under 256 pixels are left out: too small to show any detail.", "skip_small", True),
               S("Square-crop around the middle", "planned", "Same framing on every picture keeps it learning the subject, not the edges.", "crop", False)]),
    ("Label", [I("Search word = label", "built", "Pictures from a search are labelled with the word you searched. Change any label in the review.", "label_note"),
+              B("Its style words", "built", "A few words for the look (e.g. 'bold black outlines, flat pastel colours, rounded shapes'). They go into every picture painted with it.", "style_words"),
+              B("Choose its reference pictures", "built", "Up to 4 of its best pictures. With FLUX.2 Klein they guide the look of every picture painted with it (no training needed).", "pick_refs"),
               I("Trigger word", "built", "A made-up word for this model, used the same way on every picture. Type it in a request to switch the model on.", "trigger"),
               S("Describe each picture", "planned", "The core model writes a short description of each picture for you to check. Wrong descriptions teach wrong things.", "captions", False)]),
    ("Settings", [S("Keep copies after training", "built", "Off: the app's copies are deleted after training. Your originals are never touched.", "keep", False),
@@ -125,9 +127,10 @@ AREAS = {
                  C("Training length", "planned", "About 100 steps per picture; start with a short test and check before a long run.",
                    "length", ["Short test", "Normal", "Long"], "Normal")]),
    ("Train", [I("Pictures ready", "built", "Pictures in this model, per label.", "waiting"),
-              B("Train this image model", "planned", "Trains this model's add-on (a LoRA) on its pictures, on top of Stable Diffusion 1.5. Coming next.", "planned"),
+              I("Works now, without training", "built", "Pick it as a STYLE in any AI Images section: its style words and reference pictures guide the look (FLUX.2 Klein).", "works_now"),
+              B("Train this image model", "planned", "Training its own add-on (a LoRA) on this PC needs a GPU training kit that isn't built in yet. A LoRA trained elsewhere works below.", "planned"),
               B("Add a trained add-on you already have", "built", "A LoRA file (.safetensors) made for Stable Diffusion 1.5: this model uses it straight away.", "add_lora")]),
-   ("Test", [B("Make a test picture", "built", "Opens Text to Image with this model switched on. Try the same request with it set to None to compare.", "try_model"),
+   ("Test", [B("Make a test picture", "built", "Opens Text to Image with this model as the style. Try the same request with style None to compare.", "try_model"),
              B("Roll back to an earlier version", "planned", "Every training saves a version; go back if a new one made it worse.", "planned")]),
   ]),
  "Video Learning": dict(tab="AI Videos", intro="Teaches movement: how things move, a look, or a character, from short video clips.",
@@ -486,8 +489,13 @@ class ImageAreaPage(AreaPage):
     def info_text(self, what):
         n = self.IM.active()
         if what == "base":
-            import settings_pages as SP; k = prefs.get("model_AI_Images"); return SP.IMAGE_MODELS.get(k, ("—",))[0]
+            import catalog, imaging; e = catalog.entry("AI Images", imaging.choice()); return e["label"] if e else "Your own model file"
         if what == "trigger": return self.IM.info(n).get("trigger", "") if n else "(make an image model first)"
+        if what == "works_now":
+            if not n: return "(make an image model first)"
+            import imaging; i = self.IM.info(n); refs = len([p for p in i.get("references", []) if os.path.exists(p)])
+            return (f"style words: {'yes' if i.get('style_words') else 'not yet'}   reference pictures: {refs or 'picked for you'}   "
+                    f"FLUX.2 Klein: {'downloaded' if imaging.have('klein') else 'not downloaded (words only until then)'}")
         if what == "waiting":
             if not n: return "(make an image model first)"
             w = self.IM.pictures(n); return "   ".join(f"{k}: {v}" for k, v in w.items()) or "no pictures yet"
@@ -504,7 +512,20 @@ class ImageAreaPage(AreaPage):
     def do_try_model(self):
         n = self.need_model()
         if not n: return
-        self.app.goto("AI Images", "Text to Image"); pg = self.app.pages["AI Images"].pages["Text to Image"]; pg.refresh(); pg.model.set(n)
+        import styles
+        self.app.goto("AI Images", "Text to Image"); pg = self.app.pages["AI Images"].pages["Text to Image"]; pg.refresh(); pg.style.set(styles.YOURS + n)
+    def do_style_words(self):
+        n = self.need_model()
+        if not n: return
+        d = Dialog(self.app, f"{n}: its style words", "What it should look like (e.g. bold black outlines, flat pastel colours)", None)
+        if d.result: self.IM.update(n, style_words=d.result[0].strip()); T.banner(self.app, "SAVED — they go into every picture painted with it", "success"); self.show(self.step)
+    def do_pick_refs(self):
+        n = self.need_model()
+        if not n: return
+        ps = filedialog.askopenfilenames(parent=self.app, initialdir=self.IM.pictures_dir(n), title=f"Up to 4 of {n}'s best pictures",
+                                         filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp")])
+        if not ps: return
+        self.IM.update(n, references=list(ps)[:4]); T.banner(self.app, f"CHOSEN — {min(4, len(ps))} reference pictures for {n}", "success"); self.show(self.step)
     def do_scraper(self):
         if self.need_model(): self.goto("Image Scraper")
     def do_review(self):

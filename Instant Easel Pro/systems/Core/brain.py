@@ -124,22 +124,40 @@ def _get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "InstantEasel", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
 
-def _fetch(url, dest, label, size_hint=0, report=None):
-    """download url to dest with progress (resumes a part-finished file). report(text, fraction) defaults to this module's status"""
+def _fetch(url, dest, label, size_hint=0, report=None, tries=5):
+    """download url to dest with progress. Robust: a dropped connection is retried (up to `tries` times, waiting a little longer
+    each time) and carries on from where it stopped; a file that comes in short, or an error page instead of the file, is never
+    kept. report(text, fraction) defaults to this module's status"""
     report = report or (lambda text, frac: _set("downloading", text, frac))
-    tmp = dest + ".part"; have = os.path.getsize(tmp) if os.path.exists(tmp) else 0
-    req = urllib.request.Request(url, headers={"User-Agent": "InstantEasel", **({"Range": f"bytes={have}-"} if have else {})})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        if have and r.status != 206: have = 0                                          # the server started over
-        total = have + int(r.headers.get("Content-Length") or 0) or size_hint
-        with open(tmp, "ab" if have else "wb") as f:
-            done = have
-            while True:
-                chunk = r.read(1 << 20)
-                if not chunk: break
-                f.write(chunk); done += len(chunk)
-                report(f"Downloading {label}… {done / 1e9:.2f} of {total / 1e9:.2f} GB" if total else f"Downloading {label}… {done / 1e6:.0f} MB",
-                       done / total if total else 0)
+    tmp = dest + ".part"; last = None
+    for attempt in range(1, tries + 1):
+        have = os.path.getsize(tmp) if os.path.exists(tmp) else 0
+        req = urllib.request.Request(url, headers={"User-Agent": "InstantEasel", **({"Range": f"bytes={have}-"} if have else {})})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                if have and r.status == 416: break                                     # the server says we already have it all
+                if have and r.status != 206: have = 0                                  # the server started over
+                length = int(r.headers.get("Content-Length") or 0); total = (have + length) if length else size_hint
+                if "text/html" in (r.headers.get("Content-Type") or "") and not url.endswith((".html", ".htm")):
+                    raise RuntimeError("the download site sent a web page instead of the file (it may need a sign-in, or moved)")
+                with open(tmp, "ab" if have else "wb") as f:
+                    done = have
+                    while True:
+                        chunk = r.read(1 << 20)
+                        if not chunk: break
+                        f.write(chunk); done += len(chunk)
+                        report(f"Downloading {label}… {done / 1e9:.2f} of {total / 1e9:.2f} GB" if total else f"Downloading {label}… {done / 1e6:.0f} MB",
+                               done / total if total else 0)
+                if length and done < have + length: raise ConnectionError(f"the connection dropped at {done / 1e9:.2f} GB")
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 416 and have: break
+            if e.code in (401, 403, 404): raise RuntimeError(f"{label}: the download site said {e.code} ({e.reason}) — it may have moved or need a sign-in")
+            last = e
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e: last = e
+        if attempt == tries: raise RuntimeError(f"{label} didn't finish downloading after {tries} tries ({last}). Press Download again to carry on from where it stopped")
+        report(f"Connection trouble — trying again ({attempt + 1} of {tries})…", 0); time.sleep(min(30, 3 * attempt))
+    if os.path.getsize(tmp) < 1024: os.remove(tmp); raise RuntimeError(f"{label}: the download was empty")
     os.replace(tmp, dest)
 
 def _runtime_asset():

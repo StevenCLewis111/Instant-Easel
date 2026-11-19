@@ -37,3 +37,8 @@ EXE Build/memory/
 .json/pc_scan.json
 EXE Build/.json/pc_scan.json
 /recovery/
+
+# settings safety copies (prefs.py)
+.json/*.bak
+.json/*.tmp
+.json/*.damaged

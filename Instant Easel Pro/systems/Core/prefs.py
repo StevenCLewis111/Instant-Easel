@@ -4,7 +4,7 @@ prefs.py: Instant Easel Pro's settings. One store, saved as instant_easel_settin
     prefs.get("save_format")          # -> "PNG"
     prefs.set("auto_save", True)      # saves to disk and tells anything listening
 """
-import os, sys, json, datetime, subprocess, shutil, traceback
+import os, sys, json, datetime, subprocess, shutil, traceback, threading
 
 import paths
 def home_dir(): return paths.HOME                                     # your data: next to main.py (or the .exe)
@@ -25,37 +25,57 @@ DEFAULTS = {
     # AI models: one core text model for every AI tab; a tab can add its own model (Settings > AI Models)
     "ai_drive": "", "ai_budgets": {},       # Settings > AI Storage: where the AI keeps everything, and each AI's portion (GB)
     "core_model": "", "speed_text": "Balanced", "speed_image": "Balanced",   # Fast / Balanced / Safe (Settings > AI Models)
-    "model_AI_Chat": "", "model_AI_Coding": "", "model_AI_Images": "", "model_AI_Videos": "", "image_model": "",   # "": not chosen yet (the best downloaded / best for this PC)
+    "model_AI_Chat": "", "model_AI_Coding": "", "model_AI_Images": "", "model_AI_Videos": "", "image_model": "",
+    "image_default_style": "None", "image_default_size": "Square 1:1", "image_live_preview": True, "image_speed_boost": False,      # Settings > AI Images
+    "image_sharper": False, "image_auto_upscale": "Off", "image_improve_words": True, "image_stall_minutes": 10,   # "": not chosen yet (the best downloaded / best for this PC)
     "use_gpu": True, "models_folder": "",
     # Updates
     "check_updates_on_start": False,
 }
 SIZES = {"edit_preview": {"Fast": 700, "Normal": 1000, "Sharp": 1400},
          "text_size": {"Small": 0.9, "Normal": 1.0, "Large": 1.15}}
-_FILE = paths.json_file("instant_easel_settings.json"); _data = None; _listeners = []
+_FILE = paths.json_file("instant_easel_settings.json"); _data = None; _listeners = []; _wlock = threading.RLock()
+
+def _write():
+    """save the settings safely: written to a new file first and swapped in whole (a crash mid-save can't leave half a file),
+    and the last good copy is kept as .bak, which is read back if the main file is ever damaged"""
+    with _wlock:
+        try:
+            tmp = _FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f: json.dump(_data, f, indent=1); f.flush(); os.fsync(f.fileno())
+            if os.path.exists(_FILE):
+                try: shutil.copyfile(_FILE, _FILE + ".bak")
+                except Exception: pass
+            os.replace(tmp, _FILE)
+        except Exception: pass
+
+def _read(path):
+    with open(path, encoding="utf-8") as f: d = json.load(f)
+    if not isinstance(d, dict): raise ValueError("not a settings file")
+    return d
 
 def _load():
     global _data
     if _data is None:
         _data = dict(DEFAULTS)
-        try: _data.update(json.load(open(_FILE)))
-        except Exception: pass
+        for path in (_FILE, _FILE + ".bak"):                              # the settings, else the last good copy
+            try: _data.update(_read(path)); break
+            except FileNotFoundError: continue
+            except Exception:
+                try: shutil.copyfile(path, path + ".damaged")              # keep the damaged one for a look, then try the backup
+                except Exception: pass
         if _data.get("name_pattern") == "instant-easel-{date}-{time}-{n}": _data["name_pattern"] = DEFAULTS["name_pattern"]   # the Pro name
         if not _data.get("_launch_maximized_v2"):                         # once more (Nov 2026): start maximized (title bar and taskbar showing), not full screen
             _data["window_mode"] = "Maximized"; _data["_launch_maximized_v2"] = _data["_launch_maximized_v1"] = True
-            try: json.dump(_data, open(_FILE, "w"), indent=1)
-            except Exception: pass
+            _write()
         if not _data.get("_launch_maximized_v1"):                         # once: the new start-up default (title bar, fills the screen above the taskbar)
             _data["window_mode"] = "Maximized"; _data["_launch_maximized_v1"] = True
-            try: json.dump(_data, open(_FILE, "w"), indent=1)
-            except Exception: pass
+            _write()
     return _data
 
 def get(key): return _load().get(key, DEFAULTS.get(key))
 def set(key, value):
-    _load()[key] = value
-    try: json.dump(_data, open(_FILE, "w"), indent=1)
-    except Exception: pass
+    with _wlock: _load()[key] = value; _write()
     for fn in list(_listeners):
         try: fn(key, value)
         except Exception: pass
@@ -116,7 +136,8 @@ def save_image(img, path, meta=None):
     if meta and fmt == "PNG":
         from PIL.PngImagePlugin import PngInfo
         info = PngInfo(); [info.add_text(f"instant-easel:{k}", str(v)) for k, v in meta.items()]; kw["pnginfo"] = info
-    img.save(path, fmt, quality=int(get("jpeg_quality")), **kw)
+    tmp = path + ".saving"                                                    # a whole picture or none: never half a file
+    img.save(tmp, fmt, quality=int(get("jpeg_quality")), **kw); os.replace(tmp, path)
     return path
 
 def picture_info(path):

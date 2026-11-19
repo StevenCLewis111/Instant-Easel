@@ -256,7 +256,7 @@ class InstantEasel(tk.Tk):
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), **WP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
-                 "AI Models": SP.AIModelsPage, "AI Storage": SP.AIStoragePage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.edit = dict(original=None, proxy=None, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM), listeners=[])   # shared by the Edit tools
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
@@ -694,11 +694,23 @@ class InstantEasel(tk.Tk):
             finally: self._asking = False
             if answer != "Quit": return
         crash.clean_exit()                                                                    # a normal quit: nothing to recover next time
+        for mod, fn in (("jobs", "cancel_all"), ("imaging", "stop_now"), ("brain", "stop")):         # no engine left running in the background
+            m = sys.modules.get(mod)
+            if m is not None and hasattr(m, fn):
+                try: getattr(m, fn)()
+                except Exception: pass
         ig = sys.modules.get("image_grabber")                                                 # the scraper's hidden Firefox (kept open between
         if ig is not None:                                                                     # scans so Google's check comes up once) closes too
             try: ig.close_browser()
             except Exception: pass
         self.destroy()
+
+    def bring_to_front(self):
+        """someone opened the app again: show this copy instead"""
+        try:
+            if self.state() == "iconic": self.deiconify()
+            self.lift(); self.attributes("-topmost", True); self.after(300, lambda: self.attributes("-topmost", False)); self.focus_force()
+        except tk.TclError: pass
 
     def _on_error(self, exc, val, tb):
         """every error is logged; a pop-up only for the first of a kind each minute, and never more than one open (a repeating error
@@ -1309,11 +1321,16 @@ def _cant_start(err_text):
     except Exception: pass
 
 def run_app():
+    import single
+    holder = {}
+    if not single.claim(on_show=lambda: holder.get("app") and holder["app"].q.put(holder["app"].bring_to_front)):
+        return                                                           # already open: that copy comes to the front instead
     info = crash.start(home_dir(), prefs.log_error)                   # crash log, thread errors, freeze watchdog, last-session check
     if info["safe_mode"]:                                             # failed to start twice in a row: the settings most likely to blame go back to defaults
         for k in ("window_mode", "start_tab", "show_splash", "check_updates_on_start", "text_size"): prefs.set(k, prefs.DEFAULTS[k])
     try:
         app = InstantEasel(splash=bool(prefs.get("show_splash")) and not info["safe_mode"])   # built hidden (the splash shows the progress)
+        holder["app"] = app
         app.restore_window()                                            # the fixed size, centred, before it is first shown
         app.show_window()                                               # laid out, zoomed and warmed up while invisible, then shown in one go
         app.after(2500, lambda: app.after_start(info))                  # up and running: a crash after this isn't a start-up failure

@@ -4,7 +4,7 @@ prefs.py: Instant Easel's settings. One store, saved as instant_easel_settings.j
     prefs.get("save_format")          # -> "PNG"
     prefs.set("auto_save", True)      # saves to disk and tells anything listening
 """
-import os, sys, json, datetime, subprocess, shutil, traceback
+import os, sys, json, datetime, subprocess, shutil, traceback, threading
 
 import paths
 def home_dir(): return paths.HOME                                     # your data: next to main.py (or the .exe)
@@ -31,29 +31,47 @@ DEFAULTS = {
 }
 SIZES = {"edit_preview": {"Fast": 700, "Normal": 1000, "Sharp": 1400}, "i2i_size": {"Fast": 1200, "Standard": 1600, "Large": 2400},
          "text_size": {"Small": 0.9, "Normal": 1.0, "Large": 1.15}}
-_FILE = paths.json_file("instant_easel_settings.json"); _data = None; _listeners = []
+_FILE = paths.json_file("instant_easel_settings.json"); _data = None; _listeners = []; _wlock = threading.RLock()
+
+def _write():
+    """save the settings safely: written to a new file first and swapped in whole (a crash mid-save can't leave half a file),
+    and the last good copy is kept as .bak, which is read back if the main file is ever damaged"""
+    with _wlock:
+        try:
+            tmp = _FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f: json.dump(_data, f, indent=1); f.flush(); os.fsync(f.fileno())
+            if os.path.exists(_FILE):
+                try: shutil.copyfile(_FILE, _FILE + ".bak")
+                except Exception: pass
+            os.replace(tmp, _FILE)
+        except Exception: pass
+
+def _read(path):
+    with open(path, encoding="utf-8") as f: d = json.load(f)
+    if not isinstance(d, dict): raise ValueError("not a settings file")
+    return d
 
 def _load():
     global _data
     if _data is None:
         _data = dict(DEFAULTS)
-        try: _data.update(json.load(open(_FILE)))
-        except Exception: pass
+        for path in (_FILE, _FILE + ".bak"):                              # the settings, else the last good copy
+            try: _data.update(_read(path)); break
+            except FileNotFoundError: continue
+            except Exception:
+                try: shutil.copyfile(path, path + ".damaged")              # keep the damaged one for a look, then try the backup
+                except Exception: pass
         if not _data.get("_launch_maximized_v2"):                         # once more (Nov 2026): start maximized (title bar and taskbar showing), not full screen
             _data["window_mode"] = "Maximized"; _data["_launch_maximized_v2"] = _data["_launch_maximized_v1"] = True
-            try: json.dump(_data, open(_FILE, "w"), indent=1)
-            except Exception: pass
+            _write()
         if not _data.get("_launch_maximized_v1"):                         # once: the new start-up default (title bar, fills the screen above the taskbar)
             _data["window_mode"] = "Maximized"; _data["_launch_maximized_v1"] = True
-            try: json.dump(_data, open(_FILE, "w"), indent=1)
-            except Exception: pass
+            _write()
     return _data
 
 def get(key): return _load().get(key, DEFAULTS.get(key))
 def set(key, value):
-    _load()[key] = value
-    try: json.dump(_data, open(_FILE, "w"), indent=1)
-    except Exception: pass
+    with _wlock: _load()[key] = value; _write()
     for fn in list(_listeners):
         try: fn(key, value)
         except Exception: pass
@@ -109,7 +127,8 @@ def save_image(img, path):
     """save in the chosen format and quality (JPEG has no transparency, so it's flattened)"""
     fmt = {".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP"}.get(os.path.splitext(path)[1].lower(), "PNG")
     if fmt == "JPEG" and img.mode != "RGB": img = img.convert("RGB")
-    img.save(path, fmt, quality=int(get("jpeg_quality")))
+    tmp = path + ".saving"                                                    # a whole picture or none: never half a file
+    img.save(tmp, fmt, quality=int(get("jpeg_quality"))); os.replace(tmp, path)
     return path
 
 def open_folder(path):

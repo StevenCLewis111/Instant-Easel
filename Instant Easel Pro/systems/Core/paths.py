@@ -61,8 +61,14 @@ def saved_images(*p):
 def json_file(name):
     os.makedirs(JSON_DIR, exist_ok=True); return os.path.join(JSON_DIR, name)
 
+LOG_LIMIT = 5 * 1024 * 1024
 def log_file(name):
-    os.makedirs(LOGS, exist_ok=True); return os.path.join(LOGS, name)
+    """a log's path; a log past 5 MB is moved to <name>.old.log first (one old copy kept), so logs never fill the disk"""
+    os.makedirs(LOGS, exist_ok=True); p = os.path.join(LOGS, name)
+    try:
+        if os.path.getsize(p) > LOG_LIMIT: os.replace(p, os.path.splitext(p)[0] + ".old.log")
+    except OSError: pass
+    return p
 
 def systems_folders(root=None):
     """every folder under systems/ that holds scripts (added to the import path at start-up)"""

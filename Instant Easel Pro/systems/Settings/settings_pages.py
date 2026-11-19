@@ -200,6 +200,10 @@ class AIModelsPage(SettingsPage):
         images = self._choices("AI Images", custom=("file", "Your own model file"))
         self._row_with("AI IMAGES", "built", "model_AI_Images", images, imaging.choice() if imaging.choice() in images else self._default("AI Images", images),
                        download=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image")
+        edits = self._choices("Image edits")
+        if edits:
+            self._row_with("IMAGE EDITS", "built", "model_image_edits", edits, next(iter(edits)), download=self._dl_images, add=self._add_image, folder=imaging.KDIR)
+        else: T.Text(self.body, "IMAGE EDITS: FLUX.2 Klein needs 16 GB of PC memory, so Prompt to Edit and the reference sections can't run on this PC.", muted=True, font=T.f(9)).pack(anchor="w")
         T.Text(self.body, "SPEED: Fast puts everything on the graphics card. Balanced lets the engine fit the model to the card's free memory. Safe keeps "
                "more in PC memory: slower, but big models fit. Before every run the app checks the free memory and steps down by itself (Fast → "
                "Balanced → Safe), and if a run still runs out of memory it's tried again in Safe instead of failing.", muted=True, font=T.f(8),
@@ -226,8 +230,8 @@ class AIModelsPage(SettingsPage):
 
     def _downloaded(self, area, key):
         if area in ("core", "AI Coding", "AI Chat"): return bool(self.brain.model_file(key))
-        if area == "AI Images":
-            if key == "zimage": return bool(self.imaging.zimage_parts())
+        if area in ("AI Images", "Image edits"):
+            if key in ("zimage", "klein"): return self.imaging.have(key)
             if key == "sd15": return os.path.exists(os.path.join(self.imaging.IMAGE, self.imaging.SD15["file"]))
             if key == "file": return any(f != self.imaging.SD15["file"] for f in os.listdir(self.imaging.IMAGE)) if os.path.isdir(self.imaging.IMAGE) else False
         return False
@@ -298,11 +302,12 @@ class AIModelsPage(SettingsPage):
         T.banner(self.app, "ADDED — reopen this page to see it in the list", "success")
     # ---- image and video models
     def _dl_images(self, key):
-        e = self.cat.entry("AI Images", key)
+        e = self.cat.entry("AI Images", key) or self.cat.entry("Image edits", key)
         if key == "file" or (e and e.get("manual")): return T.banner(self.app, "ADD THIS ONE WITH ADD MANUALLY — choose its model file (.safetensors)", "busy")
-        self._select("model_AI_Images", key); self.imaging.download(on_done=self._done("INSTALLED"), key=key)
+        if self.cat.entry("AI Images", key) and key != "klein": self._select("model_AI_Images", key)
+        self.imaging.download(on_done=self._done("INSTALLED"), key=key)
         quant, _ = self.cat.variant(e)
-        T.banner(self.app, f"DOWNLOADING — the image engine and {e['label']}{f' ({quant}, the size that suits your card)' if key == 'zimage' else ''}, "
+        T.banner(self.app, f"DOWNLOADING — the image engine and {e['label']}{f' ({quant}, the size that suits your card)' if key in ('zimage', 'klein') else ''}, "
                  f"about {self.imaging.download_size(key) / 1e9:.1f} GB; it's set up when it finishes", "success")
     def _add_image(self):
         p = filedialog.askopenfilename(parent=self.app, title="Choose an image model file", filetypes=[("Image models", "*.safetensors *.ckpt *.gguf"), ("All files", "*.*")])
@@ -340,6 +345,43 @@ class AIModelsPage(SettingsPage):
         if ist["state"] in ("downloading", "error"): line += f"     IMAGES: {ist['detail']}{pct(ist)}"
         self.state.configure(text=line)
         if not once: self.after(1000, self._tick)
+
+# ---------------------------------------------------------------- AI Images: how the image generator works
+class AIImagesPage(SettingsPage):
+    TITLE = "AI Images"; NOTE = ("How the image generator works. Each AI Images section remembers its own last settings; these are the defaults and the "
+                                 "engine's behaviour. The picture models themselves are in AI Models.")
+    def build(self):
+        import imaging, styles; self.im = imaging
+        self.choice("Default style", "image_default_style", list(styles.BUILT_IN), "The style a section starts with (each section then remembers its own).")
+        self.choice("Default size", "image_default_size", imaging.SIZES, "The shape new pictures start at. The pixels follow the model (1024 for Z-Image and FLUX.2, 512 for SD 1.5).")
+        self.toggle("Live preview", "image_live_preview", "A rough picture of the run so far, shown while it paints.")
+        self.toggle("Fuller descriptions", "image_improve_words", "Text to Image starts with the core text model writing a fuller description of your words.")
+        self.toggle("Speed boost", "image_speed_boost", "Reuses work between similar steps: faster, with a little less fine detail.")
+        self.toggle("Sharper Stable Diffusion", "image_sharper", "SD pictures get a second, bigger pass (hires fix): sharper, about twice as slow.")
+        self.choice("Upscale every picture", "image_auto_upscale", ["Off", "2x", "4x"], "Each new picture comes out bigger and sharper (the upscaler downloads once, about 70 MB).")
+        self.choice("Stop a stuck run after", "image_stall_minutes", ["5", "10", "20", "30"], "Minutes with no sign of life before the image engine is stopped, so the AI line moves on.")
+        T.Text(self.body, "ADD-ONS", font=T.f(11)).pack(anchor="w", pady=(12, 2))
+        self.rows = _frame(self.body); self.rows.pack(anchor="w", fill="x"); self._addons()
+    def _addons(self):
+        for w in self.rows.winfo_children(): w.destroy()
+        info = {"upscale_photo": "Bigger, sharper photos (Upscale 2x / 4x).", "upscale_art": "Bigger, sharper art: cartoons, anime, line art.",
+                "pose": "Pose to Image.", "outline": "Depth to Image: keep its outlines.", "depth": "Depth to Image: from a depth map.",
+                "scribble": "Sketch to Image: follow my lines exactly."}
+        for k, a in self.im.ADDON_FILES.items():
+            r = _frame(self.rows); r.pack(fill="x", anchor="w", pady=2); here = self.im.addon(k); name = a["label"][4:] if a["label"].startswith("the ") else a["label"]
+            T.Text(r, ("✓ " if here else "   ") + name.upper(), font=T.f(9), width=40, anchor="w").pack(side="left")
+            T.Text(r, f"{a['size'] * 1000:.0f} MB" if a["size"] < 1 else f"{a['size']:.1f} GB", font=T.f(9), muted=True, width=8).pack(side="left")
+            if here: T.Button(r, "Remove", lambda k=k: self._remove(k), kind="danger", width=8).pack(side="left", padx=4)
+            else: T.Button(r, "Download", lambda k=k: self._get(k), width=10).pack(side="left", padx=4)
+            T.Text(r, info.get(k, ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
+    def _get(self, k):
+        q = self.app.q
+        def done(ok, m): q.put(lambda: (T.banner(self.app, ("DOWNLOADED — " if ok else "DOWNLOAD FAILED — ") + m, "success" if ok else "error"), self.winfo_exists() and self._addons()))
+        self.im.download(on_done=done, key=k); T.banner(self.app, f"DOWNLOADING — {self.im.ADDON_FILES[k]['label']}", "success")
+    def _remove(self, k):
+        try: os.remove(self.im.addon(k))
+        except Exception as e: return T.banner(self.app, f"COULDN'T REMOVE IT — {e}")
+        self._addons(); T.banner(self.app, "REMOVED", "success")
 
 # ---------------------------------------------------------------- Updates
 REPO = "StevenCLewis111/Instant-Easel"

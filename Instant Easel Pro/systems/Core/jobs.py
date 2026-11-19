@@ -61,6 +61,13 @@ def cancel(job):
         try: job.on_cancel()
         except Exception: pass
 
+def cancel_all():
+    """the app is closing: drop the waiting jobs and stop the running one"""
+    with _lock: waiting = list(_waiting); _waiting.clear()
+    for j in waiting: j.state = "cancelled"
+    j = _running[0]
+    if j is not None: cancel(j)
+
 def where(job):
     """'running now' / 'waiting: 2nd in line'"""
     p = job.place()

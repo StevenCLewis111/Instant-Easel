@@ -50,17 +50,27 @@ LADDERS = {
        variants=[(12, "Q8_0", 11.0), (6, "Q4_K", 7.9), (0, "Q3_K", 6.6)],
        note="The best picture quality that fits a home PC (close to Flux). Paints at 1024 pixels in 8 steps. "
             "Your own image models (Cartoon, Fashion...) are trained for Stable Diffusion 1.5, so they don't switch on with it."),
+  dict(key="klein", label="FLUX.2 Klein 4B", kind="klein", size=5.3, runs=[dict(vram=8, ram=16), dict(vram=4, ram=16), dict(ram=16)],
+       variants=[(12, "Q8_0", 9.0), (0, "Q4_K", 5.3)],
+       note="The editor: changes pictures from words and uses up to 4 reference pictures (people, things, style). Also paints, "
+            "very fast (4 steps). Your own style models use it with their pictures."),
   dict(key="sdxl", label="Stable Diffusion XL", kind="sd", size=6.9, manual=True, runs=[dict(vram=8)],
        note="Sharper than 1.5. Add the model file with Add manually."),
   dict(key="sd15", label="Stable Diffusion 1.5", kind="sd", size=2.1, runs=[dict(vram=2), dict(ram=8)],
        note="Quick, small and the base your own image models (Cartoon, Fashion...) train on."),
+ ],
+ "Image edits": [
+  dict(key="klein", label="FLUX.2 Klein 4B", kind="klein", size=5.3, runs=[dict(vram=8, ram=16), dict(vram=4, ram=16), dict(ram=16)],
+       variants=[(12, "Q8_0", 9.0), (0, "Q4_K", 5.3)],
+       note="The editor: changes pictures from words and uses up to 4 reference pictures (people, things, style). Also paints, "
+            "very fast (4 steps). Your own style models use it with their pictures."),
  ],
  "AI Videos": [
   dict(key="wan22", label="Wan 2.2 5B", kind="video", size=10.0, manual=True, runs=[dict(vram=16, ram=32)],
        note="The best free video model that fits a home PC. Video making is still being built."),
  ],
 }
-TABS = {"AI Images": "AI Images", "AI Videos": "AI Videos", "AI Coding": "AI Coding", "AI Chat": "core", "core": "core"}
+TABS = {"AI Images": "AI Images", "Image edits": "Image edits", "AI Videos": "AI Videos", "AI Coding": "AI Coding", "AI Chat": "core", "core": "core"}
 
 def ladder(area): return LADDERS.get(TABS.get(area, area), [])
 def entry(area, key): return next((e for e in ladder(area) if e["key"] == key), None)

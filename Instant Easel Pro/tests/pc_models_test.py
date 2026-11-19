@@ -4,6 +4,14 @@ No models are downloaded and nothing is painted: the engines' decisions are chec
 """
 import os, sys, json, time, threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import _testlog; ROOT = _testlog.start(__file__)
+import atexit
+_SETTINGS = os.path.join(ROOT, ".json", "instant_easel_settings.json"); _KEEP = open(_SETTINGS, "rb").read() if os.path.exists(_SETTINGS) else None
+def _restore():                                                                  # your settings exactly as they were
+    if _KEEP is not None: open(_SETTINGS, "wb").write(_KEEP)
+    for ext in (".bak", ".tmp"):
+        try: os.remove(_SETTINGS + ext)
+        except OSError: pass
+atexit.register(_restore)
 import hardware, catalog, jobs
 
 steps = []
@@ -30,7 +38,8 @@ check("your PC: the Arc is the AI card (integrated UHD ignored)", pc["gpu"].star
 check("your PC: core text models 9B (best), 4B, 2B — no 27B", keys("core") == ["9b", "4b", "2b"], keys("core"))
 check("your PC: 9B runs with part in PC memory", catalog.options("core")[0]["fit"] == "card+ram", catalog.options("core")[0]["fit"])
 check("your PC: coding 7B (best), 3B — no 14B", keys("AI Coding") == ["coder7b", "coder3b"], keys("AI Coding"))
-check("your PC: images Z-Image Turbo (best), Stable Diffusion 1.5 — no SDXL", keys("AI Images") == ["zimage", "sd15"], keys("AI Images"))
+check("your PC: images Z-Image Turbo (best), FLUX.2 Klein, Stable Diffusion 1.5 — no SDXL", keys("AI Images") == ["zimage", "klein", "sd15"], keys("AI Images"))
+check("your PC: image edits FLUX.2 Klein (part in PC memory)", keys("Image edits") == ["klein"] and catalog.options("Image edits")[0]["fit"] == "card+ram", catalog.options("Image edits"))
 check("your PC: Z-Image download is the Q4 size for a 6 GB card", catalog.variant(catalog.entry("AI Images", "zimage"))[0] == "Q4_K",
       catalog.variant(catalog.entry("AI Images", "zimage")))
 check("your PC: no video model fits -> AI Videos tab and Video Learning hidden", catalog.hidden_tabs() == ({"AI Videos"}, {"Video Learning"}), catalog.hidden_tabs())
@@ -71,7 +80,8 @@ try:
           "ErrorOutOfDeviceMemory", "vk::DeviceLostError")))
 finally:
     for p in made: os.remove(p)
-    prefs.set("model_AI_Images", "")
+    try: os.rmdir(imaging.ZDIR)
+    except OSError: pass
 as_pc(YOURS)
 f9 = os.path.join(brain.TEXT, "9b", "test-Q4_K_M.gguf"); os.makedirs(os.path.dirname(f9), exist_ok=True)
 with open(f9, "wb") as f: f.truncate(int(5.7 * 2 ** 30))

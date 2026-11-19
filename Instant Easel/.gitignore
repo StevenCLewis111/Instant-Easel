@@ -29,3 +29,8 @@ EXE Build/images/
 EXE Build/videos/
 EXE Build/code/
 EXE Build/chats/
+
+# settings safety copies (prefs.py)
+.json/*.bak
+.json/*.tmp
+.json/*.damaged
