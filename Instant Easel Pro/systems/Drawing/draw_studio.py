@@ -544,8 +544,14 @@ class DrawStudio(StudioExtras, tk.Frame):
                     im = Image.new("RGBA", (W, h)); bh_ = AP.bar("bar_header", W - h // 2, int(h * 0.82), 0.4)
                     im.alpha_composite(AP.shade(bh_, 1.15) if hv else bh_, (h // 2, (h - int(h * 0.82)) // 2))
                     im.alpha_composite(AP.fit("palette_icon", h, h), (0, 0)); AP.text(im, word, int(h * 1.25), h // 2, int(h * 0.42), anchor="lm")
-                    return AP.text(im, ar, W - int(h * 0.5), h // 2, int(h * 0.42), anchor="mm") if ar else im
-                return AP.photo(("hdr", word, W, h, ar, hv), make)
+                    if ar:                                                        # a - (open) or + (closed) drawn in the border-line colour
+                        from PIL import ImageDraw
+                        d = ImageDraw.Draw(im); col = T.PALETTE["border"]; cx, cy = W - int(h * 0.62), h // 2
+                        r_ = max(3, int(h * 0.22)); t_ = max(2, int(round(h * 0.09)))
+                        d.rectangle((cx - r_, cy - t_ // 2, cx + r_, cy - t_ // 2 + t_ - 1), fill=col)
+                        if ar == "+": d.rectangle((cx - t_ // 2, cy - r_, cx - t_ // 2 + t_ - 1, cy + r_), fill=col)
+                    return im
+                return AP.photo(("hdr", word, W, h, ar, hv, T.PALETTE["border"]), make)
             return render
         here[0] = CV = self._col_inner
         top_row = frame(fill="x")                                                    # current colour / hex / Pick (filled below)
@@ -593,7 +599,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         # room) and open again when there's space (big mode); clicking the header decides from then on
         self._pal_open, self._pal_auto = True, True
         pal_group = frame(fill="x")                                                   # the palettes header and its colours, one group
-        ph_ = self._art(self._art_label(pal_group), header("PALETTES", 24, arrow=lambda: "▾" if self._pal_open else "▸")); ph_.pack(pady=(0, 1))
+        ph_ = self._art(self._art_label(pal_group), header("PALETTES", 24, arrow=lambda: "-" if self._pal_open else "+")); ph_.pack(pady=(0, 1))
         self._pal_box = frame(pal_group, fill="x"); self._pal_hdr = ph_
         for pair in (("Warm", "Cool"), ("Pastel", "Earth")): swatches(self._pal_box, PALETTES[pair[0]] + PALETTES[pair[1]], 20)
         ph_.bind("<Button-1>", lambda e: (setattr(self, "_pal_auto", False), self._set_palettes(not self._pal_open)))
@@ -611,7 +617,8 @@ class DrawStudio(StudioExtras, tk.Frame):
                 im.alpha_composite(AP.fit("history_icon", ic, ic), (x0, (H - ic) // 2))
                 return AP.text(im, "HISTORY", x0 + ic + gap, H // 2, px, anchor="lm")
             return AP.photo(("hist2", W, H, hv), make)
-        hb2 = self._art(self._art_label(hist_group), hist_img); hb2.pack(side="bottom", pady=(3, 0)); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
+        hb2 = self._art(self._art_label(hist_group), hist_img); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
+        self.hist_row.pack_forget(); hb2.pack(side="top"); self.hist_row.pack(side="top", fill="x", pady=(4, 0))   # the HISTORY button, its colours under it
         self._tip(hb2, "Show / hide the colours you used last")
         self.after_idle(lambda: self._remember(add=False))                          # the 8 white history slots show from the start
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
