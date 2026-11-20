@@ -453,6 +453,21 @@ class DrawStudio(StudioExtras, tk.Frame):
         ov = self.lay_view; g = T.ScrollBox.GAP
         osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(g, 0), pady=g); ovl = T.Line(ov, vertical=True); ovl.pack(side="right", fill="y")
         ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True, padx=(0, g), pady=(g, 0))   # a gap before the lines
+        # Color scrolls the same way (for when it gets more options): scroll bar on the right, a line left of it, a gap before the line
+        cvo = self.col_view
+        csb = T.Scrollbar(cvo, "vertical"); csb.pack(side="right", fill="y", padx=(g, 0), pady=g); cvl = T.Line(cvo, vertical=True); cvl.pack(side="right", fill="y")
+        ccv = tk.Canvas(cvo, bd=0, highlightthickness=0, bg=R["bg"], width=10); ccv.pack(side="left", fill="both", expand=True, padx=(0, g))
+        CVI = self._col_inner = tk.Frame(ccv, bg=R["bg"]); cwin = ccv.create_window(0, 0, window=CVI, anchor="nw")
+        csb.command = ccv.yview; ccv.configure(yscrollcommand=csb.set)
+        def cfit(e=None):                                                            # as tall as the view (so the parts can spread), taller when they need it
+            try:
+                h_ = max(ccv.winfo_height(), CVI.winfo_reqheight())
+                ccv.itemconfigure(cwin, width=ccv.winfo_width(), height=h_); ccv.configure(scrollregion=(0, 0, ccv.winfo_width(), h_))
+            except tk.TclError: pass
+        CVI.bind("<Configure>", cfit, add="+"); ccv.bind("<Configure>", cfit, add="+")
+        T.wheel_area(cvo, lambda n: csb.can_scroll() and ccv.yview_scroll(n, "units"))
+        T.on_change(lambda: (ccv.configure(bg=R["bg"]), CVI.configure(bg=R["bg"])))
+        self._col_canvas = ccv
         # border lines that reach the panel's own border: one across the top (under Color / Options), one down to the bottom
         top_line, side_line = T.Line(R), T.Line(R, vertical=True)
         def oborders(e=None):
@@ -463,8 +478,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                 px_, py_ = e_ + int(float(R.cget("padx"))), e_ + int(float(R.cget("pady"))); t_ = max(1, int(round(T.Z)))
                 y = view.winfo_rooty() - R.winfo_rooty() - py_
                 top_line.place(x=-px_ + e_, y=y, width=R.winfo_width() - 2 * e_, height=t_); top_line.lift()   # under Color / Options on both views
-                if view is not ov: side_line.place_forget(); return
-                x = ovl.winfo_rootx() - R.winfo_rootx() - px_
+                x = (ovl if view is ov else cvl).winfo_rootx() - R.winfo_rootx() - px_       # the line beside that view's scroll bar
                 side_line.place(x=x, y=y, width=t_, height=R.winfo_height() - (y + py_) - e_)
                 top_line.lift(); side_line.lift()
             except tk.TclError: pass
@@ -533,7 +547,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                     return AP.text(im, ar, W - int(h * 0.5), h // 2, int(h * 0.42), anchor="mm") if ar else im
                 return AP.photo(("hdr", word, W, h, ar, hv), make)
             return render
-        here[0] = CV = self.col_view
+        here[0] = CV = self._col_inner
         top_row = frame(fill="x")                                                    # current colour / hex / Pick (filled below)
         # ---- the colour ring: as big as the room left allows
         wf = frame(); self._wS = self._apx(150); wf.configure(width=self._wS, height=self._wS)
@@ -607,16 +621,24 @@ class DrawStudio(StudioExtras, tk.Frame):
         # (full screen, studio expanded) adds room below the block, not big holes between its parts
         sp_top = tk.Frame(CV, height=0, bg=R["bg"]); sp_bot = tk.Frame(CV, height=0, bg=R["bg"])
         T.on_change(lambda: (sp_top.configure(bg=R["bg"]), sp_bot.configure(bg=R["bg"])))
-        sp_top.pack(fill="x")                                                          # kept toward the top: the spare room goes below
+        sp_top.pack(fill="x"); sp_top.pack_propagate(False)                            # kept toward the top: the spare room goes below
         for g in self._col_groups: g.pack()
         sp_bot.pack(fill="both", expand=True)
         def col_gaps():
             try:
-                free = CV.winfo_height() - sum(g.winfo_reqheight() for g in self._col_groups)
+                pills = getattr(self, "_pills", None)                                  # top row level with the first title bar in the brush list (BRUSHES)
+                if pills and self._sc.winfo_ismapped() and CV.winfo_ismapped():
+                    p0 = pills[0]
+                    ptop = p0.winfo_rooty() - self._sc.winfo_rooty() + int(self._sc.canvasy(0)) + self._sc.winfo_rooty()
+                    ctop = CV.winfo_rooty() + int(self._col_canvas.canvasy(0))
+                    want = max(0, ptop - ctop)
+                    if abs(int(sp_top.cget("height")) - want) > 1: sp_top.configure(height=want)
+                free = CV.winfo_height() - sum(g.winfo_reqheight() for g in self._col_groups) - int(sp_top.cget("height"))
                 gap = max(2, min(self._apx(16), free // (len(self._col_groups) + 1)))
                 for i, g in enumerate(self._col_groups): g.pack_configure(pady=(0 if i == 0 else gap, 0))
             except tk.TclError: pass
         CV.bind("<Configure>", lambda e: T.defer(self, "colgaps", 40, col_gaps), add="+")
+        self._sc.bind("<Configure>", lambda e: T.defer(self, "colgaps", 60, col_gaps), add="+"); self.col_view.bind("<Map>", lambda e: T.defer(self, "colgaps", 60, col_gaps), add="+")
         self._right_view({"Layers": "Options"}.get(prefs.get("draw_right_view"), prefs.get("draw_right_view")) if prefs.get("draw_right_view") in ("Color", "Layers", "Options") else "Color")
 
     @staticmethod
