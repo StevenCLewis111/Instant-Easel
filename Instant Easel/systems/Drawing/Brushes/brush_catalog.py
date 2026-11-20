@@ -56,47 +56,13 @@ SECTIONS = [
         _b("Leaf", "leaf", "foliage", "leaves", look=dict(scatter="leaf", color=(90, 190, 60))),
         _b("Stipple", "stipple", "dotting", look=dict(color=(30, 30, 40), width=10, tex="dots")),
         _b("Pattern Brush", "pattern brush", "pattern", look=dict(scatter="star", color=(20, 20, 30), even=True)),
-    ]),
-    ("Blending", "tiles", [
-        _b("Smudge", "smudge", "smudge / blender", "finger", kind="tool", look=dict(color=(40, 55, 100), width=8, soft=1.5, tex="smear")),
-        _b("Soften", "soften", "soft blend", kind="tool", look=dict(color=(40, 55, 100), width=7, soft=7, alpha=0.7)),
-        _b("Mix", "mix", "deform (push)", "mixer", kind="tool", look=dict(color=(40, 55, 100), width=6, soft=2, tex="swirl")),
-    ]),
-    ("Blurring", "tiles", [
-        _b("Blur", "blur", "blur (filter)", kind="tool", look=dict(fx="dots", radius=2.5)),
-        _b("Gaussian Blur", "gaussian blur", "gaussian", kind="tool", look=dict(fx="dots", radius=4)),
-        _b("Motion Blur", "motion blur", "motion", kind="tool", look=dict(fx="motion")),
-        _b("Radial Blur", "radial blur", "spin blur", kind="tool", look=dict(fx="radial")),
-        _b("Zoom Blur", "zoom blur", kind="tool", look=dict(fx="zoom")),
-    ]),
-    ("Sharpen", "tiles", [
-        _b("Sharpen", "sharpen", kind="tool", look=dict(color=(25, 35, 70), width=8, tex="crisp")),
-        _b("Unsharp Mask", "unsharp mask", "unsharp", kind="tool", look=dict(color=(225, 150, 140), width=6, tex="outline")),
-        _b("High Pass", "high pass", "highpass", kind="tool", look=dict(color=(60, 60, 70), width=5, tex="outline")),
-        _b("Edge Enhance", "edge enhance", "edges", kind="tool", look=dict(color=(20, 20, 25), width=6, tex="outline")),
-        _b("Detail", "detail", kind="tool", look=dict(color=(30, 30, 40), width=4, taper=True)),
-    ]),
-    ("Special Effects", "tiles", [
-        _b("Dodge", "dodge", "glow (dodge)", "lighten", kind="tool", look=dict(fx="dodge")),
-        _b("Burn", "burn", "glaze", "darken", kind="tool", look=dict(fx="burn")),
-        _b("Saturation", "saturation", "saturate", kind="tool", look=dict(fx="rainbow")),
-        _b("Hue Shift", "hue shift", "hue", kind="tool", look=dict(fx="hue")),
-        _b("Noise", "noise", kind="tool", look=dict(fx="noise")),
-    ]),
-    ("Effect Brushes", "tiles", [
         _b("Neon", "neon", "neon brush", look=dict(fx="neon", color=(255, 40, 200))),
-        _b("Outline", "outline", "outline brush", look=dict(fx="ring", color=(235, 240, 255))),
-        _b("Shadow", "shadow", "drop shadow", look=dict(fx="shadow")),
-        _b("Inner Shadow", "inner shadow", look=dict(fx="inner")),
-        _b("Outer Glow", "outer glow", look=dict(fx="neon", color=(170, 90, 255))),
-        _b("Inner Glow", "inner glow", look=dict(fx="inner", glow=True)),
-        _b("Emboss", "emboss", kind="tool", look=dict(fx="emboss")),
-        _b("Solarize", "solarize", kind="tool", look=dict(fx="solarize")),
-        _b("Posterize", "posterize", kind="tool", look=dict(fx="posterize")),
-        _b("Pixelate", "pixelate", "grid", "pixel", kind="tool", look=dict(fx="pixelate")),
-        _b("Halftone", "halftone", kind="tool", look=dict(fx="halftone")),
-        _b("RGB Split", "rgb split", "channel split", kind="tool", look=dict(fx="rgbsplit")),
-        _b("Chromatic", "chromatic", "chromatic aberration", kind="tool", look=dict(fx="chromatic")),
+    ]),
+    ("Blur Smudge Sharpen", "tiles", [                                     # the touch-up brushes painting needs (colour / light / filter
+                                                                             #  adjustments live in the Editing tab)
+        _b("Blur", "blur", "blur (filter)", kind="tool", look=dict(fx="dots", radius=2.5)),
+        _b("Smudge", "smudge", "smudge / blender", "finger", kind="tool", look=dict(color=(40, 55, 100), width=8, soft=1.5, tex="smear")),
+        _b("Sharpen", "sharpen", kind="tool", look=dict(color=(25, 35, 70), width=8, tex="crisp")),
     ]),
     ("Decorative Brushes", "tiles", [
         _b("Stars", "stars", "star trail", look=dict(scatter="star", color=(250, 200, 30), even=True)),
@@ -133,8 +99,6 @@ SECTIONS = [
         _b("Eyedropper", "tool:eyedropper", kind="tool", tool="pick", look=dict(fx="icon", icon="Eyedropper")),
         _b("Crop", "tool:crop", kind="tool", look=dict(fx="icon", icon="Crop")),
         _b("Move", "tool:move", kind="tool", look=dict(fx="icon", icon="Move")),
-        _b("Rotate", "tool:rotate", kind="tool", look=dict(fx="icon", icon="Rotate")),
-        _b("Flip", "tool:flip", kind="tool", look=dict(fx="icon", icon="Flip")),
     ]),
     ("Misc Tools", "tiles", [
         _b("Ruler", "tool:ruler", kind="tool", look=dict(fx="shape", shape="ruler")),
@@ -147,11 +111,13 @@ SECTIONS = [
         _b("Polyline", "tool:polyline", kind="tool", look=dict(fx="shape", shape="polyline")),
         _b("Text", "tool:text", kind="tool", tool="text", look=dict(fx="shape", shape="text")),
         _b("Erase", "tool:erase", kind="tool", tool="eraser", look=dict(fx="icon", icon="Eraser")),
-        _b("Dither", "tool:dither", kind="tool", look=dict(fx="dither")),
     ]),
 ]
 
 def _key(s): return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+# engine brushes that belong to the Editing tab (light, colour and filter adjustments), not listed in Draw
+EDITING_ONLY = {"grid", "deform(push)", "glaze", "glow(dodge)", "lighten", "darken", "pixel", "gaussian", "unsharp", "highpass"}
 
 def sections(engine_names):
     """the catalog matched to the brush engine: each item gets item["engine"] (its real name in the engine, or None while planned).
@@ -167,7 +133,7 @@ def sections(engine_names):
             if it["engine"] is None and it.get("tool"): it["studio_tool"] = it["tool"]          # already a Draw tool (fill, pick, line...)
             sec.append(it)
         out.append((title, layout, sec))
-    extra = [dict(name=n[:1].upper() + n[1:], engines=[n], engine=n, look={}, kind="brush", tool=None) for n in names if n not in used and _key(n) != "eraser"]
+    extra = [dict(name=n[:1].upper() + n[1:], engines=[n], engine=n, look={}, kind="brush", tool=None) for n in names if n not in used and _key(n) != "eraser" and _key(n) not in {_key(x) for x in EDITING_ONLY}]
     if extra: out.append(("More brushes", "tiles", extra))
     return out
 
