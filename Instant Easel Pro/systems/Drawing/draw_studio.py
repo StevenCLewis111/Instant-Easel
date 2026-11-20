@@ -446,16 +446,21 @@ class DrawStudio(StudioExtras, tk.Frame):
         top_line, side_line = T.Line(R), T.Line(R, vertical=True)
         def oborders(e=None):
             try:
-                if not ov.winfo_ismapped(): top_line.place_forget(); side_line.place_forget(); return
+                view = ov if ov.winfo_ismapped() else (self.col_view if self.col_view.winfo_ismapped() else None)
+                if view is None: top_line.place_forget(); side_line.place_forget(); return
                 e_ = int(float(R.cget("bd"))) + int(float(R.cget("highlightthickness")))      # place() counts from inside the panel's edge and padding
                 px_, py_ = e_ + int(float(R.cget("padx"))), e_ + int(float(R.cget("pady"))); t_ = max(1, int(round(T.Z)))
-                y = ov.winfo_rooty() - R.winfo_rooty() - py_; x = ovl.winfo_rootx() - R.winfo_rootx() - px_
-                top_line.place(x=-px_ + e_, y=y, width=R.winfo_width() - 2 * e_, height=t_)
+                y = view.winfo_rooty() - R.winfo_rooty() - py_
+                top_line.place(x=-px_ + e_, y=y, width=R.winfo_width() - 2 * e_, height=t_); top_line.lift()   # under Color / Options on both views
+                if view is not ov: side_line.place_forget(); return
+                x = ovl.winfo_rootx() - R.winfo_rootx() - px_
                 side_line.place(x=x, y=y, width=t_, height=R.winfo_height() - (y + py_) - e_)
                 top_line.lift(); side_line.lift()
             except tk.TclError: pass
         for w_ in (ov, R): w_.bind("<Configure>", lambda e: ov.after_idle(oborders), add="+")
-        ov.bind("<Map>", lambda e: ov.after_idle(oborders), add="+"); ov.bind("<Unmap>", lambda e: oborders(), add="+")
+        for v_ in (ov, self.col_view):
+            v_.bind("<Map>", lambda e: ov.after_idle(oborders), add="+"); v_.bind("<Unmap>", lambda e: ov.after_idle(oborders), add="+")
+        self.col_view.bind("<Configure>", lambda e: ov.after_idle(oborders), add="+")
         LV = tk.Frame(ocv, bg=R["bg"]); owin = ocv.create_window(0, 0, window=LV, anchor="nw")
         osb.command = ocv.yview; ocv.configure(yscrollcommand=osb.set)
         def ofit(e=None):
