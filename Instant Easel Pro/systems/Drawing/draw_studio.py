@@ -1051,8 +1051,10 @@ class DrawStudio(StudioExtras, tk.Frame):
         g = getattr(h, "_grid", None); W = 2 * self._tw + 8
         cells = g.winfo_children()[:2] if g is not None else []
         if len(cells) == 2:                                                             # the two tiles' real widths and the gap between them
-            px = int(str(cells[0].grid_info().get("padx", 0)).split()[0]); tiles = [c.winfo_children()[0].winfo_reqwidth() for c in cells]
-            if min(tiles) > 10: W = tiles[0] + tiles[1] + 2 * px
+            pads = [int(v) for v in str(cells[0].grid_info().get("padx", 0)).replace("(", " ").replace(")", " ").replace(",", " ").split()] or [0]
+            inner = pads[-1] if len(pads) > 1 else pads[0]                                # the gap on the side facing the other tile
+            tiles = [c.winfo_children()[0].winfo_reqwidth() for c in cells]
+            if min(tiles) > 10: W = tiles[0] + tiles[1] + 2 * inner
         W = max(40, W); H = max(12, round(20 * T.Z))
         if not AP.ok(): h.configure(text=h._text, fg="white", bg=T.PALETTE["button"], font=T.f(9)); return
         ph = AP.photo(("pill", h._text, W, H), lambda: AP.text(AP.bar("bar_blank", W, H, 0.3).copy(), h._text, W // 2, H // 2, int(H * 0.5)))
