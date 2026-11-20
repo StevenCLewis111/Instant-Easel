@@ -473,6 +473,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._opt_canvas = ocv
         here = [LV]
         # ---- layers
+        lt = frame(fill="x", pady=(4, 3)); T.Text(lt, "LAYERS", font=T.f(10, "underline")).pack()      # the section's title (like TEXT below it)
         r = frame(fill="x", pady=(0, 3)); bs = (IW - 5 * 4) // 6
         for piece, cmd, tip in (("layer_add", self.add_layer, "New layer"), ("layer_dup", self.dup_layer, "Duplicate layer"),
                                 ("layer_merge", self.merge_down, "Merge down"), ("layer_up", lambda: self.move_layer(1), "Move layer up"),
@@ -587,6 +588,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             return AP.photo(("hist2", W, H, hv), make)
         hb2 = self._art(self._art_label(hist_group), hist_img); hb2.pack(side="bottom", pady=(3, 0)); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
         self._tip(hb2, "Show / hide the colours you used last")
+        self.after_idle(lambda: self._remember(add=False))                          # the 8 white history slots show from the start
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
         self._col_groups = [top_row, wf, basic, pal_group, hist_group]                  # evenly spaced down the panel (each takes an equal share of the room)
         for g in self._col_groups: g.pack_forget()
@@ -1386,13 +1388,16 @@ class DrawStudio(StudioExtras, tk.Frame):
         for w in self.hist_row.winfo_children(): w.destroy()
         if getattr(self, "_artp", False):                                      # painted swatches, up to 8, shown while HISTORY is on
             if not self._show_hist: return
-            cw = (self._IW - 7 * 3) // 8
-            for c in self.history[:8]:
-                lb = self._art(self._art_label(self.hist_row), lambda b, c=c: AP.photo(("swh", c, self._apx(cw), self._apx(18)), lambda: AP.swatch(c, self._apx(cw), self._apx(18))), hover=False)
-                lb.pack(side="left", padx=1); lb.bind("<Button-1>", lambda e, c=c: self.set_color(c))
+            cw = (self._IW - 7 * 3) // 8                                         # always 8 slots: white until a colour fills it, newest first
+            for c in self.history[:8] + [None] * (8 - len(self.history[:8])):
+                cc = c or (255, 255, 255)
+                lb = self._art(self._art_label(self.hist_row), lambda b, cc=cc: AP.photo(("swh", cc, self._apx(cw), self._apx(18)), lambda: AP.swatch(cc, self._apx(cw), self._apx(18))), hover=False)
+                lb.pack(side="left", padx=1)
+                if c is not None: lb.bind("<Button-1>", lambda e, c=c: self.set_color(c))
             return
-        for c in self.history:
-            b = tk.Label(self.hist_row, width=2, height=1, bg="#%02x%02x%02x" % c, cursor="hand2"); b.pack(side="left", padx=1); b.bind("<Button-1>", lambda e, c=c: self.set_color(c))
+        for c in self.history[:8] + [None] * (8 - len(self.history[:8])):
+            b = tk.Label(self.hist_row, width=2, height=1, bg="#%02x%02x%02x" % (c or (255, 255, 255)), cursor="hand2" if c else ""); b.pack(side="left", padx=1)
+            if c is not None: b.bind("<Button-1>", lambda e, c=c: self.set_color(c))
     def _hex_in(self):
         s = self.hexv.get().strip().lstrip("#")
         if len(s) == 6:
