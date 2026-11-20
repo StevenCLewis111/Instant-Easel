@@ -688,6 +688,28 @@ class InstantEasel(tk.Tk):
                 u.SetWindowLongW(h, -16, new); u.SetWindowPos(h, None, 0, 0, 0, 0, 0x0004 | 0x0002 | 0x0001 | 0x0020)
                 if self._mode == "fixed": self._guard(); self.geometry(self._fixed_geo()[2])       # the thinner frame changed the inside: make it exact again
             if self._sub_hwnd != hwnd: self._subclass(hwnd)
+            self._set_win_icon(hwnd)
+        except Exception as ex: prefs.log_error(type(ex), ex, ex.__traceback__)
+
+    def _set_win_icon(self, hwnd):
+        """Windows: give the window our icon straight from icon.ico (big for the taskbar and Alt+Tab, small for the title bar), on the
+        window and its class, so the taskbar can't fall back to Tk's feather or a blank one. Re-run whenever Tk rebuilds the window."""
+        try:
+            import ctypes; u = ctypes.windll.user32
+            u.LoadImageW.restype = ctypes.c_void_p; u.LoadImageW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+            u.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p]
+            u.SetClassLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+            ico = icon_file("icon.ico")
+            if not os.path.exists(ico): return
+            if getattr(self, "_hicons", None) is None:
+                big = u.LoadImageW(None, ico, 1, u.GetSystemMetrics(11), u.GetSystemMetrics(12), 0x10)     # IMAGE_ICON, SM_CXICON, LR_LOADFROMFILE
+                small = u.LoadImageW(None, ico, 1, u.GetSystemMetrics(49), u.GetSystemMetrics(50), 0x10)  # SM_CXSMICON
+                self._hicons = (big, small)
+            big, small = self._hicons
+            for h in {hwnd, u.GetParent(ctypes.c_void_p(hwnd)) or hwnd}:
+                h = ctypes.c_void_p(h)
+                if big: u.SendMessageW(h, 0x0080, 1, big); u.SetClassLongPtrW(h, -14, big)                # WM_SETICON ICON_BIG, GCLP_HICON
+                if small: u.SendMessageW(h, 0x0080, 0, small); u.SetClassLongPtrW(h, -34, small)          # ICON_SMALL, GCLP_HICONSM
         except Exception as ex: prefs.log_error(type(ex), ex, ex.__traceback__)
 
     def _subclass(self, hwnd):
