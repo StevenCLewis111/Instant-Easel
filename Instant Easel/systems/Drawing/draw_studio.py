@@ -13,6 +13,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 import theme as T, brushes, brush_art, prefs, brush_catalog as BC, ui_art as UA, art_panel as AP, skin
 from paint_window import GROUPS, WHOLE_STROKE
 from studio_extras import StudioExtras, SEL_TOOLS
+from studio_more import StudioMore
 
 import paths; HERE = paths.APP                                    # (fonts/)
 MODES = list(brushes.BLEND_MODES)                                              # layer blend modes (the same list brushes use)
@@ -53,7 +54,7 @@ def blend_layer(bg, layer, sl=(slice(None), slice(None)), clip=None):
     c = L if layer.mode == "normal" else brushes.blend_rgb(bg, L, layer.mode)
     return bg * (1 - a) + c * a
 
-class DrawStudio(StudioExtras, tk.Frame):
+class DrawStudio(StudioMore, StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
@@ -65,7 +66,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.opts = {k: None for k in OPT_KEYS}; self._icons = {}
         self.view_rot = 0.0; self.view_flip = False                                 # turning / mirroring the VIEW (the picture itself doesn't change)
         self.lock_alpha = tk.BooleanVar(value=False); self.radial = tk.StringVar(value="Off"); self.stamp_colors = tk.StringVar(value="Their own colors"); self.fill_sample = tk.StringVar(value="All layers")
-        self.gopts = dict(smooth=45.0, tolerance=24.0); self._last_pattern = "checks"; self._poly = None
+        self.gopts = dict(smooth=45.0, tolerance=24.0, feather=0.0); self.my_colors = self._load_my_colors(); self.pic_colors = []
+        self.fill_sample = tk.StringVar(value="All layers"); self.grad_to = tk.StringVar(value="Clear"); self.texture_colors = tk.StringVar(value="Their own colors"); self._last_pattern = "checks"; self._poly = None
         self._big = False; self._hidden = []; self._tight = []; self._tipsets = {}     # "studio fills the page" mode                     # None = the brush's own setting
         self._job = None; self.points = []; self._prev = None
         self._tick_job = None; self._pending = []; self._last_pt = None; self._patches = []; self._edit = None; self._dirty = None
@@ -447,9 +449,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         choice("Color Mode:", self.color_mode, ["Normal", "Color Jitter", "Rainbow"])
         choice("Blend Mode:", self.blend_mode, ["Brush default"] + [m.title() for m in brushes.BLEND_MODES])
         choice("Stamps:", self.stamp_colors, ["Their own colors", "My color"], "Stamps in their own colours, or in the colour you've picked")
-        head("FILL")
-        gslider("tolerance", "Tolerance:", "How different a colour can be and still get filled (higher fills more)")
-        choice("Fill from:", self.fill_sample, ["All layers", "This layer"], "Fill looks at the whole picture, or just the layer you're on")
+        choice("Textures:", self.texture_colors, ["Their own colors", "My color"], "Wood, brick, stone, water... in their natural colours, or in your colour")
+        self.texture_colors.trace_add("write", lambda *a: self._preview())
         self.mirror.trace_add("write", lambda *a: self.refresh()); self.mirror_y.trace_add("write", lambda *a: self.refresh()); self.radial.trace_add("write", lambda *a: self.refresh())
         self.stamp_colors.trace_add("write", lambda *a: self._preview())
         head("VIEW")                                                              # turn / mirror the view only (the picture doesn't change)
@@ -558,7 +559,8 @@ class DrawStudio(StudioExtras, tk.Frame):
                 h_ = max(ccv.winfo_height(), CVI.winfo_reqheight())
                 ccv.itemconfigure(cwin, width=ccv.winfo_width(), height=h_); ccv.configure(scrollregion=(0, 0, ccv.winfo_width(), h_))
             except tk.TclError: pass
-        CVI.bind("<Configure>", cfit, add="+"); ccv.bind("<Configure>", cfit, add="+")
+        CVI.bind("<Configure>", cfit, add="+"); ccv.bind("<Configure>", cfit, add="+"); self._cfit = cfit
+        ccv.bind("<Map>", lambda e: self.after(60, cfit), add="+")            # (its height is set, so growing contents don't tell it: check when shown)
         T.wheel_area(cvo, lambda n: csb.can_scroll() and ccv.yview_scroll(n, "units"))
         T.on_change(lambda: (ccv.configure(bg=R["bg"]), CVI.configure(bg=R["bg"])))
         self._col_canvas = ccv
@@ -586,7 +588,8 @@ class DrawStudio(StudioExtras, tk.Frame):
             try:
                 ocv.itemconfigure(owin, width=ocv.winfo_width()); ocv.configure(scrollregion=(0, 0, ocv.winfo_width(), max(LV.winfo_reqheight(), ocv.winfo_height())))
             except tk.TclError: pass
-        LV.bind("<Configure>", ofit, add="+"); ocv.bind("<Configure>", ofit, add="+")
+        LV.bind("<Configure>", ofit, add="+"); ocv.bind("<Configure>", ofit, add="+"); self._ofit = ofit
+        ocv.bind("<Map>", lambda e: self.after(60, ofit), add="+")
         T.wheel_area(ov, lambda n: osb.can_scroll() and ocv.yview_scroll(n, "units"))
         T.on_change(lambda: (ocv.configure(bg=R["bg"]), LV.configure(bg=R["bg"])))
         self._opt_canvas = ocv
@@ -635,6 +638,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         lk = frame(fill="x", pady=(0, 3)); T.Text(lk, "Lock transparency", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(lk, self.lock_alpha), "Paint only where this layer already has paint (great for shading inside a shape)").pack(side="right")
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
+        self._more_options(LV, frame)                                                # GUIDES, FILL, CANVAS, SAVING (studio_more)
         # ---- COLOR header
         def header(word, H, arrow=None):
             def render(b):
@@ -741,6 +745,23 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._tip(small(T.Button(rr_, "Opposite", lambda: (self.set_color(tuple(int(x * 255) for x in colorsys.hsv_to_rgb((self.h + 0.5) % 1, self.s, self.v))), self._remember()))),
                   "The colour opposite this one on the wheel (its complement)").pack(side="right", padx=4)
         self._sync_csl()
+        # ---- MY COLORS: colours you keep (+ adds yours, right-click one to drop it) and the picture's own main colours
+        hd_ = frame(sl_group, fill="x", pady=(10, 2)); T.Text(hd_, "MY COLORS", muted=True, font=T.f(8)).pack()
+        self._my_lbls = []
+        for row_i in range(2):
+            row = frame(sl_group, pady=1)
+            for k in range(8):
+                i = row_i * 8 + k; lb = tk.Label(row, bd=0, highlightthickness=0, bg=R["bg"], cursor="hand2"); lb.pack(side="left", padx=1)
+                lb.bind("<Button-1>", lambda e, i=i: (self.set_color(self.my_colors[i]), self._remember()) if i < len(self.my_colors) else self.add_my_color())
+                lb.bind("<Button-3>", lambda e, i=i: self.drop_my_color(i)); self._my_lbls.append(lb)
+        rr2 = frame(sl_group, fill="x", pady=(3, 0))
+        self._tip(small(T.Button(rr2, "+ Keep color", self.add_my_color)), "Keep the current colour in My Colors (right-click a kept colour to drop it)").pack(side="left")
+        self._tip(small(T.Button(rr2, "From picture", self.picture_colors)), "The 8 main colours in your picture, in the row below").pack(side="right")
+        row = frame(sl_group, pady=(3, 1)); self._pic_lbls = []
+        for k in range(8):
+            lb = tk.Label(row, bd=0, highlightthickness=0, bg=R["bg"], cursor="hand2"); lb.pack(side="left", padx=1); self._pic_lbls.append(lb)
+            lb.bind("<Button-1>", lambda e, k=k: (self.set_color(self.pic_colors[k]), self._remember()) if k < len(self.pic_colors) else None)
+        self._my_cw = cw; self._paint_my_colors()
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
         self._col_groups = [top_row, wf, basic, pal_group, hist_group, sl_group]; self._col_extra = sl_group
         for g in self._col_groups: g.pack_forget()
@@ -895,6 +916,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._comp = np.empty((h, w, 3), np.uint8); self._recomp(); self.changed = False
         self._layers_ui(); self.refresh()
         if hasattr(self, "size_s"): self.set_size(self.size)                         # the size slider's range follows the canvas size
+        self._sync_canvas_size()
 
     def load_image(self, im):
         im = im.convert("RGB"); s = min(1.0, 2400 / max(im.size)); im = im.resize((int(im.width * s), int(im.height * s)))
@@ -932,6 +954,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                                          filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp"), ("Layered drawing - keeps every layer (opens in Krita / GIMP)", "*.ora")])
         if not p: return
         if p.lower().endswith(".ora"): self.save_ora(p)
+        elif self.save_clear.get() and p.lower().endswith((".png", ".webp")): self.flatten_clear().save(p)      # Options > Saving: see-through background
         else: prefs.save_image(self.flatten(), p)
         T.banner(self.app, f"SAVED — {os.path.basename(p)}", "success")
 
@@ -1098,6 +1121,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if n > 1:                                                                 # the spokes of radial symmetry
             R = math.hypot(w, h) / 2
             for k in range(n): a = 2 * math.pi * k / n - math.pi / 2; self.cv.create_line(*S_(w / 2, h / 2), *S_(w / 2 + math.cos(a) * R, h / 2 + math.sin(a) * R), fill=T.PALETTE["border"], dash=(3, 5))
+        self._guides_draw()
         self._tip_redraw()
         if getattr(self, "_x_ready", False): self._x_overlay()                  # selection ants, crop box, text box
 
@@ -1310,10 +1334,6 @@ class DrawStudio(StudioExtras, tk.Frame):
         if pr.get("blend"): self.blend_mode.set(pr["blend"])
         self.brush_lbl.configure(text=name)
 
-    def _set_g(self, key, val, sync=False):
-        val = min(100.0, max(0.0, float(val))); self.gopts[key] = val; row = self.g_rows[key]
-        self._sync_slider(row, val / 100); row.var.set(f"{int(round(val))}%")
-
     def _live_brush(self):
         """the brush with your Brush Options applied (a copy; the brush's own settings are never changed)"""
         b = dict(brushes.B[self.brush]); b["tipargs"] = dict(b["tipargs"]); o = self.opts
@@ -1328,6 +1348,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if o["press_opacity"] is not None: b["opac_press"] = o["press_opacity"] / 100
         if o["texture"] is not None: b["tex_strength"] = o["texture"] / 100
         brushes.Canvas.stamp_own_colors = self.stamp_colors.get() != "My color"
+        brushes.Canvas.texture_own_colors = self.texture_colors.get() != "My color"
         if o["hardness"] is not None: b["tipargs"]["hard"] = min(0.98, o["hardness"] / 100)
         if o["rotation"] is not None: b["jitter_angle"] = math.radians(o["rotation"])
         if o["angle"] is not None:                                                # an angle you set is kept exactly: the tip no longer turns with the stroke
@@ -1531,6 +1552,7 @@ class DrawStudio(StudioExtras, tk.Frame):
 
     def down(self, e):
         if self.tool == "move": self._pan_start(e); return                         # Move: the press grabs the picture, dragging moves it
+        if hasattr(self, "guide") and self.guide.get() != "Off" and self.guide_move.get(): self._guide_grab(e); return   # Move guides: drag their dots
         p = self.to_img(e); self.start = p; t = self.tool
         if t in ("brush", "eraser") and (getattr(e, "state", 0) & 0x1) and getattr(self, "_last_end", None) is not None:
             return self._straight(self._last_end, p)                             # Shift + click: a straight line from where the last stroke ended
@@ -1549,10 +1571,11 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._begin_edit(); self.points = [p]; self._pending = []; self._last_pt = p
         if t in ("brush", "eraser"): self.cur.cv.begin_stroke(self._edit[1], self._edit[2])   # one stroke: never more than your Opacity
         self._stroke_state = {}; self._smooth_pt = p; self._smooth_pr = 1.0                 # one stroke: smoothed direction, position and pressure
-        self._raw = [p]                                                          # the mouse's points, smoothed into curves as they come
+        self._raw = [p]; self._snap_begin(p)                                     # the mouse's points, smoothed into curves as they come
         if self._live(): self._paint_show([p, p])
 
     def drag(self, e):
+        if hasattr(self, "guide") and self.guide.get() != "Off" and self.guide_move.get(): self._guide_drag_to(self.to_img(e)); return
         if self.tool == "move":
             if getattr(self, "_pan0", None) is not None: self._pan_move(e)
             return
@@ -1563,6 +1586,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if t in ("line", "rect", "oval") + GRAD_TOOLS:
             if getattr(e, "state", 0) & 0x1: p = self._constrain(self.start, p)
             self.cv.delete("shape"); self._preview_shape(self.start, p); return
+        p = self._snap_pt(p)                                                     # held on the guide (ruler / perspective), if one is on
         if self.points and abs(p[0] - self.points[-1][0]) + abs(p[1] - self.points[-1][1]) < 1.5 / max(self.zoom, 0.01): return
         sp_ = getattr(self, "_smooth_pt", None)                                   # steady the hand: follow the mouse a little behind, not every jiggle
         f_ = 1 - 0.9 * self.gopts["smooth"] / 100                                 # Smooth 0 = right on the mouse, 100 = a long way behind
@@ -1602,11 +1626,12 @@ class DrawStudio(StudioExtras, tk.Frame):
         if t is not None: self._show_change(t)
 
     def up(self, e):
+        if hasattr(self, "guide") and self.guide.get() != "Off" and self.guide_move.get(): self._guide_drag = None; return
         if self.tool == "move": self._pan0 = None; return
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_up(e, self.to_img(e))
         if self._tick_job is not None: self.after_cancel(self._tick_job); self._tick_job = None
         if self._live() and len(getattr(self, "_raw", [])) >= 2:                   # the last bit, right to where you let go (smoothing lags behind)
-            q = self.to_img(e); last = self._raw[-1]; self._pending.append(last)
+            q = self._snap_pt(self.to_img(e)); last = self._raw[-1]; self._pending.append(last)
             if math.hypot(q[0] - last[0], q[1] - last[1]) > 0.5: self._pending.append((q[0], q[1], last[2]))
         self._tick()
         p = self.to_img(e); t = self.tool
@@ -1622,7 +1647,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if t in ("line", "rect", "oval") + GRAD_TOOLS: self._dirty = None
         try: self.cur.cv.end_stroke()
         except Exception: pass
-        self.points = []; self._pending = []
+        self.points = []; self._pending = []; self._snap = None
         r = self._commit_edit()
         if r: self._recomp(r)                                                    # exactly what changed, even far-flung splatter
         self._draw()
@@ -1690,9 +1715,11 @@ class DrawStudio(StudioExtras, tk.Frame):
         if L2 < 4: return
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
         t = np.sqrt((xx - a[0]) ** 2 + (yy - a[1]) ** 2) / math.sqrt(L2) if radial else ((xx - a[0]) * dx + (yy - a[1]) * dy) / L2
-        m = np.clip(1 - t, 0, 1) * self.opacity
+        m = np.clip(1 - t, 0, 1) * self.opacity; keep = None
         if self.sel is not None and self.sel.get("float") is None:                   # inside the selection only
             x0, y0, x1, y1 = self.sel["box"]; keep = np.zeros((h, w), np.float32); keep[y0:y1, x0:x1] = self._sel_mask(self.sel["kind"], x1 - x0, y1 - y0); m = m * keep
+        if self.grad_to.get() == "2nd color":                                       # your second colour underneath, your colour fading over it
+            under = np.full((h, w), self.opacity, np.float32) * (keep if keep is not None else 1); self.cur.cv._blend(0, h, 0, w, under, self.color2, "normal")
         self.cur.cv._blend(0, h, 0, w, m, self.color, "normal")
 
     def _poly_click(self, p):
@@ -1894,6 +1921,22 @@ class DrawStudio(StudioExtras, tk.Frame):
             b = tk.Frame(row, width=size, height=size, bg="#%02x%02x%02x" % c, cursor="hand2", highlightthickness=1, highlightbackground="#0d1220")
             b.pack(side="left", padx=1); b.bind("<Button-1>", lambda e, c=c: (self.set_color(c), self._remember()))
         return row
+
+    def _paint_my_colors(self):
+        """the MY COLORS slots (empty ones show as a faint +) and the picture's colours"""
+        if not hasattr(self, "_my_lbls"): return
+        W, H = self._apx(self._my_cw), self._apx(20); self._my_ph = []
+        def pic(c):
+            if c is None:
+                im = Image.new("RGBA", (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(im); d.rectangle((0, 0, W - 1, H - 1), outline=T.PALETTE["border"])
+                d.text((W / 2, H / 2), "+", fill=T.PALETTE["border"], anchor="mm"); return im
+            return AP.swatch(c, W, H)
+        blank = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        for i, lb in enumerate(self._my_lbls):                                    # kept colours, then empty slots (a faint + adds yours)
+            ph = ImageTk.PhotoImage(pic(self.my_colors[i] if i < len(self.my_colors) else None)); self._my_ph.append(ph); lb.configure(image=ph, width=W, height=H)
+        for i, lb in enumerate(self._pic_lbls):                                   # the picture's colours (empty until From picture)
+            ph = ImageTk.PhotoImage(pic(self.pic_colors[i]) if i < len(self.pic_colors) else blank); self._my_ph.append(ph); lb.configure(image=ph, width=W, height=H)
+        if getattr(self, "_cfit", None): self.after(30, self._cfit)                  # the Color view's scroll room includes the new rows
 
     def swap_colors(self):
         c1, c2 = self.color, self.color2; self.color2 = c1; self.set_color(c2)

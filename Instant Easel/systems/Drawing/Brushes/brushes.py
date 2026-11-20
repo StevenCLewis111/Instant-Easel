@@ -232,6 +232,7 @@ def _hsv_shift(col, dh):
 
 class Canvas:
     stamp_own_colors = True                                              # stamps: their own colours, or tinted with yours (Adjustments)
+    texture_own_colors = True                                            # textures (wood, brick...): their natural colours, or yours
 
     def __init__(self, w, h, paper=(245, 240, 230), seed=1, transparent=False):
         """transparent=True makes a see-through layer: colour in self.a plus coverage in self.alpha (0..1)"""
@@ -265,9 +266,10 @@ class Canvas:
         col = color
         if isinstance(color, np.ndarray) and color.ndim == 3: col = color[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]   # a picture (stamp)
         if tex is not None:                                               # texture / pattern, in canvas space
-            arr, how, k = tex; th, tw = arr.shape; t = arr[np.arange(cy0, cy1)[:, None] % th, np.arange(cx0, cx1)[None, :] % tw]
+            arr, how, k, tname = tex; th, tw = arr.shape; t = arr[np.arange(cy0, cy1)[:, None] % th, np.arange(cx0, cx1)[None, :] % tw]
             if how == "color":
-                c = np.asarray(col, np.float32); col = np.clip(c * (0.45 + 0.8 * t[..., None]) + 18 * (t[..., None] - 0.5), 0, 255)
+                own = ART.TEX_COLORS.get(tname) if self.texture_own_colors else None
+                c = np.asarray(own if own is not None else col, np.float32); col = np.clip(c * (0.45 + 0.8 * t[..., None]) + 18 * (t[..., None] - 0.5), 0, 255)
             elif how == "pattern": m = m * t
             else: m = m * (1 - k + k * t)
         if self._wash is not None and (mode in BLEND_MODES or mode == "erase"): self._wash_dab(cy0, cy1, cx0, cx1, m, col, mode)
@@ -364,7 +366,7 @@ class Canvas:
             out = [q[:4] for q in sm]; travel = [q[4] for q in sm]
         src = self.a.copy() if sp == "clone" else None
         tex = None
-        if b["tex"]: tex = ((ART.pattern(b["tex"]) if b["tex_mode"] == "pattern" else ART.texture(b["tex"])), b["tex_mode"], b["tex_strength"])
+        if b["tex"]: tex = ((ART.pattern(b["tex"]) if b["tex_mode"] == "pattern" else ART.texture(b["tex"])), b["tex_mode"], b["tex_strength"], b["tex"])
         base_col = np.asarray(color, np.float32)
         for i, (x, y, p, ang) in enumerate(out):
             if b["taper"]:

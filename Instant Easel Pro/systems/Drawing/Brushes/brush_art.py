@@ -101,6 +101,11 @@ def _tex(name):
 
 def texture(name): return _keep(("tex", name), lambda: _tex(name))
 
+# the natural colour of each material (Adjustments > Textures: Their own colors)
+TEX_COLORS = {"canvas": (226, 212, 182), "fabric": (110, 92, 160), "wood": (150, 96, 52), "brick": (168, 74, 52), "metal": (158, 164, 174),
+              "stone": (140, 134, 122), "paper": (236, 226, 204), "grunge": (96, 86, 72), "noise": (128, 128, 128), "clouds": (178, 206, 240),
+              "water": (46, 120, 196), "tiles": (206, 216, 226)}
+
 # ---------------------------------------------------------------- patterns (1 = the motif, in your colour)
 P = 64                                                                   # pattern repeat (pixels)
 def _pat(name):

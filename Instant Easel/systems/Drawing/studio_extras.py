@@ -234,6 +234,13 @@ class StudioExtras:
 
     # ------------------------------------------------------------------ selection
     def _sel_mask(self, kind, bw, bh):
+        m = self._sel_mask_hard(kind, bw, bh); f = getattr(self, "gopts", {}).get("feather", 0)
+        if f >= 0.5 and min(bw, bh) > 2:                                         # Feather: soft edges (fading in from the outline)
+            from scipy.ndimage import gaussian_filter
+            pad = np.pad(m, 1); m = np.clip(gaussian_filter(pad, f / 2.5, mode="constant")[1:-1, 1:-1] * m * 1.0, 0, 1).astype(np.float32)
+        return m
+
+    def _sel_mask_hard(self, kind, bw, bh):
         if kind == "rect": return np.ones((bh, bw), np.float32)
         if kind == "mask":                                                      # Magic Wand: the exact area it picked
             m = (self.sel or {}).get("mask")
@@ -536,6 +543,7 @@ class StudioExtras:
             if c.grain.shape[:2] != (h, w): c.grain = brushes._grain(h, w, 1)
         self.size_wh = (w, h); self._comp = np.empty((h, w, 3), np.uint8); self._recomp()
         self.sel = None; self._view_fit = True; self.fit(); self._layers_ui()
+        if hasattr(self, "_sync_canvas_size"): self._sync_canvas_size()
 
     def _swap_whole(self, src, dst):
         """undo / redo a crop: swap the whole picture with the one remembered"""
@@ -550,7 +558,8 @@ class StudioExtras:
             else: L.cv.a = np.zeros((h, w, 3), np.float32) + 255; L.cv.alpha = np.zeros((h, w), np.float32)
             L.cv.w, L.cv.h = w, h; L.cv.grain = brushes._grain(h, w, 1)
         self.size_wh = (w, h); self._comp = np.empty((h, w, 3), np.uint8); self._recomp()
-        self.sel = None; self._view_fit = True; self.fit(); self._layers_ui(); self.changed = True
+        self.sel = None; self._view_fit = True; self.fit(); self._layers_ui()
+        if hasattr(self, "_sync_canvas_size"): self._sync_canvas_size(); self.changed = True
 
     # ------------------------------------------------------------------ text
     def _text_panel(self, parent):
