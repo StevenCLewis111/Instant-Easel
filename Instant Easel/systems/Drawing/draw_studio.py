@@ -86,7 +86,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         files = {"new": ("New", lambda: self.new(*self.size_wh), "danger", "New picture"), "open": ("Open", self.open, "normal", "Open a picture"),
                  "save": ("Save", self.save, "normal", "Save the picture")}
         icons = {"undo": ("Undo (Ctrl+Z)", self.undo), "redo": ("Redo (Ctrl+Y)", self.redo), "fit": ("Fit to window (right-drag moves the view)", self.fit),
-                 "zoom out": ("Zoom out (mouse wheel)", lambda: self.zoom_by(1 / 1.25)), "zoom in": ("Zoom in (mouse wheel)", lambda: self.zoom_by(1.25))}
+                 "zoom out": ("Zoom out (or the mouse wheel, where the mouse is)", lambda: self.zoom_by(1 / 1.25)), "zoom in": ("Zoom in (or the mouse wheel, where the mouse is)", lambda: self.zoom_by(1.25))}
         names = {"brush": "Paint brush", "eraser": "Eraser", "pick": "Color picker (click the picture to take its color)", "fill": "Fill (paint bucket)",
                  "line": "Draw line", "rect": "Draw rectangle", "oval": "Draw circle", "text": "Text", "sel_rect": "Select area (rectangle)",
                  "sel_oval": "Select area (circle)", "crop": "Crop"}
@@ -164,11 +164,11 @@ class DrawStudio(StudioExtras, tk.Frame):
         edge = lambda: cv.configure(highlightbackground=T.PALETTE["border"], highlightcolor=T.PALETTE["border"]); edge(); T.on_change(edge)
         for ev, fn in (("<ButtonPress-1>", self.down), ("<B1-Motion>", self.drag), ("<ButtonRelease-1>", self.up),
                        ("<ButtonPress-3>", self._pan_start), ("<B3-Motion>", self._pan_move), ("<MouseWheel>", self._wheel),
-                       ("<Button-4>", lambda e: self.zoom_by(1.15)), ("<Button-5>", lambda e: self.zoom_by(1 / 1.15)), ("<Configure>", lambda e: self._cv_resized())):
+                       ("<Button-4>", lambda e: self.zoom_by(1.15, (e.x, e.y))), ("<Button-5>", lambda e: self.zoom_by(1 / 1.15, (e.x, e.y))), ("<Configure>", lambda e: self._cv_resized())):
             cv.bind(ev, fn)
         cv.bind("<Enter>", lambda e: cv.focus_set())
         for ev in ("<Motion>", "<B1-Motion>", "<Enter>"): cv.bind(ev, lambda e: self._tip_move(e), add="+")   # the brush tip follows the mouse
-        cv.bind("<Leave>", lambda e: self._tip_hide(e.widget), add="+")
+        cv.bind("<Leave>", lambda e: self._tip_hide(e.widget), add="+"); cv.bind("<Unmap>", lambda e: self._tip_hide(e.widget), add="+")
         cv.bind("<Escape>", lambda e: self.x_key(e) or ((self.toggle_big(), "break")[1] if self._big else None))
         for k in ("<Delete>", "<BackSpace>", "<Return>", "<Control-a>", "<Control-c>", "<Control-x>", "<Control-v>"): cv.bind(k, lambda e: self.x_key(e))
         cv.bind("<Double-Button-1>", lambda e: (self.tool == "crop" and self._crop is not None and self._crop_hit(self.to_img(e)) == "in" and self._crop_apply()) or None)
@@ -825,9 +825,17 @@ class DrawStudio(StudioExtras, tk.Frame):
         W, H = max(50, self.cv.winfo_width()), max(50, self.cv.winfo_height()); w, h = self.size_wh
         self.zoom = min((W - 20) / w, (H - 20) / h); self.pan = [0, 0]; self._view_fit = True; self._view_z = T.Z; self.refresh()
 
-    def zoom_by(self, k):
+    def zoom_by(self, k, at=None):
+        """zoom in / out. With `at` (a spot on the canvas, e.g. under the mouse) that spot of the picture stays under it,
+        so you zoom into whatever part you point at; without it, the middle of the view stays put"""
         if self.zoom is None: self.fit()
-        self.zoom = min(8.0, max(0.05, self.zoom * k)); self._view_fit = False; self.refresh()
+        z0 = self.zoom; z1 = min(8.0, max(0.05, z0 * k))
+        if at is not None and z1 != z0:
+            W, H = self.cv.winfo_width(), self.cv.winfo_height(); w, h = self.size_wh; ox, oy, _ = self._geom()
+            ix, iy = (at[0] - ox) / z0, (at[1] - oy) / z0                         # the picture spot under the mouse
+            self.pan = [at[0] - ix * z1 - (W - w * z1) / 2, at[1] - iy * z1 - (H - h * z1) / 2]
+        elif z1 != z0: self.pan = [self.pan[0] * z1 / z0, self.pan[1] * z1 / z0]   # (the middle of the view stays put)
+        self.zoom = z1; self._view_fit = False; self.refresh()
 
     def _cv_resized(self):
         """the canvas changed size (window resized, minimized / maximized, a side panel opened / closed, big mode): the view keeps
@@ -838,7 +846,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if abs(k - 1) > 1e-3: self.zoom *= k; self.pan = [self.pan[0] * k, self.pan[1] * k]
         self._view_z = T.Z; self.refresh()
 
-    def _wheel(self, e): self.zoom_by(1.15 if e.delta > 0 else 1 / 1.15)
+    def _wheel(self, e): self.zoom_by(1.15 if e.delta > 0 else 1 / 1.15, (e.x, e.y))      # zooms in / out where the mouse is
     def _pan_start(self, e): self._pan0 = (e.x, e.y, *self.pan)
     def _pan_move(self, e): x0, y0, px, py = self._pan0; self.pan = [px + e.x - x0, py + e.y - y0]; self._view_fit = False; self.refresh()
 
@@ -925,8 +933,20 @@ class DrawStudio(StudioExtras, tk.Frame):
     def _tip_move(self, e):
         self._tip_at = (e.widget, e.x, e.y); self._tip_redraw()
 
+    def _os_cursor(self, hide):
+        """Windows: hide the real mouse pointer while it's over the canvas with the brush / eraser (the brush's own mark shows
+        instead), and bring it back when it leaves. Done with Windows itself, so no cross can show whatever Tk does"""
+        if not sys.platform.startswith("win") or bool(hide) == getattr(self, "_os_hidden", False): return
+        try:
+            import ctypes; show = ctypes.windll.user32.ShowCursor
+            for _ in range(20):                                                       # Windows keeps a count: step it just past 0
+                n = show(not hide)
+                if (n < 0) if hide else (n >= 0): break
+            self._os_hidden = bool(hide)
+        except Exception: pass
+
     def _tip_hide(self, cv):
-        self._tip_at = None
+        self._tip_at = None; self._os_cursor(False)
         try: cv.delete("tip")
         except tk.TclError: pass
 
@@ -974,7 +994,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         for cv in {self.cv, getattr(self, "_cv_small", self.cv)}:
             try: cv.delete("tip")
             except tk.TclError: pass
-        if at is None or self.tool not in ("brush", "eraser") or at[0] is not self.cv: return
+        on = at is not None and self.tool in ("brush", "eraser") and at[0] is self.cv; self._os_cursor(on)
+        if not on: return
         try: self.cv.create_image(at[1], at[2], image=self._tip_image(), tags="tip")
         except tk.TclError: pass
 
