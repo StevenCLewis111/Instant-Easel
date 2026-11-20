@@ -409,7 +409,10 @@ def preview(item):
     """a 96 x 30 picture of what a planned tool will do"""
     look = item.get("look") or {}
     try: return _fx(look) if "fx" in look else _scatter(look) if "scatter" in look else _stroke(look)
-    except Exception: return Image.new("RGB", (TW, TH), PAPER)
+    except Exception:
+        try: import prefs; prefs.log_note("drawing a tile preview", item.get("name", ""))
+        except Exception: pass
+        return Image.new("RGB", (TW, TH), PAPER)
 
 # ---------------------------------------------------------------- stamp icons (drawn, so they look the same on every PC)
 def icon(name, size=28):

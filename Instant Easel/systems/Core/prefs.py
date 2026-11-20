@@ -155,11 +155,49 @@ def human(n):
 # ---------------- error log (a local file only; nothing is sent anywhere)
 LOG = paths.log_file("instant_easel_errors.log")
 LOG_MAX = 1_000_000                                                          # ~1 MB; the older log rolls to instant_easel_errors.1.log
-def log_error(exc_type, exc, tb):
+APP_NAME = "Instant Easel"
+_trail = []                                                                   # the last things you did (written with every error)
+_session = False                                                              # the run's details are written once, before its first error
+_seen = {}                                                                    # handled problems already noted this run (each once)
+
+def trail(what):
+    """remember an action ("tool: brush", "save: picture.png"); the last 25 go into the log with any error"""
+    _trail.append(f"{datetime.datetime.now().strftime('%H:%M:%S')}  {what}"); del _trail[:-25]
+
+def _log_write(text):
+    global _session
     try:
         if os.path.exists(LOG) and os.path.getsize(LOG) > LOG_MAX: os.replace(LOG, LOG[:-4] + ".1.log")
     except Exception: pass
     try:
         with open(LOG, "a", encoding="utf-8") as f:
-            f.write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} ===\n" + "".join(traceback.format_exception(exc_type, exc, tb)))
+            if not _session:                                                  # which app, version and computer this run was
+                _session = True
+                import platform
+                try: ver = getattr(__import__("features"), "VERSION", "")
+                except Exception: ver = ""
+                f.write(f"\n##### {APP_NAME}{' ' + str(ver) if ver else ''} started {_started} on {platform.platform()}, Python {platform.python_version()}"
+                        f"{' (built app)' if getattr(sys, 'frozen', False) else ''} #####\n")
+            f.write(text)
     except Exception: pass
+
+def _recent():
+    return ("Recent actions:\n" + "\n".join("    " + t for t in _trail) + "\n") if _trail else ""
+
+def log_error(exc_type, exc, tb):
+    """a crash (an error nothing caught): the full traceback, plus what you'd just done"""
+    _log_write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} ERROR ===\n" + "".join(traceback.format_exception(exc_type, exc, tb)) + _recent())
+
+def log_note(where, detail="", quiet_missing=False):
+    """a problem the app caught and carried on from (a file that wouldn't save, a picture that wouldn't load...). Call it inside the
+    `except`: the error being handled is written with it. Each different problem is noted once per run, so a repeat can't flood
+    the log. quiet_missing=True: a file that simply isn't there yet isn't a problem"""
+    et, ex, tb = sys.exc_info()
+    if quiet_missing and isinstance(ex, FileNotFoundError): return
+    key = (where, et.__name__ if et else "", str(ex)[:120])
+    if key in _seen: return
+    _seen[key] = True
+    what = "".join(traceback.format_exception(et, ex, tb)) if et else ""
+    _log_write(f"\n=== {datetime.datetime.now().isoformat(timespec='seconds')} PROBLEM in {where} ===\n" + (detail + "\n" if detail else "") + what + _recent())
+
+_started = datetime.datetime.now().isoformat(timespec="seconds")

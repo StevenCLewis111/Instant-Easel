@@ -207,7 +207,10 @@ def stamp_names():
 def _stamp_src(name):
     p = os.path.join(_stamp_dir(), name.replace(" ", "_") + ".png")
     try: return Image.open(p).convert("RGBA")
-    except Exception: return None
+    except Exception:
+        try: import prefs; prefs.log_note("loading a stamp picture", p)
+        except Exception: pass
+        return None
 
 def stamp(name, s, ang=0.0):
     """the stamp at size s (its longest side), turned by ang: (alpha mask, RGB colours), or None if it's missing"""

@@ -205,12 +205,12 @@ class StudioMore:
 
     def _load_my_colors(self):
         try: d = json.load(open(self._my_colors_file(), encoding="utf-8")); return [tuple(c) for c in d.get("colors", [])][:16]
-        except Exception: return []
+        except Exception: import prefs; prefs.log_note("loading My Colors (draw_colors.json)", quiet_missing=True); return []
 
     def _save_my_colors(self):
         try:
             with open(self._my_colors_file(), "w", encoding="utf-8") as f: json.dump(dict(colors=[list(c) for c in self.my_colors]), f)
-        except Exception: pass
+        except Exception: import prefs; prefs.log_note("saving My Colors")
 
     def add_my_color(self):
         c = tuple(self.color)
@@ -356,4 +356,4 @@ class StudioMore:
         try:
             ims[0].save(p, save_all=True, append_images=ims[1:], duration=dur, loop=0, optimize=False)
             T.banner(self.app, f"SAVED — {len(ims)} frame timelapse", "success")
-        except Exception as ex: T.banner(self.app, f"COULDN'T SAVE IT — {ex}")
+        except Exception as ex: prefs.log_note("saving the timelapse", p); T.banner(self.app, f"COULDN'T SAVE IT — {ex}")

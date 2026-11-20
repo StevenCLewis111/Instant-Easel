@@ -54,7 +54,7 @@ def key_map():
     """the keys in use: your changes (Settings > Shortcuts) over the defaults"""
     m = {a: k for a, _, k in KEY_ACTIONS}
     try: m.update({a: k for a, k in json.load(open(paths.json_file("draw_keys.json"), encoding="utf-8")).items() if a in m})
-    except Exception: pass
+    except Exception: prefs.log_note("loading your shortcut keys (draw_keys.json)", quiet_missing=True)
     return m
 def key_label(k):
     return {"bracketleft": "[", "bracketright": "]", "space": "Space", "comma": ",", "period": ".", "slash": "/", "minus": "-", "equal": "=",
@@ -1022,7 +1022,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
                                                                                          ("Layered drawing (OpenRaster)", "*.ora"), ("All files", "*.*")])
         if not p: return
         try: self.open_ora(p) if p.lower().endswith(".ora") else self.load_image(Image.open(p))
-        except Exception as ex: T.banner(self.app, f"COULDN'T OPEN IT — {ex}")
+        except Exception as ex: prefs.log_note("opening a file", p); T.banner(self.app, f"COULDN'T OPEN IT — {ex}")
 
 
     def _recomp(self, rect=None):
@@ -1042,9 +1042,11 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         p = filedialog.asksaveasfilename(parent=self, initialdir=prefs.save_folder(), initialfile=prefs.next_name(), defaultextension=prefs.ext(),
                                          filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp"), ("Layered drawing - keeps every layer (opens in Krita / GIMP)", "*.ora")])
         if not p: return
-        if p.lower().endswith(".ora"): self.save_ora(p)
-        elif self.save_clear.get() and p.lower().endswith((".png", ".webp")): self.flatten_clear().save(p)      # Options > Saving: see-through background
-        else: prefs.save_image(self.flatten(), p)
+        try:
+            if p.lower().endswith(".ora"): self.save_ora(p)
+            elif self.save_clear.get() and p.lower().endswith((".png", ".webp")): self.flatten_clear().save(p)      # Options > Saving: see-through background
+            else: prefs.save_image(self.flatten(), p)
+        except Exception as ex: prefs.log_note("saving the picture", p); T.banner(self.app, f"COULDN'T SAVE IT — {ex}"); return
         T.banner(self.app, f"SAVED — {os.path.basename(p)}", "success")
 
     ORA_OPS = {"normal": "svg:src-over", "multiply": "svg:multiply", "screen": "svg:screen", "overlay": "svg:overlay", "soft light": "svg:soft-light",
@@ -1265,7 +1267,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
                 try:
                     import ctypes; buf = ctypes.create_unicode_buffer(520)
                     if ctypes.windll.kernel32.GetShortPathNameW(f, buf, 520): f = buf.value
-                except Exception: pass
+                except Exception: prefs.log_note("finding the see-through cursor file", f)
                 cur = "{@" + f.replace("\\", "/") + "}"
         try: self.cv.configure(cursor=cur)
         except tk.TclError: cur = "dotbox"
@@ -1284,7 +1286,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
                 n = show(not hide)
                 if (n < 0) if hide else (n >= 0): break
             self._os_hidden = bool(hide)
-        except Exception: pass
+        except Exception: prefs.log_note("hiding / showing the Windows mouse pointer")
 
     def _tip_hide(self, cv):
         self._tip_at = None; self._os_cursor(False)
@@ -1324,7 +1326,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
                 dab = dab.resize((max(1, round(n * k)), max(1, round(n * k))), Image.LANCZOS if k < 1 else Image.NEAREST if k > 3 else Image.BILINEAR)
                 if dab.width > D: dab = dab.crop(((dab.width - D) // 2, (dab.height - D) // 2, (dab.width - D) // 2 + D, (dab.height - D) // 2 + D))
                 out.alpha_composite(dab, ((D - dab.width) // 2, (D - dab.height) // 2))
-            except Exception: pass
+            except Exception: prefs.log_note("drawing the brush mark under the mouse", f"brush {self.brush}, size {self.size}")
         r = max(2, d / 2); c0 = D / 2
         if out.getchannel("A").getextrema()[1] < 25:                                    # nothing to show (eraser, or a mark too faint): a see-through dot
             fill = (255, 255, 255, 110) if self.tool == "eraser" else tuple(self._stroke_color()) + (150,)
@@ -1413,7 +1415,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
 
     def _presets(self):
         try: return json.load(open(paths.json_file("draw_brushes.json"), encoding="utf-8"))
-        except Exception: return {}
+        except Exception: prefs.log_note("loading My Brushes (draw_brushes.json)", quiet_missing=True); return {}
 
     def _save_preset(self):
         from tkinter import simpledialog
@@ -1424,7 +1426,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
                        size=self.size, opacity=self.opacity, blend=self.blend_mode.get())
         try:
             with open(paths.json_file("draw_brushes.json"), "w", encoding="utf-8") as f: json.dump(d, f, indent=1)
-        except Exception as ex: T.banner(self.app, f"COULDN'T SAVE IT — {ex}"); return
+        except Exception as ex: prefs.log_note("saving My Brushes"); T.banner(self.app, f"COULDN'T SAVE IT — {ex}"); return
         self._preset_choice.choices = ["—"] + sorted(d); self.preset_var.set(name); T.banner(self.app, f"SAVED — your brush '{name}' is under My Brushes", "success")
 
     def _delete_preset(self):
@@ -1433,7 +1435,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         del d[name]
         try:
             with open(paths.json_file("draw_brushes.json"), "w", encoding="utf-8") as f: json.dump(d, f, indent=1)
-        except Exception: pass
+        except Exception: prefs.log_note("deleting a brush from My Brushes")
         self._preset_choice.choices = ["—"] + sorted(d); self.preset_var.set("—")
 
     def _use_preset(self, name):
@@ -1914,7 +1916,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         key, n = todo.pop(0); c = brushes.Canvas(150, 46, paper=(244, 238, 226))
         thin = any(w in n.lower() for w in ("pen", "pencil", "script", "liner", "detail"))
         try: c.stroke([(12 + t * 126, 23 + math.sin(t * 6.3) * 10, 0.5 + 0.5 * math.sin(math.pi * t)) for t in np.linspace(0, 1, 18)], n, color=(70, 52, 120), size=6 if thin else 14)
-        except Exception: pass
+        except Exception: prefs.log_note("drawing a brush tile", n)
         self._set_tile(key, c.image())
         if n == self.brush: self.tiles[key].configure(highlightbackground=T.PALETTE["border"])
         self.after(5, self._fill_tiles, todo)
@@ -1944,7 +1946,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         try:
             brushes.B["__live__"] = self._live_brush()
             c.stroke([(20 + t * 360, 46 + math.sin(t * 6.3) * 20, 0.5 + 0.5 * math.sin(math.pi * t)) for t in np.linspace(0, 1, 30)], "__live__", color=self.color, size=s, opacity=self.opacity)
-        except Exception: pass
+        except Exception: prefs.log_note("drawing the brush preview", self.brush)
         finally: brushes.B.pop("__live__", None)
         ph = max(20, round(self._pw * 46 / 200)); self._pv = ImageTk.PhotoImage(c.image().resize((self._pw, ph), Image.LANCZOS)); self.preview.configure(image=self._pv, width=self._pw, height=ph)
 
@@ -2205,3 +2207,17 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         try: self.set_color(rgb)
         finally: self._quiet_wheel = False
         self.h, self.s, self.v = h, s, v; self._draw_wheel()
+
+
+# ---------------------------------------------------------------- the last things you did, for the error log (prefs.trail)
+def _traced(name, fn):
+    def w(self, *a, **k):
+        try: prefs.trail(name.lstrip("_").replace("_", " ") + ("  " + ", ".join(str(x)[:40] for x in a) if a else ""))
+        except Exception: pass
+        return fn(self, *a, **k)
+    w.__name__, w.__doc__ = fn.__name__, fn.__doc__; return w
+for _n in ("set_tool", "set_brush", "save", "save_ora", "open", "open_ora", "load_image", "new", "undo", "redo", "add_layer", "dup_layer", "del_layer",
+           "merge_down", "move_layer", "group_layers", "ungroup", "merge_group", "delete_group", "move_group", "_resize", "_crop_apply", "_xf_start",
+           "_xf_end", "_mask_toggle", "_mask_apply", "_mask_delete", "_lc_apply", "_tl_save", "_save_preset", "_use_preset", "_set_clip",
+           "swap_colors", "_poly_finish", "_gradient", "_fill", "_wand", "_sel_paste", "_sel_delete", "_txt_commit", "_resize_doc", "restore"):
+    if hasattr(DrawStudio, _n): setattr(DrawStudio, _n, _traced(_n, getattr(DrawStudio, _n)))
