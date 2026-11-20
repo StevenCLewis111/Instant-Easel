@@ -226,6 +226,12 @@ def blend_rgb(base, top, mode):
     else: r = np.broadcast_to(Tp, np.broadcast(B, Tp).shape)
     return r * 255
 
+def add_sticker(file, name):
+    """a sticker (a cut-out you saved) as a stamp: placed in its own colours, one per click, a row when you drag"""
+    n = "sticker " + name.lower()
+    if n not in B: brush(n, tip_round, stamp="sticker:" + file, spacing=1.15, size_press=0.0)
+    return n
+
 def _hsv_shift(col, dh):
     h, s, v = colorsys.rgb_to_hsv(*(np.asarray(col, np.float32) / 255)); r, g, b = colorsys.hsv_to_rgb((h + dh) % 1, s, v)
     return np.array([r, g, b], np.float32) * 255
@@ -390,7 +396,7 @@ class Canvas:
                 st = ART.stamp(b["stamp"], max(2, s), ta.get("angle", 0.0))
                 if st is None: continue
                 mask, rgb = st
-                if not self.stamp_own_colors:
+                if not self.stamp_own_colors and not b["stamp"].startswith("sticker:"):     # (stickers keep their colours)
                     lum = rgb.mean(-1); ref = float(np.percentile(lum[mask > 0.5], 60)) if (mask > 0.5).any() else 128.0
                     rgb = np.clip(col[None, None, :] * np.clip(lum / max(ref, 1), 0.6, 1.25)[..., None], 0, 255)
                 self._dab(x + dx, y + dy, mask, rgb, b["flow"] * opf, b["mode"], 0); continue

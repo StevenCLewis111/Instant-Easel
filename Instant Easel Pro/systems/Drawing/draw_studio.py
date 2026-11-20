@@ -15,6 +15,7 @@ from paint_window import GROUPS, WHOLE_STROKE
 from studio_extras import StudioExtras, SEL_TOOLS
 from studio_more import StudioMore
 from studio_groups import StudioGroups, Group
+from studio_cutout import StudioCutout
 
 import paths; HERE = paths.APP                                    # (fonts/)
 MODES = list(brushes.BLEND_MODES)                                              # layer blend modes (the same list brushes use)
@@ -86,7 +87,7 @@ def blend_layer(bg, layer, sl=(slice(None), slice(None)), clip=None):
     c = L if layer.mode == "normal" else brushes.blend_rgb(bg, L, layer.mode)
     return bg * (1 - a) + c * a
 
-class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
+class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self); self._groups_init()
@@ -217,7 +218,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         for key, fn in (("<Control-z>", lambda e: (self.undo(), "break")[1]), ("<Control-y>", lambda e: (self.redo(), "break")[1])):
             cv.bind(key, fn)
         self._key_cvs = getattr(self, "_key_cvs", []) + [cv]; self._bind_keys(cv)
-        cv.bind("<Control-t>", lambda e: self.x_key(e)); cv.bind("<Control-d>", lambda e: self.x_key(e))
+        cv.bind("<Control-t>", lambda e: self.x_key(e)); cv.bind("<Control-d>", lambda e: self.x_key(e)); cv.bind("<Control-I>", lambda e: self.x_key(e))
         cv.bind("<Shift-ButtonPress-3>", self._turn_start); cv.bind("<Shift-B3-Motion>", self._turn_move)
         return cv
 
@@ -703,6 +704,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
         self._navigator(LV, frame, self._apx(IW) - 4)                                 # NAVIGATOR, LAYER COLOR (studio_more)
         self._layer_color(LV, frame)
+        self._cutout_options(LV, frame)                                              # CUT OUT (studio_cutout)
         self._more_options(LV, frame)                                                # GUIDES, FILL, CANVAS, SAVING (studio_more)
         self._timelapse(LV, frame)
         # ---- COLOR header
@@ -801,6 +803,11 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         self.after_idle(lambda: self._remember(add=False))                          # the 8 white history slots show from the start
         # ---- colour sliders (scroll down to them): hue / saturation / value and red / green / blue, typed values, a random colour
         sl_group = frame(fill="x"); self._csl = {}; self._csl_busy = None
+        hd_ = frame(sl_group, fill="x", pady=(8, 2)); T.Text(hd_, "STICKERS", muted=True, font=T.f(8)).pack()
+        self._sticker_box = frame(sl_group, pady=(0, 2))
+        rr3 = frame(sl_group, fill="x", pady=(0, 6))
+        self._tip(small(T.Button(rr3, "Make sticker", self.make_sticker)), "What's selected on this layer (or all of it) becomes a sticker").pack(side="right")
+        self._tip(small(T.Button(rr3, "Import…", self.import_stickers)), "Add sticker pictures you have: PNG files, or a .zip of them").pack(side="left")
         hd_ = frame(sl_group, fill="x", pady=(0, 2)); T.Text(hd_, "COLOR SLIDERS", muted=True, font=T.f(8)).pack()
         for key, lab, top in (("h", "Hue:", 360), ("s", "Saturation:", 100), ("v", "Value:", 100), ("r", "Red:", 255), ("g", "Green:", 255), ("b", "Blue:", 255)):
             row = self._slider_row(sl_group, lab, 0.5, lambda v, k=key: self._csl_set(k, v), ""); row.top = top
@@ -827,7 +834,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         for k in range(8):
             lb = tk.Label(row, bd=0, highlightthickness=0, bg=R["bg"], cursor="hand2"); lb.pack(side="left", padx=1); self._pic_lbls.append(lb)
             lb.bind("<Button-1>", lambda e, k=k: (self.set_color(self.pic_colors[k]), self._remember()) if k < len(self.pic_colors) else None)
-        self._my_cw = cw; self._paint_my_colors()
+        self._my_cw = cw; self._paint_my_colors(); self.after_idle(self._fill_stickers)
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
         self._col_groups = [top_row, wf, basic, pal_group, hist_group, sl_group]; self._col_extra = sl_group
         for g in self._col_groups: g.pack_forget()
@@ -1014,8 +1021,10 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
         self._sync_canvas_size()
 
     def load_image(self, im):
-        im = im.convert("RGB"); s = min(1.0, 2400 / max(im.size)); im = im.resize((int(im.width * s), int(im.height * s)))
-        self.new(im.width, im.height, background=im)
+        im = im.convert("RGBA"); s = min(1.0, 2400 / max(im.size)); im = im.resize((int(im.width * s), int(im.height * s)))
+        self.new(im.width, im.height)                                            # on a white background, the picture on Layer 1 (so it can be cut out)
+        px = np.asarray(im, np.float32); L = self.layers[0]; L.img.a = px[..., :3].copy(); L.img.alpha = px[..., 3] / 255; L.name = "Picture"
+        self._recomp(); self._layers_ui(); self.refresh()
 
     def open(self):
         p = filedialog.askopenfilename(parent=self, initialdir=prefs.save_folder(), filetypes=[("Images and layered drawings", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff *.ora"),
@@ -1249,7 +1258,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
         cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil"}.get(t, "crosshair")
+                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "magic_eraser": "X_cursor"}.get(t, "crosshair")
         for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
             try: cv.configure(cursor=cur)
             except tk.TclError: cv.configure(cursor="crosshair")
@@ -1697,6 +1706,7 @@ class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
                 self.set_tool(getattr(self, "_before_pick", "brush") or "brush")           # back to the tool you had before pressing Pick
             return
         if t in POLY_TOOLS: self._poly_click(p); return
+        if t == "magic_eraser": self._magic_erase(p); return                       # Magic Eraser: the colour area clicked is erased
         if t in ("fill", "pattern_fill"):
             self._begin_edit(); self._fill(p, pattern=t == "pattern_fill"); r = self._commit_edit()
             if r: self._recomp(r); self._draw()

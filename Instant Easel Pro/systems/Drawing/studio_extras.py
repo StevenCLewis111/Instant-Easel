@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import theme as T, paths
 
-SEL_TOOLS = ("sel_rect", "sel_oval", "wand", "sel_lasso")                                # wand: Magic Wand (selects an area of about one colour)
+SEL_TOOLS = ("sel_rect", "sel_oval", "wand", "sel_lasso", "smart")                                # wand: Magic Wand (selects an area of about one colour)
 HANDLE = 7                                                                   # handle size on screen (pixels)
 
 # ---------------------------------------------------------------- fonts: the app's own, plus common ones the PC has
@@ -173,6 +173,7 @@ class StudioExtras:
         """keys on the canvas for these tools; returns "break" when used"""
         self._x_init(); k = e.keysym; ctrl = bool(e.state & 0x4)
         if ctrl and k.lower() == "t": self._xf_start(); return "break"
+        if ctrl and k == "I": self.sel_invert(); return "break"                  # Ctrl+Shift+I: invert the selection
         if ctrl and k.lower() == "d" and self.sel is not None: self._sel_commit(); self.sel = None; self._x_overlay(); return "break"
         if getattr(self, "_xf", None):                                           # Free Transform: Enter keeps it, Esc puts it back
             if k == "Return": self._xf_end(True); return "break"
@@ -211,6 +212,12 @@ class StudioExtras:
     def x_up(self, e, p):
         if self._x_drag is None: return
         kind = self._x_drag[0]
+        if kind == "sel_smart":                                                   # Smart Select: the thing in the box
+            (x0, y0), how = self._x_drag[1], self._x_drag[2]; self._x_drag = None
+            self.config(cursor="watch"); self.update_idletasks()
+            try: self._smart_select((min(x0, p[0]), min(y0, p[1]), max(x0, p[0]), max(y0, p[1])), how)
+            finally: self.config(cursor="")
+            self._x_overlay(); return
         if kind == "sel_lasso":                                                   # the shape you drew becomes the selection
             pts = self._x_drag[1]; self._x_drag = None
             if len(pts) >= 3:
@@ -253,7 +260,12 @@ class StudioExtras:
     def _sel_inside(self, p):
         if self.sel is None: return False
         x0, y0, x1, y1 = self._sel_box_now()
-        return x0 <= p[0] <= x1 and y0 <= p[1] <= y1
+        if not (x0 <= p[0] <= x1 and y0 <= p[1] <= y1): return False
+        m = self.sel.get("mask") if self.sel["kind"] == "mask" else None          # a wand / lasso / smart selection: inside its shape, not its box
+        if m is not None and self.sel["float"] is None:
+            iy, ix = int(p[1] - y0), int(p[0] - x0)
+            return 0 <= iy < m.shape[0] and 0 <= ix < m.shape[1] and m[iy, ix] > 0.5
+        return True
 
     def _sel_box_now(self):
         s = self.sel; x0, y0, x1, y1 = s["box"]
@@ -346,11 +358,17 @@ class StudioExtras:
     def _sel_down(self, e, p):
         self._shift = bool(getattr(e, "state", 0) & 0x1)
         if getattr(self, "_xf", None): return self._xf_down(p)
+        if self.tool in ("wand", "smart") and self._how(e) != "new":                # Shift / Alt: add / take away (never a move)
+            self._sel_commit()
+            if self.tool == "wand": return self._wand(p, self._how(e))
+            self._x_drag = ("sel_smart", (p[0], p[1]), self._how(e)); return
         if self.sel is not None and self._sel_inside(p):                         # move what's selected
             if self.sel["float"] is None: self._sel_lift()
             self._x_drag = ("sel_move", (p[0], p[1]), tuple(self.sel["float"]["off"])); return
+        how = self._how(e)                                                      # Shift: add to the selection, Alt: take away
+        if self.tool == "wand": self._sel_commit(); self._wand(p, how); return
+        if self.tool == "smart": self._sel_commit(); self._x_drag = ("sel_smart", (p[0], p[1]), how); return   # Smart Select: drag a box round it
         self._sel_commit(); self.sel = None
-        if self.tool == "wand": self._wand(p); return
         if self.tool == "sel_lasso": self._x_drag = ("sel_lasso", [(p[0], p[1])]); return     # Lasso: draw round what you want
         self._x_drag = ("sel_new", (p[0], p[1])); self._x_overlay()
 
@@ -371,6 +389,10 @@ class StudioExtras:
 
     def _sel_drag(self, p):
         kind = self._x_drag[0]
+        if kind == "sel_smart":
+            x0, y0 = self._x_drag[1]; self.cv.delete("xov")
+            self._x_shape(self.cv, x0, y0, p[0], p[1], False, outline="black", dash=(4, 4), tags="xov"); self._x_shape(self.cv, x0, y0, p[0], p[1], False, outline="white", dash=(4, 4), dashoffset=4, tags="xov")
+            return
         if kind == "sel_lasso":
             pts = self._x_drag[1]
             if math.hypot(p[0] - pts[-1][0], p[1] - pts[-1][1]) * (self.zoom or 1) >= 2: pts.append((p[0], p[1]))

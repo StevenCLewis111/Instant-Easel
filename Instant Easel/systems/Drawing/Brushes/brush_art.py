@@ -204,8 +204,14 @@ def stamp_names():
     try: return sorted(os.path.splitext(f)[0].replace("_", " ") for f in os.listdir(_stamp_dir()) if f.lower().endswith(".png"))
     except OSError: return []
 
+def sticker_dir():
+    try:
+        import paths; return paths.data("stickers")
+    except Exception: return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "stickers")
+
 def _stamp_src(name):
-    p = os.path.join(_stamp_dir(), name.replace(" ", "_") + ".png")
+    if name.startswith("sticker:"): p = os.path.join(sticker_dir(), name[8:])              # your stickers (cut-outs), kept beside the app
+    else: p = os.path.join(_stamp_dir(), name.replace(" ", "_") + ".png")
     try: return Image.open(p).convert("RGBA")
     except Exception:
         try: import prefs; prefs.log_note("loading a stamp picture", p)
