@@ -356,7 +356,23 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.op_row.entry.bind("<Return>", lambda e: self._typed(self.op_row, lambda x: (self.set_opacity(x / 100), self._sync_slider(self.op_row, self.opacity))))
         self.size_s, self.op_s = self.size_row.slider, self.op_row.slider
         # ---- Options view
-        O = self.opt_view; hd = tk.Frame(O, bg=O["bg"]); hd.pack(fill="x", pady=(2, 4)); self._title(hd, "BRUSH OPTIONS").pack()
+        # Adjustments scrolls like the right side: a rail on the panel's right (scroll bar, a border line left of it) beside the
+        # size / opacity rows and the options, which sit in a scrolling canvas with a gap before the line
+        g = T.ScrollBox.GAP; self._adj_rail = rail = tk.Frame(L, bg=L["bg"])
+        asb = T.Scrollbar(rail, "vertical"); asb.pack(side="right", fill="y", padx=(g, 0), pady=g); T.Line(rail, vertical=True).pack(side="right", fill="y")
+        acv = tk.Canvas(self.opt_view, bd=0, highlightthickness=0, bg=L["bg"], width=10); acv.pack(fill="both", expand=True, padx=(0, g))
+        O = tk.Frame(acv, bg=L["bg"]); awin = acv.create_window(0, 0, window=O, anchor="nw")
+        asb.command = acv.yview; acv.configure(yscrollcommand=asb.set)
+        def afit(e=None):                                                            # as tall as the view (Reset stays at the bottom), taller when needed
+            try:
+                h_ = max(acv.winfo_height(), O.winfo_reqheight())
+                acv.itemconfigure(awin, width=acv.winfo_width(), height=h_); acv.configure(scrollregion=(0, 0, acv.winfo_width(), h_))
+            except tk.TclError: pass
+        O.bind("<Configure>", afit, add="+"); acv.bind("<Configure>", afit, add="+")
+        T.wheel_area(self.opt_view, lambda n: asb.can_scroll() and acv.yview_scroll(n, "units"))
+        T.on_change(lambda: (rail.configure(bg=L["bg"]), acv.configure(bg=L["bg"]), O.configure(bg=L["bg"])))
+        self._adj_canvas = acv
+        hd = tk.Frame(O, bg=O["bg"]); hd.pack(fill="x", pady=(2, 4)); self._title(hd, "BRUSH OPTIONS").pack()
         ft = tk.Frame(O, bg=O["bg"]); ft.pack(side="bottom", fill="x", pady=(4, 0)); T.on_change(lambda: ft.configure(bg=O["bg"]))      # Reset: bottom right
         self._tip(small(T.Button(ft, "Reset", lambda: self._load_brush_opts(self.brush))), "Back to this brush's own settings").pack(side="right")
         RANGES = dict(spacing=(1, 100, "%"), hardness=(0, 100, "%"), rotation=(0, 180, "°"), angle=(0, 180, "°"))
@@ -1000,9 +1016,10 @@ class DrawStudio(StudioExtras, tk.Frame):
     # ---------------- Brush Options
     def _left_view(self, name):
         for n, b in self.view_btns.items(): skin.select(b, n == name)
-        for w in (self.opt_view, self.lib_view, self._pinned): w.pack_forget()
+        for w in (self.opt_view, self.lib_view, self._pinned, self._adj_rail): w.pack_forget()
         if name == "Brushes": self._pinned.pack(side="bottom", fill="x"); self.lib_view.pack(fill="both", expand=True)
-        else: self._pinned.pack(side="top", fill="x", pady=(0, 8)); self.opt_view.pack(fill="both", expand=True)
+        else:                                                                         # the scroll rail first, so it runs the full height on the right
+            self._adj_rail.pack(side="right", fill="y"); self._pinned.pack(side="top", fill="x", pady=(0, 8), padx=(0, T.ScrollBox.GAP)); self.opt_view.pack(fill="both", expand=True)
 
     def _typed(self, row, apply):
         try: apply(float(row.var.get().strip().rstrip("%°")))
