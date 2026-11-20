@@ -41,23 +41,54 @@ def icon_btn(btn): btn.configure(padx=4, pady=4); return btn                    
 
 def small(btn): btn.configure(padx=7, pady=4, font=T.f(10)); return btn
 
+STUDIOS = []                                                                   # open drawing studios (Settings > Shortcuts rebinds their keys)
+
+# keys you can change (Settings > Shortcuts): action -> (what it does, default key as Tk names it)
+KEY_ACTIONS = [("brush", "Brush", "b"), ("eraser", "Eraser", "e"), ("pick", "Eyedropper", "i"), ("fill", "Fill", "g"), ("line", "Line", "l"),
+               ("text", "Text", "t"), ("sel_rect", "Select", "m"), ("sel_lasso", "Lasso", "f"), ("crop", "Crop", "c"), ("move", "Move the picture", "h"),
+               ("smaller", "Smaller brush", "bracketleft"), ("bigger", "Bigger brush", "bracketright"), ("swap", "Swap colours", "x"),
+               ("bw", "Black / white", "d"), ("turn_left", "Turn view left", "4"), ("turn_right", "Turn view right", "6"),
+               ("straighten", "Straighten view", "5"), ("mirror_view", "Mirror view", "n")]
+def key_map():
+    """the keys in use: your changes (Settings > Shortcuts) over the defaults"""
+    m = {a: k for a, _, k in KEY_ACTIONS}
+    try: m.update({a: k for a, k in json.load(open(paths.json_file("draw_keys.json"), encoding="utf-8")).items() if a in m})
+    except Exception: pass
+    return m
+def key_label(k):
+    return {"bracketleft": "[", "bracketright": "]", "space": "Space", "comma": ",", "period": ".", "slash": "/", "minus": "-", "equal": "=",
+            "semicolon": ";", "apostrophe": "'", "backslash": "\\", "grave": "`", "": "—"}.get(k, k.upper() if len(k) == 1 else k)
+
 class Layer:
+    """a layer: img is its picture; maskcv (if it has a mask) hides parts of it (where the mask has paint). cv is what painting goes
+    onto: the mask while mask_edit is on, otherwise the picture"""
     def __init__(self, w, h, name):
-        self.cv = brushes.Canvas(w, h, paper=(255, 255, 255), transparent=True); self.name = name
+        self.img = brushes.Canvas(w, h, paper=(255, 255, 255), transparent=True); self.name = name; self.maskcv = None; self.mask_edit = False
         self.visible = True; self.opacity = 1.0; self.mode = "normal"; self.clip = False      # clip: only shows where the layer below has paint
+    @property
+    def cv(self): return self.maskcv if self.mask_edit and self.maskcv is not None else self.img
+    def shown(self, sl=(slice(None), slice(None))):
+        """how much of the layer shows (its coverage, less what the mask hides)"""
+        a = self.img.alpha[sl]
+        return a if self.maskcv is None else a * (1 - self.maskcv.alpha[sl])
+    def add_mask(self):
+        if self.maskcv is None: self.maskcv = brushes.Canvas(self.img.w, self.img.h, paper=(0, 0, 0), transparent=True)
+    def baked(self):
+        """(colour, coverage) with the mask applied, for merging / saving"""
+        return self.img.a, self.shown()
 
 def blend_layer(bg, layer, sl=(slice(None), slice(None)), clip=None):
     """layer over bg; sl limits it to a region (bg is then that region only). clip: the coverage of the layer it's clipped to"""
-    a = layer.cv.alpha[sl] * layer.opacity
+    a = layer.shown(sl) * layer.opacity
     if clip is not None: a = a * clip
-    a = a[..., None]; L = layer.cv.a[sl]
+    a = a[..., None]; L = layer.img.a[sl]
     c = L if layer.mode == "normal" else brushes.blend_rgb(bg, L, layer.mode)
     return bg * (1 - a) + c * a
 
 class DrawStudio(StudioMore, StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
-        super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
+        super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self)
         self.color = (196, 92, 44); self.color2 = (255, 255, 255); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.opacity = 0.5   # brushes start half see-through
         self._x_init()                                                              # select / crop / text state (studio_extras)
         self.mirror = tk.BooleanVar(value=False); self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
@@ -182,18 +213,40 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         cv.bind("<Escape>", lambda e: self.x_key(e) or ((self.toggle_big(), "break")[1] if self._big else None))
         for k in ("<Delete>", "<BackSpace>", "<Return>", "<Control-a>", "<Control-c>", "<Control-x>", "<Control-v>"): cv.bind(k, lambda e: self.x_key(e))
         cv.bind("<Double-Button-1>", lambda e: (self.tool == "crop" and self._crop is not None and self._crop_hit(self.to_img(e)) == "in" and self._crop_apply()) or None)
-        for key, fn in (("<Control-z>", lambda e: (self.undo(), "break")[1]), ("<Control-y>", lambda e: (self.redo(), "break")[1]), ("<bracketleft>", lambda e: self.set_size(self.size / 1.2)),
-                        ("<bracketright>", lambda e: self.set_size(self.size * 1.2))):
+        for key, fn in (("<Control-z>", lambda e: (self.undo(), "break")[1]), ("<Control-y>", lambda e: (self.redo(), "break")[1])):
             cv.bind(key, fn)
-        for label, tool, key in TOOLS:
-            if key: cv.bind(f"<Key-{key}>", lambda e, t=tool: self.set_tool(t))
-        cv.bind("<Key-x>", lambda e: self.swap_colors()); cv.bind("<Key-d>", lambda e: self.default_colors())
-        cv.bind("<Control-t>", lambda e: self.x_key(e))
-        for key, fn in (("<Key-4>", lambda e: self.set_view(delta=-15)), ("<Key-6>", lambda e: self.set_view(delta=15)),
-                        ("<Key-5>", lambda e: self.set_view(rot=0, flip=False)), ("<Key-n>", lambda e: self.set_view(flip=not self.view_flip))):
-            cv.bind(key, fn)
+        self._key_cvs = getattr(self, "_key_cvs", []) + [cv]; self._bind_keys(cv)
+        cv.bind("<Control-t>", lambda e: self.x_key(e)); cv.bind("<Control-d>", lambda e: self.x_key(e))
         cv.bind("<Shift-ButtonPress-3>", self._turn_start); cv.bind("<Shift-B3-Motion>", self._turn_move)
         return cv
+
+    def _key_action(self, a):
+        """what each changeable key does"""
+        if a in ("brush", "eraser", "pick", "fill", "line", "text", "sel_rect", "sel_lasso", "crop", "move"): self.set_tool(a)
+        elif a == "smaller": self.set_size(self.size / 1.2)
+        elif a == "bigger": self.set_size(self.size * 1.2)
+        elif a == "swap": self.swap_colors()
+        elif a == "bw": self.default_colors()
+        elif a == "turn_left": self.set_view(delta=-15)
+        elif a == "turn_right": self.set_view(delta=15)
+        elif a == "straighten": self.set_view(rot=0, flip=False)
+        elif a == "mirror_view": self.set_view(flip=not self.view_flip)
+
+    def _bind_keys(self, cv):
+        for k in getattr(cv, "_my_keys", []):                                   # the old keys go first
+            try: cv.unbind(k)
+            except tk.TclError: pass
+        cv._my_keys = []
+        for a, k in key_map().items():
+            if not k: continue
+            seq = f"<Key-{k}>"
+            try: cv.bind(seq, lambda e, a=a: self._key_action(a)); cv._my_keys.append(seq)
+            except tk.TclError: pass
+
+    def rebind_keys(self):
+        for cv in getattr(self, "_key_cvs", []):
+            try: self._bind_keys(cv)
+            except tk.TclError: pass
 
     def _turn_start(self, e):
         W, H = self.cv.winfo_width(), self.cv.winfo_height(); self._turn0 = (math.atan2(e.y - H / 2, e.x - W / 2), math.degrees(self.view_rot))
@@ -635,10 +688,19 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         self.clip_var = tk.BooleanVar(value=False)
         ck = frame(fill="x", pady=(0, 3)); T.Text(ck, "Clip to layer below", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(ck, self.clip_var, command=self._set_clip), "This layer only shows where the layer under it has paint (shade or texture inside a shape)").pack(side="right")
+        self.mask_var = tk.BooleanVar(value=False)
+        mk = frame(fill="x", pady=(0, 3)); T.Text(mk, "Paint on mask", font=T.f(9)).pack(side="left")
+        self._tip(T.Toggle(mk, self.mask_var, command=self._mask_toggle), "Layer mask: painting now hides this layer (the eraser brings it back); nothing is lost. Turn off to paint the layer again").pack(side="right")
+        mb = frame(fill="x", pady=(0, 3))
+        self._tip(small(T.Button(mb, "Apply mask", self._mask_apply)), "Make what the mask hides really gone, and remove the mask").pack(side="left")
+        self._tip(small(T.Button(mb, "Delete mask", self._mask_delete, kind="danger")), "Remove the mask: the whole layer shows again").pack(side="right")
         lk = frame(fill="x", pady=(0, 3)); T.Text(lk, "Lock transparency", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(lk, self.lock_alpha), "Paint only where this layer already has paint (great for shading inside a shape)").pack(side="right")
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
+        self._navigator(LV, frame, self._apx(IW) - 4)                                 # NAVIGATOR, LAYER COLOR (studio_more)
+        self._layer_color(LV, frame)
         self._more_options(LV, frame)                                                # GUIDES, FILL, CANVAS, SAVING (studio_more)
+        self._timelapse(LV, frame)
         # ---- COLOR header
         def header(word, H, arrow=None):
             def render(b):
@@ -883,6 +945,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         try:
             self.mode.set(L.mode)
             if hasattr(self, "clip_var") and self.clip_var.get() != getattr(L, "clip", False): self.clip_var.set(getattr(L, "clip", False))
+            if hasattr(self, "mask_var") and self.mask_var.get() != L.mask_edit: self.mask_var.set(L.mask_edit)
         finally: self._in_layers_ui = False
         self.lop_s.value = L.opacity; self.lop_s._draw(); self.lop_lbl.configure(text=f"{int(L.opacity * 100)}%")
 
@@ -942,7 +1005,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
             if getattr(L, "clip", False):                                        # clipped: only where the layer it sits on has paint
                 if L.visible: part = blend_layer(part, L, sl, clip=base_al if base_al is not None else np.zeros(part.shape[:2], np.float32))
                 continue
-            base_al = L.cv.alpha[sl] * L.opacity if L.visible else np.zeros(part.shape[:2], np.float32)
+            base_al = L.shown(sl) * L.opacity if L.visible else np.zeros(part.shape[:2], np.float32)
             if L.visible: part = blend_layer(part, L, sl)
         self._comp[sl] = np.clip(part, 0, 255).astype(np.uint8)
 
@@ -969,7 +1032,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         w, h = self.size_wh; png = lambda im: (lambda b: (im.save(b, "PNG", compress_level=3), b.getvalue())[1])(io.BytesIO())
         rows = []; files = []
         for i, L in reversed(list(enumerate(self.layers))):                       # stack.xml lists the top layer first
-            px = Image.fromarray(np.rint(np.dstack([np.clip(L.cv.a, 0, 255), np.clip(L.cv.alpha, 0, 1)[..., None] * 255])).astype(np.uint8), "RGBA")
+            px = Image.fromarray(np.rint(np.dstack([np.clip(L.img.a, 0, 255), np.clip(L.shown(), 0, 1)[..., None] * 255])).astype(np.uint8), "RGBA")   # (a mask is applied)
             src = f"data/layer{i}.png"; files.append((src, png(px)))
             rows.append(f'<layer name={quoteattr(L.name)} src="{src}" x="0" y="0" opacity="{L.opacity:.3f}" visibility="{"visible" if L.visible else "hidden"}" '
                         f'composite-op="{self.ORA_OPS.get(L.mode, "svg:src-over")}" x-instant-mode={quoteattr(L.mode)} x-instant-clip="{1 if getattr(L, "clip", False) else 0}"/>')
@@ -998,7 +1061,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         ops = {v: k for k, v in self.ORA_OPS.items()}
         for el, im in zip(items, pics):
             L = Layer(w, h, el.get("name", "Layer")); full = Image.new("RGBA", (w, h), (0, 0, 0, 0)); full.paste(im, (int(float(el.get("x", 0))), int(float(el.get("y", 0)))))
-            px = np.asarray(full, np.float32); L.cv.a = px[..., :3].copy(); L.cv.alpha = px[..., 3] / 255
+            px = np.asarray(full, np.float32); L.img.a = px[..., :3].copy(); L.img.alpha = px[..., 3] / 255
             L.visible = el.get("visibility", "visible") != "hidden"; L.opacity = float(el.get("opacity", 1.0))
             L.mode = el.get("x-instant-mode") or ops.get(el.get("composite-op", "svg:src-over"), "normal"); L.clip = el.get("x-instant-clip") == "1"
             self.layers.append(L)
@@ -1041,6 +1104,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         return (W - w * z) / 2 + self.pan[0], (H - h * z) / 2 + self.pan[1], z
 
     def _patch(self, rect):
+        self._nav_soon()
         """show just the part of the picture that changed (a small image laid over the view) instead of redrawing the whole view"""
         if self.zoom is None or not self.winfo_ismapped(): return
         if self._turned(): self.refresh(); return                                # a turned view: the next frame redraws it whole
@@ -1121,7 +1185,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         if n > 1:                                                                 # the spokes of radial symmetry
             R = math.hypot(w, h) / 2
             for k in range(n): a = 2 * math.pi * k / n - math.pi / 2; self.cv.create_line(*S_(w / 2, h / 2), *S_(w / 2 + math.cos(a) * R, h / 2 + math.sin(a) * R), fill=T.PALETTE["border"], dash=(3, 5))
-        self._guides_draw()
+        self._guides_draw(); self._nav_soon()
         self._tip_redraw()
         if getattr(self, "_x_ready", False): self._x_overlay()                  # selection ants, crop box, text box
 
@@ -1466,7 +1530,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
 
     def _begin_edit(self):
         """before a change to the current layer: remember it, so the change can be undone"""
-        L = self.cur; self._edit = (self.li, L.cv.a.copy(), L.cv.alpha.copy()); self._dirty = None
+        L = self.cur; self._edit = (self.li, L.cv.a.copy(), L.cv.alpha.copy()); self._dirty = None; self._edit_mask = L.cv is not L.img
 
     def _commit_edit(self):
         """after the change: keep only the area that actually changed (not the whole layer) on the undo list"""
@@ -1485,7 +1549,8 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         rows, cols = np.flatnonzero(diff.any(1)), np.flatnonzero(diff.any(0))
         if not len(rows): return None
         y0, y1, x0, x1 = by0 + int(rows[0]), by0 + int(rows[-1]) + 1, bx0 + int(cols[0]), bx0 + int(cols[-1]) + 1
-        self.undo_stack.append((i, y0, y1, x0, x1, a0[y0:y1, x0:x1].copy(), al0[y0:y1, x0:x1].copy())); self.redo_stack.clear()
+        self.undo_stack.append((i, y0, y1, x0, x1, a0[y0:y1, x0:x1].copy(), al0[y0:y1, x0:x1].copy(), getattr(self, "_edit_mask", False))); self.redo_stack.clear()
+        self._tl_grab()                                                          # timelapse: a frame after every change (if recording)
         self._trim_undo(); self.changed = True
         return (x0, y0, x1, y1)
 
@@ -1496,10 +1561,10 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
     def _swap(self, src, dst):
         if not src: return
         if src[-1][0] == "whole": return self._swap_whole(src, dst)              # a crop
-        i, y0, y1, x0, x1, a, al = src.pop()
+        i, y0, y1, x0, x1, a, al, *mk = src.pop(); mk = bool(mk and mk[0])
         if i >= len(self.layers): return
-        L = self.layers[i]; sl = (slice(y0, y1), slice(x0, x1))
-        dst.append((i, y0, y1, x0, x1, L.cv.a[sl].copy(), L.cv.alpha[sl].copy())); L.cv.a[sl] = a; L.cv.alpha[sl] = al
+        L = self.layers[i]; sl = (slice(y0, y1), slice(x0, x1)); C = L.maskcv if mk and L.maskcv is not None else L.img
+        dst.append((i, y0, y1, x0, x1, C.a[sl].copy(), C.alpha[sl].copy(), mk)); C.a[sl] = a; C.alpha[sl] = al
         self._recomp((x0, y0, x1, y1)); self.changed = True; self._draw()
     def undo(self): self._swap(self.undo_stack, self.redo_stack)
     def redo(self): self._swap(self.redo_stack, self.undo_stack)
@@ -1529,10 +1594,28 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
             st = getattr(self, "_stroke_state", None) if self._live() else None
             for k, P in enumerate(self._mirror_sets(pts)):
                 self.cur.cv.stroke(P, name, color=color, size=self.size, opacity=self.opacity, state=None if st is None else st.setdefault(k, {}))
+            self._confine(pts)                                                     # a selection is on: paint only inside it
             if self.lock_alpha.get() and self._edit is not None and self.tool != "eraser":   # Lock transparency: coverage stays as it was
                 x0, y0, x1, y1 = (int(max(0, v)) for v in (self.cur.cv.touched or self._bbox(pts))); sl = (slice(y0, int(y1) + 1), slice(x0, int(x1) + 1))
                 self.cur.cv.alpha[sl] = self._edit[2][sl]
         finally: brushes.B.pop("__live__", None)
+
+    def _sel_full(self):
+        """the selection as a mask the size of the picture (None when nothing is selected or it's being moved)"""
+        s = getattr(self, "sel", None)
+        if s is None or s.get("float") is not None: return None
+        key = (id(s), s["box"], s["kind"], self.gopts.get("feather", 0), self.size_wh)
+        if getattr(self, "_selfull_key", None) != key:
+            w, h = self.size_wh; m = np.zeros((h, w), np.float32); x0, y0, x1, y1 = s["box"]; m[y0:y1, x0:x1] = self._sel_mask(s["kind"], x1 - x0, y1 - y0)
+            self._selfull, self._selfull_key = m, key
+        return self._selfull
+
+    def _confine(self, pts):
+        k = self._sel_full()
+        if k is None or self._edit is None: return
+        x0, y0, x1, y1 = (int(max(0, v)) for v in (self.cur.cv.touched or self._bbox(pts))); sl = (slice(y0, int(y1) + 1), slice(x0, int(x1) + 1))
+        C = self.cur.cv; kk = k[sl]; C.alpha[sl] = self._edit[2][sl] * (1 - kk) + C.alpha[sl] * kk
+        C.a[sl] = self._edit[1][sl] * (1 - kk[..., None]) + C.a[sl] * kk[..., None]
 
     def _live(self):
         """painting as the mouse moves (all brushes except the whole-stroke ones, which paint on release)"""
@@ -1551,6 +1634,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         self._recomp(rect); self._patch(rect)
 
     def down(self, e):
+        if getattr(self, "_lc_orig", None) is not None: self._lc_apply()             # a layer colour change being previewed is kept first
         if self.tool == "move": self._pan_start(e); return                         # Move: the press grabs the picture, dragging moves it
         if hasattr(self, "guide") and self.guide.get() != "Off" and self.guide_move.get(): self._guide_grab(e); return   # Move guides: drag their dots
         p = self.to_img(e); self.start = p; t = self.tool
@@ -1705,6 +1789,8 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         tol = 1 + self.gopts["tolerance"] / 100 * 255 * src.shape[2] * 0.45
         same = np.abs(src - src[y, x]).sum(2) < tol; lab, _ = label(same); m = lab == lab[y, x]
         m = binary_dilation(m, iterations=1).astype(np.float32) * self.opacity          # covers the anti-aliased edge
+        k = self._sel_full()
+        if k is not None: m = m * k                                                  # inside the selection only
         if pattern:
             pat = brush_art.pattern(self._last_pattern); m = m * pat[np.arange(h)[:, None] % pat.shape[0], np.arange(w)[None, :] % pat.shape[1]]
         self.cur.cv._blend(0, h, 0, w, m, self.color, "normal")
@@ -1823,7 +1909,8 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         if not self._saving.acquire(blocking=False): return False                                       # the last save is still writing
         try:
             bg = np.clip(self.bg, 0, 255).astype(np.uint8)
-            layers = [(L.name, L.visible, float(L.opacity), L.mode, np.rint(np.dstack([np.clip(L.cv.a, 0, 255), L.cv.alpha[..., None] * 255])).astype(np.uint8)) for L in self.layers]
+            layers = [(L.name, L.visible, float(L.opacity), L.mode, np.rint(np.dstack([np.clip(L.img.a, 0, 255), L.img.alpha[..., None] * 255])).astype(np.uint8)) for L in self.layers]
+            masks = [(i, np.rint(np.clip(L.maskcv.alpha, 0, 1) * 255).astype(np.uint8)) for i, L in enumerate(self.layers) if L.maskcv is not None]
             meta = dict(size=list(self.size_wh), li=self.li, layers=[dict(name=n, visible=v, opacity=o, mode=m, clip=bool(getattr(L, "clip", False))) for (n, v, o, m, _), L in zip(layers, self.layers)])
             self.changed = False
         except Exception: self._saving.release(); raise
@@ -1832,6 +1919,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
                 d = os.path.join(folder, "draw"); tmp = d + ".tmp"; shutil.rmtree(tmp, ignore_errors=True); os.makedirs(tmp)
                 Image.fromarray(bg).save(os.path.join(tmp, "background.png"), compress_level=1)
                 for i, (*_, px) in enumerate(layers): Image.fromarray(px, "RGBA").save(os.path.join(tmp, f"layer{i}.png"), compress_level=1)
+                for i, mk in masks: Image.fromarray(mk).save(os.path.join(tmp, f"mask{i}.png"), compress_level=1)
                 with open(os.path.join(tmp, "drawing.json"), "w") as f: json.dump(meta, f)
                 shutil.rmtree(d, ignore_errors=True); os.replace(tmp, d)                  # swapped in whole, so a crash mid-save can't leave half a drawing
             except Exception:
@@ -1850,8 +1938,25 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         self.layers = []
         for i, m in enumerate(meta["layers"]):
             L = Layer(w, h, m["name"]); px = np.asarray(Image.open(os.path.join(d, f"layer{i}.png")).convert("RGBA"), dtype=np.float32)
-            L.cv.a = px[..., :3].copy(); L.cv.alpha = px[..., 3] / 255; L.visible, L.opacity, L.mode = m["visible"], m["opacity"], m["mode"]; L.clip = bool(m.get("clip", False)); self.layers.append(L)
+            L.img.a = px[..., :3].copy(); L.img.alpha = px[..., 3] / 255; L.visible, L.opacity, L.mode = m["visible"], m["opacity"], m["mode"]; L.clip = bool(m.get("clip", False))
+            mp = os.path.join(d, f"mask{i}.png")
+            if os.path.exists(mp): L.add_mask(); L.maskcv.alpha = np.asarray(Image.open(mp).convert("L"), np.float32) / 255
+            self.layers.append(L)
         self.li = min(meta.get("li", 0), len(self.layers) - 1); self._recomp(); self._layers_ui(); self.changed = True; self.fit()
+
+    def _mask_toggle(self):
+        L = self.cur
+        if self.mask_var.get(): L.add_mask(); L.mask_edit = True; T.banner(self.app, "PAINTING ON THE MASK — the brush hides, the eraser brings back", "success")
+        else: L.mask_edit = False
+        self._layers_ui(); self._tip_redraw()
+    def _mask_apply(self):
+        L = self.cur
+        if L.maskcv is None: return
+        self._whole_snapshot(); L.img.alpha = L.shown().copy(); L.maskcv = None; L.mask_edit = False; self.mask_var.set(False); self._recomp(); self._draw(); self._layers_ui()
+    def _mask_delete(self):
+        L = self.cur
+        if L.maskcv is None: return
+        self._whole_snapshot(); L.maskcv = None; L.mask_edit = False; self.mask_var.set(False); self._recomp(); self._draw(); self._layers_ui()
 
     def _set_clip(self):
         L = self.cur; L.clip = bool(self.clip_var.get()); self._recomp(); self._draw(); self.changed = True
@@ -1874,6 +1979,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         try:
             self.mode.set(L.mode)
             if hasattr(self, "clip_var") and self.clip_var.get() != getattr(L, "clip", False): self.clip_var.set(getattr(L, "clip", False))
+            if hasattr(self, "mask_var") and self.mask_var.get() != L.mask_edit: self.mask_var.set(L.mask_edit)
         finally: self._in_layers_ui = False
         self.lop_s.value = L.opacity; self.lop_s._draw(); self.lop_lbl.configure(text=f"{int(L.opacity * 100)}%")
 
@@ -1896,19 +2002,20 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
     def add_layer(self):
         w, h = self.size_wh; self.layers.insert(self.li + 1, Layer(w, h, f"Layer {len(self.layers) + 1}")); self.li += 1; self._layers_ui()
     def dup_layer(self):
-        w, h = self.size_wh; src = self.cur; L = Layer(w, h, src.name + " copy"); L.cv.a, L.cv.alpha = src.cv.a.copy(), src.cv.alpha.copy()
+        w, h = self.size_wh; src = self.cur; L = Layer(w, h, src.name + " copy"); L.img.a, L.img.alpha = src.img.a.copy(), src.img.alpha.copy()
+        if src.maskcv is not None: L.add_mask(); L.maskcv.alpha = src.maskcv.alpha.copy()
         L.opacity, L.mode = src.opacity, src.mode; self.layers.insert(self.li + 1, L); self.li += 1; self._layers_ui(); self._picture_changed()
     def del_layer(self):
-        if len(self.layers) == 1: self._begin_edit(); self.cur.cv.alpha[:] = 0; self._commit_edit()
+        if len(self.layers) == 1: self.cur.mask_edit = False; self.cur.maskcv = None; self._begin_edit(); self.cur.cv.alpha[:] = 0; self._commit_edit()
         else: self.layers.pop(self.li); self.li = max(0, self.li - 1)
         self.undo_stack = [u for u in self.undo_stack if u[0] < len(self.layers)]; self._layers_ui(); self._picture_changed()
     def merge_down(self):
         if self.li == 0: return
         top, low = self.layers[self.li], self.layers[self.li - 1]
-        a_t = (top.cv.alpha * top.opacity)[..., None]; a_l = low.cv.alpha[..., None]
-        col = blend_layer(low.cv.a.copy(), top) if top.mode != "normal" else top.cv.a
+        a_t = (top.shown() * top.opacity)[..., None]; a_l = low.shown()[..., None]          # (masks are applied first)
+        col = blend_layer(low.img.a.copy(), top) if top.mode != "normal" else top.img.a
         out_a = a_l + a_t * (1 - a_l)
-        low.cv.a = (low.cv.a * a_l * (1 - a_t) + col * a_t) / np.maximum(out_a, 1e-4); low.cv.alpha = out_a[..., 0]
+        low.img.a = (low.img.a * a_l * (1 - a_t) + col * a_t) / np.maximum(out_a, 1e-4); low.img.alpha = out_a[..., 0]; low.maskcv = None; low.mask_edit = False
         self.layers.pop(self.li); self.li -= 1; self.undo_stack = [u for u in self.undo_stack if u[0] < len(self.layers)]; self._layers_ui(); self._picture_changed()
     def move_layer(self, d):
         j = self.li + d

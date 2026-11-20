@@ -418,12 +418,61 @@ SHORTCUTS = [("Anywhere", [("F11", "full screen on / off"), ("Esc", "leave full 
              ("Draw studio", [("B / E / I / G / L / T", "brush, eraser, eyedropper, fill, line, text"), ("[  ]", "smaller / bigger brush"),
                               ("Ctrl+Z / Ctrl+Y", "undo / redo"), ("Mouse wheel", "zoom"), ("Right-drag", "pan")]),
              ("Editing", [("Double-click a slider", "reset it")])]
+FIXED_DRAW_KEYS = [("Ctrl+Z / Ctrl+Y", "undo / redo"), ("Ctrl+C / X / V", "copy / cut / paste the selection"), ("Ctrl+A / Ctrl+D", "select all / nothing"),
+                   ("Ctrl+T", "free transform (Enter keeps, Esc puts back)"), ("Shift + click", "straight line from the last stroke"),
+                   ("Shift (shapes)", "15-degree lines, squares, circles"), ("Mouse wheel", "zoom where the mouse is"), ("Right-drag", "pan"),
+                   ("Shift + right-drag", "turn the view"), ("Esc", "studio back to normal size")]
 class ShortcutsPage(SettingsPage):
-    TITLE = "Shortcuts"
+    TITLE = "Shortcuts"; NOTE = "Drawing keys: click one, then press the key you want (Backspace = none, Esc = keep it)."
     def build(self):
-        for group, items in SHORTCUTS:
-            T.Text(self.body, group.upper(), font=T.f(10)).pack(anchor="w", pady=(8, 2))
-            for k, what in items: T.Text(self.body, f"   {k:<26} {what}", font=T.f(9)).pack(anchor="w")
+        T.Text(self.body, "ANYWHERE", font=T.f(10)).pack(anchor="w", pady=(8, 2))
+        for k, what in SHORTCUTS[0][1]: T.Text(self.body, f"   {k:<26} {what}", font=T.f(9)).pack(anchor="w")
+        T.Text(self.body, "DRAWING (click to change)", font=T.f(10)).pack(anchor="w", pady=(10, 2))
+        self._rows = tk.Frame(self.body, bg=self.body["bg"]); self._rows.pack(anchor="w", fill="x"); T.on_change(lambda: self._rows.configure(bg=self.body["bg"]))
+        self._waiting = None; self._fill()
+        self.buttons(("Reset drawing keys", self._reset, "danger"))
+    def _fill(self):
+        import draw_studio as DS
+        for w in self._rows.winfo_children(): w.destroy()
+        m = DS.key_map(); self._btns = {}
+        for i, (a, what, _) in enumerate(DS.KEY_ACTIONS):
+            c, r = divmod(i, 9)
+            cell = tk.Frame(self._rows, bg=self._rows["bg"]); cell.grid(row=r, column=c, sticky="w", padx=(0, 24), pady=1); T.on_change(lambda cell=cell: cell.configure(bg=self._rows["bg"]))
+            b = T.Button(cell, DS.key_label(m.get(a, "")), lambda a=a: self._ask(a), width=6); b.pack(side="left"); self._btns[a] = b
+            T.Text(cell, what, font=T.f(9)).pack(side="left", padx=6)
+        fx = tk.Frame(self._rows, bg=self._rows["bg"]); fx.grid(row=0, column=2, rowspan=9, sticky="nw", padx=(16, 0)); T.on_change(lambda: fx.configure(bg=self._rows["bg"]))
+        T.Text(fx, "ALWAYS", font=T.f(9)).pack(anchor="w")                     # the keys that can't be changed, beside the ones that can
+        for k, what in FIXED_DRAW_KEYS: T.Text(fx, f"{k:<20} {what}", font=T.f(8)).pack(anchor="w")
+    def _ask(self, a):
+        self._waiting = a; self._btns[a].configure(text="press…"); top = self.winfo_toplevel()
+        self._kb = top.bind("<KeyPress>", self._got, add="+"); top.focus_set()
+    def _got(self, e):
+        a = self._waiting
+        if a is None: return
+        k = e.keysym
+        if k in ("Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R", "Caps_Lock", "Super_L", "Super_R", "Win_L", "Win_R"): return
+        self._waiting = None
+        try: self.winfo_toplevel().unbind("<KeyPress>", self._kb)
+        except Exception: pass
+        if k == "Escape": self._fill(); return "break"
+        import json, paths, draw_studio as DS
+        k = "" if k in ("BackSpace", "Delete") else (k.lower() if len(k) == 1 else k)
+        m = DS.key_map()
+        if k:
+            for other, kk in list(m.items()):
+                if kk == k and other != a: m[other] = ""                      # the key moves here from what had it
+        m[a] = k
+        try:
+            with open(paths.json_file("draw_keys.json"), "w", encoding="utf-8") as f: json.dump(m, f, indent=1)
+        except Exception: pass
+        for st in DS.STUDIOS: st.rebind_keys()
+        self._fill(); return "break"
+    def _reset(self):
+        import paths, draw_studio as DS
+        try: os.remove(paths.json_file("draw_keys.json"))
+        except OSError: pass
+        for st in DS.STUDIOS: st.rebind_keys()
+        self._fill()
 
 # ---------------------------------------------------------------- Backup & reset
 BACKUP_FILES = ["instant_easel_settings.json", "instant_easel_theme.json", "learning_settings.json"]

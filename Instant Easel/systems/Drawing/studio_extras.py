@@ -152,7 +152,7 @@ class StudioExtras:
         self._x_init()
         if getattr(self, "_poly", None) and new_tool != self.tool: self._poly_finish()      # a polygon / curve in progress gets drawn
         if getattr(self, "_xf", None) and new_tool not in SEL_TOOLS: self._xf_end(True)        # a transform in progress is kept
-        if self.tool in SEL_TOOLS and new_tool not in SEL_TOOLS: self._sel_commit(); self.sel = None
+        if self.tool in SEL_TOOLS and new_tool not in SEL_TOOLS: self._sel_commit()     # (the selection stays: painting keeps inside it; Ctrl+D or Esc drops it)
         if self.tool == "crop" and new_tool != "crop": self._crop = None
         if self.tool == "text" and new_tool != "text": self._txt_commit()
         self._x_overlay()
@@ -173,6 +173,7 @@ class StudioExtras:
         """keys on the canvas for these tools; returns "break" when used"""
         self._x_init(); k = e.keysym; ctrl = bool(e.state & 0x4)
         if ctrl and k.lower() == "t": self._xf_start(); return "break"
+        if ctrl and k.lower() == "d" and self.sel is not None: self._sel_commit(); self.sel = None; self._x_overlay(); return "break"
         if getattr(self, "_xf", None):                                           # Free Transform: Enter keeps it, Esc puts it back
             if k == "Return": self._xf_end(True); return "break"
             if k == "Escape": self._xf_end(False); return "break"
@@ -530,33 +531,38 @@ class StudioExtras:
 
     def _whole_snapshot(self):
         """remember the whole picture (every layer and the background) on the Undo list, for a crop"""
-        A = np.stack([self.bg] + [L.cv.a for L in self.layers]); AL = np.stack([L.cv.alpha for L in self.layers])
-        self.undo_stack.append(("whole", 0, 0, 0, 0, A, AL)); self.redo_stack.clear(); self._trim_undo(); self.changed = True
+        A = np.stack([self.bg] + [L.img.a for L in self.layers]); AL = np.stack([L.img.alpha for L in self.layers])
+        MK = [None if L.maskcv is None else L.maskcv.alpha.copy() for L in self.layers]
+        self.undo_stack.append(("whole", 0, 0, 0, 0, A, AL, MK)); self.redo_stack.clear(); self._trim_undo(); self.changed = True
 
     def _resize_doc(self, fn, w, h):
         import brushes
         self.bg = fn(self.bg)
         for L in self.layers:
-            c = L.cv; c.a = fn(c.a); c.alpha = fn(c.alpha); c.w, c.h = w, h
-            try: c.grain = fn(c.grain) if c.grain.shape[:2] != (h, w) else c.grain
-            except Exception: pass
-            if c.grain.shape[:2] != (h, w): c.grain = brushes._grain(h, w, 1)
+            for c in [L.img] + ([L.maskcv] if L.maskcv is not None else []):
+                c.a = fn(c.a); c.alpha = fn(c.alpha); c.w, c.h = w, h
+                try: c.grain = fn(c.grain) if c.grain.shape[:2] != (h, w) else c.grain
+                except Exception: pass
+                if c.grain.shape[:2] != (h, w): c.grain = brushes._grain(h, w, 1)
         self.size_wh = (w, h); self._comp = np.empty((h, w, 3), np.uint8); self._recomp()
         self.sel = None; self._view_fit = True; self.fit(); self._layers_ui()
         if hasattr(self, "_sync_canvas_size"): self._sync_canvas_size()
 
     def _swap_whole(self, src, dst):
         """undo / redo a crop: swap the whole picture with the one remembered"""
-        _, _, _, _, _, A, AL = src.pop()
-        cur_A = np.stack([self.bg] + [L.cv.a for L in self.layers]); cur_AL = np.stack([L.cv.alpha for L in self.layers])
-        dst.append(("whole", 0, 0, 0, 0, cur_A, cur_AL))
+        _, _, _, _, _, A, AL, *MK = src.pop(); MK = MK[0] if MK else [None] * len(self.layers)
+        cur_A = np.stack([self.bg] + [L.img.a for L in self.layers]); cur_AL = np.stack([L.img.alpha for L in self.layers])
+        dst.append(("whole", 0, 0, 0, 0, cur_A, cur_AL, [None if L.maskcv is None else L.maskcv.alpha.copy() for L in self.layers]))
         h, w = A.shape[1:3]; it = iter(range(len(A)))
         self.bg = A[0].copy()
         import brushes
         for i, L in enumerate(self.layers):
-            if i + 1 < len(A): L.cv.a = A[i + 1].copy(); L.cv.alpha = AL[i].copy()
-            else: L.cv.a = np.zeros((h, w, 3), np.float32) + 255; L.cv.alpha = np.zeros((h, w), np.float32)
-            L.cv.w, L.cv.h = w, h; L.cv.grain = brushes._grain(h, w, 1)
+            if i + 1 < len(A): L.img.a = A[i + 1].copy(); L.img.alpha = AL[i].copy()
+            else: L.img.a = np.zeros((h, w, 3), np.float32) + 255; L.img.alpha = np.zeros((h, w), np.float32)
+            L.img.w, L.img.h = w, h; L.img.grain = brushes._grain(h, w, 1)
+            mk = MK[i] if i < len(MK) else None
+            if mk is None: L.maskcv = None; L.mask_edit = False
+            else: L.add_mask(); L.maskcv.w, L.maskcv.h = w, h; L.maskcv.a = np.zeros((h, w, 3), np.float32); L.maskcv.alpha = mk.copy(); L.maskcv.grain = L.img.grain
         self.size_wh = (w, h); self._comp = np.empty((h, w, 3), np.uint8); self._recomp()
         self.sel = None; self._view_fit = True; self.fit(); self._layers_ui()
         if hasattr(self, "_sync_canvas_size"): self._sync_canvas_size(); self.changed = True

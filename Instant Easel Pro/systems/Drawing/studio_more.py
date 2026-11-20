@@ -97,7 +97,7 @@ class StudioMore:
                 if cw > 0 and ch > 0: out[dy0:dy0 + ch, dx0:dx0 + cw] = arr[sy0:sy0 + ch, sx0:sx0 + cw]
                 return out
         self._resize_doc(fn, W, H)
-        for L in self.layers: L.cv.alpha = np.clip(L.cv.alpha, 0, 1)
+        for L in self.layers: L.img.alpha = np.clip(L.img.alpha, 0, 1)
         self._recomp(); self._draw(); self.set_size(self.size); self.changed = True
         T.banner(self.app, f"RESIZED — {W} x {H} (Ctrl+Z undoes it)", "success")
 
@@ -112,12 +112,12 @@ class StudioMore:
         for L in self.layers:
             if getattr(L, "clip", False):
                 if not L.visible: continue
-                a = L.cv.alpha * L.opacity * (base_al if base_al is not None else 0)
+                a = L.shown() * L.opacity * (base_al if base_al is not None else 0)
             else:
-                base_al = L.cv.alpha * L.opacity if L.visible else np.zeros((h, w), np.float32)
+                base_al = L.shown() * L.opacity if L.visible else np.zeros((h, w), np.float32)
                 if not L.visible: continue
-                a = L.cv.alpha * L.opacity
-            top = L.cv.a if L.mode == "normal" else np.where(al[..., None] > 0.002, brushes.blend_rgb(col, L.cv.a, L.mode), L.cv.a)
+                a = L.shown() * L.opacity
+            top = L.img.a if L.mode == "normal" else np.where(al[..., None] > 0.002, brushes.blend_rgb(col, L.img.a, L.mode), L.img.a)
             out = a + al * (1 - a); col = (top * a[..., None] + col * (al * (1 - a))[..., None]) / np.maximum(out, 1e-5)[..., None]; al = out
         return Image.fromarray(np.dstack([np.clip(col, 0, 255), np.clip(al, 0, 1)[..., None] * 255]).astype(np.uint8), "RGBA")
 
@@ -223,3 +223,135 @@ class StudioMore:
         im = Image.fromarray(self._comp); im.thumbnail((200, 200))
         q = im.quantize(8, method=Image.Quantize.MEDIANCUT); pal = q.getpalette()[:24]; counts = sorted(q.getcolors(), reverse=True)
         self.pic_colors = [tuple(pal[i * 3:i * 3 + 3]) for _, i in counts][:8]; self._paint_my_colors()
+
+    # ------------------------------------------------------------------ NAVIGATOR (Options): the whole picture small, the view on it
+    def _navigator(self, parent, frame, width_px):
+        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "NAVIGATOR", font=T.f(10, "underline")).pack()
+        self._nav = tk.Canvas(parent, width=width_px, height=int(width_px * 0.62), highlightthickness=1, bd=0, cursor="hand2", bg="#2a2d36")
+        self._nav.pack(pady=(2, 2)); self._nav_w = width_px
+        edge = lambda: self._nav.configure(highlightbackground=T.PALETTE["border"], bg=parent["bg"]); edge(); T.on_change(edge)
+        for ev in ("<Button-1>", "<B1-Motion>"): self._nav.bind(ev, self._nav_go)
+        self._nav.bind("<MouseWheel>", lambda e: self.zoom_by(1.15 if e.delta > 0 else 1 / 1.15)); self._nav_job = None
+        self._tip(self._nav, "The whole picture: the box is what you can see. Click or drag to look somewhere else; the wheel zooms")
+
+    def _nav_soon(self):
+        if getattr(self, "_nav", None) is not None and self._nav_job is None: self._nav_job = self.after(250, self._nav_draw)
+
+    def _nav_draw(self):
+        self._nav_job = None
+        try:
+            if not self._nav.winfo_ismapped() or self.zoom is None: return
+        except tk.TclError: return
+        w, h = self.size_wh; NW = self._nav_w; k = min(NW / w, (NW * 0.62) / h); tw, th = max(1, int(w * k)), max(1, int(h * k))
+        if int(float(self._nav.cget("height"))) != th + 2: self._nav.configure(height=th + 2)
+        im = Image.fromarray(self._comp); im.thumbnail((tw, th), Image.BILINEAR)
+        from PIL import ImageTk
+        self._nav_ph = ImageTk.PhotoImage(im); c = self._nav; c.delete("all"); ox = (NW - im.width) / 2 + 1
+        c.create_image(ox, 1, image=self._nav_ph, anchor="nw"); self._nav_k, self._nav_ox = im.width / w, ox
+        W, H = self.cv.winfo_width(), self.cv.winfo_height()                       # the view's four corners, on the picture
+        pts = [self._from_scr(X, Y) for X, Y in ((0, 0), (W, 0), (W, H), (0, H))]
+        sc = [v for (x, y) in pts + [pts[0]] for v in (ox + x * self._nav_k, 1 + y * self._nav_k)]
+        c.create_line(*sc, fill="#ffffff", width=2); c.create_line(*sc, fill=T.PALETTE["border"], dash=(3, 3))
+
+    def _nav_go(self, e):
+        if getattr(self, "_nav_k", None) is None: return
+        x, y = (e.x - self._nav_ox) / self._nav_k, (e.y - 1) / self._nav_k; W, H = self.cv.winfo_width(), self.cv.winfo_height()
+        X, Y = self._to_scr(x, y); self.pan = [self.pan[0] + W / 2 - X, self.pan[1] + H / 2 - Y]; self._view_fit = False; self.refresh()
+
+    # ------------------------------------------------------------------ LAYER COLOR (Options): hue / saturation / brightness / contrast
+    def _layer_color(self, parent, frame):
+        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "LAYER COLOR", font=T.f(10, "underline")).pack()
+        self.lc = dict(hue=0.0, sat=0.0, bright=0.0, contrast=0.0); self.lc_rows = {}; self._lc_orig = None; self._lc_job = None
+        for key, label, tip in (("hue", "Hue:", "Turn every colour on this layer round the colour wheel"), ("sat", "Saturation:", "More or less colourful"),
+                                ("bright", "Brightness:", "Lighter or darker"), ("contrast", "Contrast:", "More or less difference between light and dark")):
+            lo, hi = (-180, 180) if key == "hue" else (-100, 100)
+            row = self._slider_row(parent, label, 0.5, lambda v, k=key, lo=lo, hi=hi: self._lc_set(k, lo + v * (hi - lo)), "0")
+            row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._lc_set(k, x, sync=True))); row.range = (lo, hi)
+            self._tip(row.slider, tip); self.lc_rows[key] = row
+        r = frame(parent, fill="x", pady=(3, 2))
+        self._tip(self._small_btn(r, "Apply", self._lc_apply), "Keep the change (Ctrl+Z undoes it)").pack(side="left")
+        self._tip(self._small_btn(r, "Reset", self._lc_reset), "Back to how the layer was").pack(side="right")
+
+    def _lc_set(self, key, val, sync=False):
+        lo, hi = self.lc_rows[key].range; val = min(hi, max(lo, float(val))); self.lc[key] = val; row = self.lc_rows[key]
+        self._sync_slider(row, (val - lo) / (hi - lo)); row.var.set(f"{int(round(val))}")
+        if self._lc_orig is None or self._lc_orig[0] is not self.cur: self._lc_orig = (self.cur, self.cur.img.a.copy(), self.cur.img.alpha.copy())
+        if self._lc_job is None: self._lc_job = self.after(60, self._lc_preview)
+
+    def _lc_values(self, a):
+        """the layer's colours with the four settings applied (a: h x w x 3, 0..255)"""
+        x = a / 255.0; hue, sat, br, con = self.lc["hue"] / 360, self.lc["sat"] / 100, self.lc["bright"] / 100, self.lc["contrast"] / 100
+        if hue or sat:
+            mx, mn = x.max(-1), x.min(-1); d = mx - mn; v = mx; s = np.where(mx > 1e-6, d / np.maximum(mx, 1e-6), 0)
+            r, g, b = x[..., 0], x[..., 1], x[..., 2]; dd = np.maximum(d, 1e-6)
+            h = np.where(mx == r, ((g - b) / dd) % 6, np.where(mx == g, (b - r) / dd + 2, (r - g) / dd + 4)) / 6; h = np.where(d < 1e-6, 0, h)
+            h = (h + hue) % 1.0; s = np.clip(s * (1 + sat) if sat < 0 else s + (1 - s) * sat, 0, 1)
+            i = np.floor(h * 6); f = h * 6 - i; p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f)); i = i.astype(int) % 6
+            x = np.stack([np.choose(i, [v, q, p, p, t, v]), np.choose(i, [t, v, v, q, p, p]), np.choose(i, [p, p, t, v, v, q])], -1)
+        if con: x = (x - 0.5) * (1 + con) + 0.5 if con < 0 else (x - 0.5) / max(0.02, 1 - con) + 0.5
+        if br: x = x + br * (1 - x) if br > 0 else x * (1 + br)
+        return np.clip(x * 255, 0, 255).astype(np.float32)
+
+    def _lc_preview(self):
+        self._lc_job = None
+        if self._lc_orig is None: return
+        L, a0, al0 = self._lc_orig
+        if L is not self.cur or L not in self.layers: self._lc_orig = None; return
+        L.img.a = self._lc_values(a0); self._recomp(); self._draw()
+
+    def _lc_apply(self):
+        if self._lc_orig is None: return
+        if self._lc_job is not None: self.after_cancel(self._lc_job); self._lc_job = None
+        L, a0, al0 = self._lc_orig; self._lc_orig = None
+        if L not in self.layers: return
+        L.img.a = self._lc_values(a0); self._edit = (self.layers.index(L), a0, al0); self._dirty = None; self._edit_mask = False
+        r = self._commit_edit(); self._recomp(); self._draw()
+        for k in self.lc: self.lc[k] = 0.0; self._sync_slider(self.lc_rows[k], 0.5); self.lc_rows[k].var.set("0")
+
+    def _lc_reset(self):
+        if self._lc_job is not None: self.after_cancel(self._lc_job); self._lc_job = None
+        if self._lc_orig is not None:
+            L, a0, al0 = self._lc_orig; self._lc_orig = None
+            if L in self.layers: L.img.a = a0; self._recomp(); self._draw()
+        for k in self.lc: self.lc[k] = 0.0; self._sync_slider(self.lc_rows[k], 0.5); self.lc_rows[k].var.set("0")
+
+    # ------------------------------------------------------------------ TIMELAPSE (Options): a frame after every change, saved as an animation
+    def _timelapse(self, parent, frame):
+        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "TIMELAPSE", font=T.f(10, "underline")).pack()
+        self.tl_on = tk.BooleanVar(value=False); self._tl_frames = []
+        r = frame(parent, fill="x", pady=2); T.Text(r, "Record", font=T.f(9)).pack(side="left")
+        self._tip(T.Toggle(r, self.tl_on, command=self._tl_toggle), "Keeps a small picture after every stroke, to play back how the drawing was made").pack(side="right")
+        r = frame(parent, fill="x", pady=(2, 2)); self._tl_lbl = T.Text(r, "0 frames", font=T.f(8), muted=True); self._tl_lbl.pack(side="left")
+        self._tip(self._small_btn(r, "Save", self._tl_save), "Save it as an animated GIF or WebP").pack(side="right")
+        self._tip(self._small_btn(r, "Clear", lambda: (self._tl_frames.clear(), self._tl_count())), "Start the recording again").pack(side="right", padx=4)
+
+    def _tl_toggle(self):
+        if self.tl_on.get() and not self._tl_frames: self._tl_grab()
+    def _tl_count(self):
+        try: self._tl_lbl.configure(text=f"{len(self._tl_frames)} frames")
+        except tk.TclError: pass
+
+    def _tl_grab(self):
+        """one small frame of the picture as it is now (kept as JPEG bytes, so thousands fit)"""
+        if not getattr(self, "tl_on", None) or not self.tl_on.get(): return
+        import io
+        im = Image.fromarray(self._comp); im.thumbnail((720, 720), Image.BILINEAR); b = io.BytesIO(); im.save(b, "JPEG", quality=85)
+        self._tl_frames.append(b.getvalue())
+        if len(self._tl_frames) > 4000: del self._tl_frames[1::2]                       # very long sessions: keep every other frame
+        self._tl_count()
+
+    def _tl_save(self):
+        if len(self._tl_frames) < 2: T.banner(self.app, "NOTHING RECORDED YET — turn Record on, then draw"); return
+        from tkinter import filedialog
+        import io, prefs
+        p = filedialog.asksaveasfilename(parent=self, initialdir=prefs.save_folder(), initialfile="timelapse", defaultextension=".gif",
+                                         filetypes=[("Animated GIF", "*.gif"), ("Animated WebP", "*.webp")])
+        if not p: return
+        frames = self._tl_frames; step = max(1, len(frames) // 600)                      # at most ~600 frames in the file
+        ims = [Image.open(io.BytesIO(f)).convert("RGB") for f in frames[::step]] + [Image.open(io.BytesIO(frames[-1])).convert("RGB")]
+        size = ims[-1].size; ims = [im if im.size == size else im.resize(size) for im in ims]
+        dur = [70] * (len(ims) - 1) + [2500]                                         # the finished picture stays up a moment
+        try:
+            ims[0].save(p, save_all=True, append_images=ims[1:], duration=dur, loop=0, optimize=False)
+            T.banner(self.app, f"SAVED — {len(ims)} frame timelapse", "success")
+        except Exception as ex: T.banner(self.app, f"COULDN'T SAVE IT — {ex}")
