@@ -91,7 +91,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                  "line": "Draw line", "rect": "Draw rectangle", "oval": "Draw circle", "text": "Text", "sel_rect": "Select area (rectangle)",
                  "sel_oval": "Select area (circle)", "crop": "Crop"}
         keys = {tool: key for _, tool, key in TOOLS}
-        order = ["new", "open", "save", "undo", "redo", "fit", "crop", "sel_rect", "sel_oval", "brush", "fill", "pick", "eraser",
+        order = ["new", "open", "save", "undo", "redo", "fit", "crop", "sel_rect", "sel_oval", "brush", "fill", "eraser",   # (colour picking: Pick on the Color side)
                  "line", "rect", "oval", "zoom out", "zoom in", "text"]
         self.tool_btns = {}
         for k in order:
@@ -553,7 +553,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                 im.alpha_composite(AP.fit("dropper", int(H * 0.72), int(H * 0.72)), (int(H * 0.3), int(H * 0.14)))
                 return AP.text(im, "Pick", int(W * 0.62), H // 2, int(H * 0.4))
             return AP.photo(("pick", W, H, hv), make)
-        pk = self._art(self._art_label(r), pick_img); pk.pack(side="left"); pk.bind("<Button-1>", lambda e: self.set_tool("pick")); self._tip(pk, "Pick a colour from the picture (I)")
+        pk = self._art(self._art_label(r), pick_img); pk.pack(side="left"); pk.bind("<Button-1>", lambda e: self.set_tool("pick")); self._tip(pk, "Pick a colour from the picture, then back to your tool (I)")
         # ---- swatches: basic colours, then the palettes
         cw = (IW - 7 * 3) // 8
         def swatches(parent, colors, h):
@@ -835,6 +835,7 @@ class DrawStudio(StudioExtras, tk.Frame):
     # ------------------------------------------------------------------ tools
     def set_tool(self, t):
         if hasattr(self, "tool"): self._x_leaving(t)                             # finish a selection / crop / text first
+        if t == "pick" and getattr(self, "tool", "pick") != "pick": self._before_pick = self.tool   # Pick hands back to this tool once a colour is taken
         self.tool = t
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
@@ -1155,7 +1156,9 @@ class DrawStudio(StudioExtras, tk.Frame):
         p = self.to_img(e); self.start = p; t = self.tool
         if t == "pick":
             x, y = int(p[0]), int(p[1]); w, h = self.size_wh
-            if 0 <= x < w and 0 <= y < h: self.set_color(tuple(int(c) for c in self._comp[y, x])); self._remember()
+            if 0 <= x < w and 0 <= y < h:
+                self.set_color(tuple(int(c) for c in self._comp[y, x])); self._remember()
+                self.set_tool(getattr(self, "_before_pick", "brush") or "brush")           # back to the tool you had before pressing Pick
             return
         if t == "fill":
             self._begin_edit(); self._fill(p); r = self._commit_edit()
