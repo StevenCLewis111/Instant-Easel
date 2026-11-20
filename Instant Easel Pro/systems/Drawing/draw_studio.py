@@ -18,10 +18,10 @@ import paths; HERE = paths.APP                                    # (fonts/)
 MODES = ["normal", "multiply", "screen", "overlay"]
 TOOLS = [("Brush", "brush", "b"), ("Eraser", "eraser", "e"), ("Pick", "pick", "i"), ("Fill", "fill", "g"),
          ("Line", "line", "l"), ("Rect", "rect", None), ("Oval", "oval", None), ("Text", "text", "t"),
-         ("Select", "sel_rect", "m"), ("Select oval", "sel_oval", None), ("Crop", "crop", "c")]
+         ("Select", "sel_rect", "m"), ("Select oval", "sel_oval", None), ("Crop", "crop", "c"), ("Move", "move", "h")]
 
 TOOL_ICONS = {"brush": "brush", "eraser": "eraser", "pick": "eyedropper", "fill": "paint bucket", "line": "line", "rect": "rect", "oval": "oval", "text": "text",
-              "sel_rect": "select rect", "sel_oval": "select oval", "crop": "crop"}
+              "sel_rect": "select rect", "sel_oval": "select oval", "crop": "crop", "move": "fit"}
 BASIC_COLORS = [(230, 30, 40), (250, 130, 20), (250, 220, 30), (40, 200, 60), (30, 210, 230), (40, 90, 230), (150, 60, 220), (240, 60, 200)]
 PALETTES = {"Warm": [(120, 30, 20), (200, 70, 30), (240, 140, 50), (250, 200, 90)], "Cool": [(20, 40, 90), (40, 100, 180), (80, 170, 220), (170, 230, 240)],
             "Pastel": [(250, 190, 200), (250, 230, 170), (190, 230, 200), (190, 200, 250)], "Earth": [(70, 50, 30), (130, 90, 50), (150, 140, 80), (200, 180, 140)]}
@@ -85,13 +85,13 @@ class DrawStudio(StudioExtras, tk.Frame):
         # left to right: file, undo / redo, view, cut-outs, painting tools, shapes, zoom, text (then mirror and the studio-size button)
         files = {"new": ("New", lambda: self.new(*self.size_wh), "danger", "New picture"), "open": ("Open", self.open, "normal", "Open a picture"),
                  "save": ("Save", self.save, "normal", "Save the picture")}
-        icons = {"undo": ("Undo (Ctrl+Z)", self.undo), "redo": ("Redo (Ctrl+Y)", self.redo), "fit": ("Fit to window (right-drag moves the view)", self.fit),
-                 "zoom out": ("Zoom out (or the mouse wheel, where the mouse is)", lambda: self.zoom_by(1 / 1.25)), "zoom in": ("Zoom in (or the mouse wheel, where the mouse is)", lambda: self.zoom_by(1.25))}
+        icons = {"undo": ("Undo (Ctrl+Z)", self.undo), "redo": ("Redo (Ctrl+Y)", self.redo),                  "zoom out": ("Zoom out (or the mouse wheel, where the mouse is)", lambda: self.zoom_by(1 / 1.25)), "zoom in": ("Zoom in (or the mouse wheel, where the mouse is)", lambda: self.zoom_by(1.25))}
         names = {"brush": "Paint brush", "eraser": "Eraser", "pick": "Color picker (click the picture to take its color)", "fill": "Fill (paint bucket)",
                  "line": "Draw line", "rect": "Draw rectangle", "oval": "Draw circle", "text": "Text", "sel_rect": "Select area (rectangle)",
-                 "sel_oval": "Select area (circle)", "crop": "Crop"}
+                 "sel_oval": "Select area (circle)", "crop": "Crop",
+                 "move": "Move: drag the picture around (double-click it to fit it back)"}
         keys = {tool: key for _, tool, key in TOOLS}
-        order = ["new", "open", "save", "undo", "redo", "brush", "eraser", "fill", "fit", "crop", "sel_rect", "sel_oval",   # (colour picking: Pick on the Color side)
+        order = ["new", "open", "save", "undo", "redo", "brush", "eraser", "fill", "move", "crop", "sel_rect", "sel_oval",   # (colour picking: Pick on the Color side)
                  "line", "rect", "oval", "zoom out", "zoom in", "text"]
         self.tool_btns = {}
         for k in order:
@@ -167,6 +167,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                        ("<Button-4>", lambda e: self.zoom_by(1.15, (e.x, e.y))), ("<Button-5>", lambda e: self.zoom_by(1 / 1.15, (e.x, e.y))), ("<Configure>", lambda e: self._cv_resized())):
             cv.bind(ev, fn)
         cv.bind("<Enter>", lambda e: cv.focus_set())
+        cv.bind("<Double-Button-1>", lambda e: self.fit() if self.tool == "move" else None, add="+")   # Move: double-click fits the picture back
         for ev in ("<Motion>", "<B1-Motion>", "<Enter>"): cv.bind(ev, lambda e: self._tip_move(e), add="+")   # the brush tip follows the mouse
         cv.bind("<Leave>", lambda e: self._tip_hide(e.widget), add="+"); cv.bind("<Unmap>", lambda e: self._tip_hide(e.widget), add="+")
         cv.bind("<Escape>", lambda e: self.x_key(e) or ((self.toggle_big(), "break")[1] if self._big else None))
@@ -906,7 +907,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
         cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                     "sel_oval": "tcross", "crop": "sizing"}.get(t, "crosshair")
+                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur"}.get(t, "crosshair")
         for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
             try: cv.configure(cursor=cur)
             except tk.TclError: cv.configure(cursor="crosshair")
@@ -1257,6 +1258,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._recomp(rect); self._patch(rect)
 
     def down(self, e):
+        if self.tool == "move": self._pan_start(e); return                         # Move: the press grabs the picture, dragging moves it
         p = self.to_img(e); self.start = p; t = self.tool
         if t == "pick":
             x, y = int(p[0]), int(p[1]); w, h = self.size_wh
@@ -1274,6 +1276,9 @@ class DrawStudio(StudioExtras, tk.Frame):
         if self._live(): self._paint([p, p]); self._show_change(self._bbox([p]))
 
     def drag(self, e):
+        if self.tool == "move":
+            if getattr(self, "_pan0", None) is not None: self._pan_move(e)
+            return
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_drag(e, self.to_img(e))
         if self._edit is None and self.tool not in ("line", "rect", "oval"): return     # press happened somewhere else
         p = self.to_img(e); t = self.tool
@@ -1301,6 +1306,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._paint(pts); self._show_change(self._bbox(pts))
 
     def up(self, e):
+        if self.tool == "move": self._pan0 = None; return
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_up(e, self.to_img(e))
         if self._tick_job is not None: self.after_cancel(self._tick_job); self._tick_job = None
         self._tick()

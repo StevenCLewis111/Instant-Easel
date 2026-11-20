@@ -41,7 +41,7 @@ def _stretch(W, H, piece="rainbow"):
     out.paste(b.crop((cap, 0, b.width - cap, H)).resize((W - 2 * cap, H), Image.LANCZOS), (cap, 0))
     out.paste(b.crop((b.width - cap, 0, b.width, H)), (W - cap, 0)); return out
 
-def margin(): return max(2, round(3 * T.Z))                       # room round every painted button for its highlight ring
+def margin(): return max(3, round(4 * T.Z))                       # room round every painted button for its highlight ring (thick, so it stands out)
 
 _rings = {}
 def ringed(im, on, key=None):
@@ -53,7 +53,7 @@ def ringed(im, on, key=None):
     out = Image.new("RGBA", (im.width + 2 * m, im.height + 2 * m)); out.alpha_composite(im, (m, m))
     if on:
         a = out.getchannel("A").point(lambda v: 255 if v > 90 else 0)
-        outer = a.filter(ImageFilter.MaxFilter(2 * m - 1 if m > 1 else 3)); inner = a.filter(ImageFilter.MaxFilter(max(1, 2 * (m // 3) + 1)))
+        outer = a.filter(ImageFilter.MaxFilter(2 * m - 1 if m > 1 else 3)); inner = a                                        # the ring starts right at the button's edge
         import numpy as np
         band = Image.fromarray(np.clip(np.asarray(outer, dtype=np.int16) - np.asarray(inner, dtype=np.int16), 0, 255).astype(np.uint8))
         r, g, b = (int(col[i:i + 2], 16) for i in (1, 3, 5)); ring = Image.new("RGBA", out.size, (r, g, b, 255)); ring.putalpha(band.filter(ImageFilter.GaussianBlur(0.5)))
