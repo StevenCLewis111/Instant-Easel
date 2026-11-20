@@ -6,7 +6,7 @@ draw_studio.py: Instant Easel's drawing studio (Editing > Draw), laid out like a
   Right:  layers (add, duplicate, delete, merge down, move, show/hide, opacity, blend mode) and colour (hue ring + square, hex, history)
 Shortcuts: B brush, E eraser, I eyedropper, G fill, L line, T text, [ ] size, Ctrl+Z undo, Ctrl+Y redo
 """
-import os, math, json, shutil, threading, colorsys, types, tkinter as tk
+import os, sys, math, json, shutil, threading, colorsys, types, tkinter as tk
 from tkinter import filedialog, simpledialog
 import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
@@ -603,11 +603,11 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
         self._col_groups = [top_row, wf, basic, pal_group, hist_group]
         for g in self._col_groups: g.pack_forget()
-        # spaced out a little (up to a set gap, less on a short panel), the whole block kept centred top to bottom: a tall panel
-        # (full screen, studio expanded) adds room above and below the block, not big holes between its parts
+        # spaced out a little (up to a set gap, less on a short panel), the whole block kept toward the top: a tall panel
+        # (full screen, studio expanded) adds room below the block, not big holes between its parts
         sp_top = tk.Frame(CV, height=0, bg=R["bg"]); sp_bot = tk.Frame(CV, height=0, bg=R["bg"])
         T.on_change(lambda: (sp_top.configure(bg=R["bg"]), sp_bot.configure(bg=R["bg"])))
-        sp_top.pack(fill="both", expand=True)
+        sp_top.pack(fill="x")                                                          # kept toward the top: the spare room goes below
         for g in self._col_groups: g.pack()
         sp_bot.pack(fill="both", expand=True)
         def col_gaps():
@@ -743,6 +743,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.layers = [Layer(w, h, "Layer 1")]; self.li = 0; self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
         self._comp = np.empty((h, w, 3), np.uint8); self._recomp(); self.changed = False
         self._layers_ui(); self.refresh()
+        if hasattr(self, "size_s"): self.set_size(self.size)                         # the size slider's range follows the canvas size
 
     def load_image(self, im):
         im = im.convert("RGB"); s = min(1.0, 2400 / max(im.size)); im = im.resize((int(im.width * s), int(im.height * s)))
@@ -851,11 +852,31 @@ class DrawStudio(StudioExtras, tk.Frame):
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
-        self.cv.configure(cursor="none" if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                           "sel_oval": "tcross", "crop": "sizing"}.get(t, "crosshair"))
+        cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
+                                                                     "sel_oval": "tcross", "crop": "sizing"}.get(t, "crosshair")
+        for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
+            try: cv.configure(cursor=cur)
+            except tk.TclError: cv.configure(cursor="crosshair")
         self._tip_redraw()
 
     # ------------------------------------------------------------------ the brush tip under the mouse
+    def _no_cursor(self):
+        """no mouse pointer over the canvas (the brush's own mark shows instead). Windows doesn't know the name "none", so it gets a
+        see-through cursor file (by its short path, which has no spaces)"""
+        if getattr(self, "_nocur", None) is not None: return self._nocur
+        cur = "none"
+        if sys.platform.startswith("win"):
+            f = os.path.join(paths.APP, "images", "UI", "Cursors", "blank.cur")
+            if os.path.exists(f):
+                try:
+                    import ctypes; buf = ctypes.create_unicode_buffer(520)
+                    if ctypes.windll.kernel32.GetShortPathNameW(f, buf, 520): f = buf.value
+                except Exception: pass
+                cur = "{@" + f.replace("\\", "/") + "}"
+        try: self.cv.configure(cursor=cur)
+        except tk.TclError: cur = "dotbox"
+        self._nocur = cur; return cur
+
     def _tip_move(self, e):
         self._tip_at = (e.widget, e.x, e.y); self._tip_redraw()
 
@@ -871,7 +892,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if self.tool == "brush":
             try: opts = repr(sorted(self._live_brush().items(), key=lambda kv: kv[0]))
             except Exception: opts = ""
-            key = ("brush", self.brush, self.size, tuple(self._stroke_color()), round(self.opacity, 2), round(z, 2), opts)
+            key = ("brush", self.brush, self.size, tuple(self._stroke_color()), round(z, 2), opts)   # (not the opacity: the tip keeps one look)
         else: key = ("eraser", self.size, round(z, 2))
         if getattr(self, "_tip_key", None) == key: return self._tip_ph
         D = int(min(600, max(10, d * 1.25 + 8)))                                    # on screen, the most it will cover
@@ -881,11 +902,11 @@ class DrawStudio(StudioExtras, tk.Frame):
                 n = max(8, int(self.size * 1.6) + 6); c = brushes.Canvas(n, n, paper=(0, 0, 0), transparent=True)
                 brushes.B["__tip__"] = self._live_brush()
                 try:
-                    c.stroke([(n / 2, n / 2, 1.0), (n / 2 + 0.6, n / 2, 1.0)], "__tip__", color=self._stroke_color(), size=self.size, opacity=self.opacity)
+                    c.stroke([(n / 2, n / 2, 1.0), (n / 2 + 0.6, n / 2, 1.0)], "__tip__", color=self._stroke_color(), size=self.size, opacity=1.0)
                     if np.nan_to_num(c.alpha).max() < 0.05:                     # tapering brushes leave nothing on one touch: a short line instead
                         L = self.size * 0.35
                         c.stroke([(n / 2 + (t - 0.5) * 2 * L, n / 2 - (t - 0.5) * 0.6 * L, 0.4 + 0.6 * math.sin(math.pi * t)) for t in np.linspace(0, 1, 16)], "__tip__",
-                                 color=self._stroke_color(), size=self.size, opacity=self.opacity)
+                                 color=self._stroke_color(), size=self.size, opacity=1.0)
                 finally: brushes.B.pop("__tip__", None)
                 al = np.nan_to_num(c.alpha); top = float(al.max())
                 if 0 < top < 0.6: al = al * min(4.0, 0.6 / top)                     # very soft brushes: strong enough to see
@@ -1082,10 +1103,13 @@ class DrawStudio(StudioExtras, tk.Frame):
         d.rectangle([im.width - w, im.height - h, im.width - 1, im.height - 1], fill=(20, 26, 42))
         d.text((im.width - w / 2, im.height - h / 2), "SOON", fill=(245, 196, 0), font=font, anchor="mm"); return im
 
-    def _s2v(self, s): return math.log(max(1, s)) / math.log(300)
-    def _v2s(self, v): return max(1, int(round(300 ** v)))
+    def _size_max(self):
+        """the biggest brush: as big as the canvas (its longer side)"""
+        return max(16, max(getattr(self, "size_wh", (300, 300))))
+    def _s2v(self, s): return math.log(max(1, s)) / math.log(self._size_max())
+    def _v2s(self, v): return max(1, int(round(self._size_max() ** v)))
     def set_size(self, s, from_slider=False):
-        self.size = int(max(1, min(300, s))); self.size_row.var.set(str(self.size)); self._tip_redraw()
+        self.size = int(max(1, min(self._size_max(), s))); self.size_row.var.set(str(self.size)); self._tip_redraw()   # 1 pixel to the whole canvas
         if not from_slider: self.size_s.value = self._s2v(self.size); self.size_s._draw()
         self._preview()
     def set_opacity(self, v): self.opacity = max(0.02, min(1.0, v)); self.op_row.var.set(f"{int(round(self.opacity * 100))}%"); self._preview(); self._tip_redraw()
