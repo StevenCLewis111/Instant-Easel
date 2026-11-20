@@ -359,7 +359,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         # Adjustments scrolls like the right side: a rail on the panel's right (scroll bar, a border line left of it) beside the
         # size / opacity rows and the options, which sit in a scrolling canvas with a gap before the line
         g = T.ScrollBox.GAP; self._adj_rail = rail = tk.Frame(L, bg=L["bg"])
-        asb = T.Scrollbar(rail, "vertical"); asb.pack(side="right", fill="y", padx=(g, 0), pady=g); T.Line(rail, vertical=True).pack(side="right", fill="y")
+        asb = T.Scrollbar(rail, "vertical"); asb.pack(side="right", fill="y", padx=(int(float(L.cget("padx"))) - 1, 0), pady=g); T.Line(rail, vertical=True).pack(side="right", fill="y")
         acv = tk.Canvas(self.opt_view, bd=0, highlightthickness=0, bg=L["bg"], width=10); acv.pack(fill="both", expand=True, padx=(0, g))
         O = tk.Frame(acv, bg=L["bg"]); awin = acv.create_window(0, 0, window=O, anchor="nw")
         asb.command = acv.yview; acv.configure(yscrollcommand=asb.set)
@@ -467,11 +467,11 @@ class DrawStudio(StudioExtras, tk.Frame):
         T.on_change(lambda: (self.col_view.configure(bg=R["bg"]), self.lay_view.configure(bg=R["bg"])))
         # Options (layers + text) scrolls: its scroll bar on the right, a border line left of it, the contents in a scrolling canvas
         ov = self.lay_view; g = T.ScrollBox.GAP
-        osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(g, 0), pady=g); ovl = T.Line(ov, vertical=True); ovl.pack(side="right", fill="y")
+        osb = T.Scrollbar(ov, "vertical"); osb.pack(side="right", fill="y", padx=(int(float(R.cget("padx"))) - 1, 0), pady=g); ovl = T.Line(ov, vertical=True); ovl.pack(side="right", fill="y")
         ocv = tk.Canvas(ov, bd=0, highlightthickness=0, bg=R["bg"], width=10); ocv.pack(side="left", fill="both", expand=True, padx=(0, g), pady=(g, 0))   # a gap before the lines
         # Color scrolls the same way (for when it gets more options): scroll bar on the right, a line left of it, a gap before the line
         cvo = self.col_view
-        csb = T.Scrollbar(cvo, "vertical"); csb.pack(side="right", fill="y", padx=(g, 0), pady=g); cvl = T.Line(cvo, vertical=True); cvl.pack(side="right", fill="y")
+        csb = T.Scrollbar(cvo, "vertical"); csb.pack(side="right", fill="y", padx=(int(float(R.cget("padx"))) - 1, 0), pady=g); cvl = T.Line(cvo, vertical=True); cvl.pack(side="right", fill="y")
         ccv = tk.Canvas(cvo, bd=0, highlightthickness=0, bg=R["bg"], width=10); ccv.pack(side="left", fill="both", expand=True, padx=(0, g))
         CVI = self._col_inner = tk.Frame(ccv, bg=R["bg"]); cwin = ccv.create_window(0, 0, window=CVI, anchor="nw")
         csb.command = ccv.yview; ccv.configure(yscrollcommand=csb.set)
