@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import theme as T, paths
 
-SEL_TOOLS = ("sel_rect", "sel_oval", "wand")                                # wand: Magic Wand (selects an area of about one colour)
+SEL_TOOLS = ("sel_rect", "sel_oval", "wand", "sel_lasso")                                # wand: Magic Wand (selects an area of about one colour)
 HANDLE = 7                                                                   # handle size on screen (pixels)
 
 # ---------------------------------------------------------------- fonts: the app's own, plus common ones the PC has
@@ -134,13 +134,24 @@ class StudioExtras:
         if self.sel is not None or self.txt is not None: self._x_overlay()
         self._x_job = self.after(450, self._x_tick)
 
-    def _x_scr(self, x, y):
-        ox, oy, z = self._geom(); return ox + x * z, oy + y * z
+    def _x_scr(self, x, y): return self._to_scr(x, y)
+
+    def _x_shape(self, cv, x0, y0, x1, y1, oval=False, **kw):
+        """a box or oval given in picture coordinates, drawn on the screen (as a turned outline when the view is turned)"""
+        if not self._turned():
+            X0, Y0 = self._x_scr(x0, y0); X1, Y1 = self._x_scr(x1, y1); return (cv.create_oval if oval else cv.create_rectangle)(X0, Y0, X1, Y1, **kw)
+        if oval:
+            cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, abs(x1 - x0) / 2, abs(y1 - y0) / 2
+            pts = [(cx + math.cos(t) * rx, cy + math.sin(t) * ry) for t in np.linspace(0, 2 * math.pi, 49)]
+        else: pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+        kw.pop("fill", None); col = kw.pop("outline", "white")
+        return cv.create_line(*[c for q in pts for c in self._x_scr(*q)], fill=col, **kw)
 
     def _x_leaving(self, new_tool):
         """the tool is changing: finish what the old tool had going"""
         self._x_init()
         if getattr(self, "_poly", None) and new_tool != self.tool: self._poly_finish()      # a polygon / curve in progress gets drawn
+        if getattr(self, "_xf", None) and new_tool not in SEL_TOOLS: self._xf_end(True)        # a transform in progress is kept
         if self.tool in SEL_TOOLS and new_tool not in SEL_TOOLS: self._sel_commit(); self.sel = None
         if self.tool == "crop" and new_tool != "crop": self._crop = None
         if self.tool == "text" and new_tool != "text": self._txt_commit()
@@ -154,12 +165,17 @@ class StudioExtras:
         except tk.TclError: return
         if self.zoom is None: return
         if self.sel is not None: self._sel_draw(cv)
+        if getattr(self, "_xf", None): self._xf_draw(cv)
         if self._crop is not None and self.tool == "crop": self._crop_draw(cv)
         if self.txt is not None: self._txt_draw(cv)
 
     def x_key(self, e):
         """keys on the canvas for these tools; returns "break" when used"""
         self._x_init(); k = e.keysym; ctrl = bool(e.state & 0x4)
+        if ctrl and k.lower() == "t": self._xf_start(); return "break"
+        if getattr(self, "_xf", None):                                           # Free Transform: Enter keeps it, Esc puts it back
+            if k == "Return": self._xf_end(True); return "break"
+            if k == "Escape": self._xf_end(False); return "break"
         if getattr(self, "_poly", None):                                         # Polygon / Polyline / Curve: Enter draws it, Esc drops it
             if k == "Return": self._poly_finish(); return "break"
             if k == "Escape": self._poly_finish(cancel=True); return "break"
@@ -185,6 +201,7 @@ class StudioExtras:
 
     def x_drag(self, e, p):
         if self._x_drag is None: return
+        self._shift = bool(getattr(e, "state", 0) & 0x1)
         kind = self._x_drag[0]
         if kind.startswith("sel"): self._sel_drag(p)
         elif kind.startswith("crop"): self._crop_drag(p)
@@ -193,6 +210,17 @@ class StudioExtras:
     def x_up(self, e, p):
         if self._x_drag is None: return
         kind = self._x_drag[0]
+        if kind == "sel_lasso":                                                   # the shape you drew becomes the selection
+            pts = self._x_drag[1]; self._x_drag = None
+            if len(pts) >= 3:
+                from PIL import ImageDraw as _D
+                xs, ys = [q[0] for q in pts], [q[1] for q in pts]; box = self._clip_box(min(xs), min(ys), max(xs) + 1, max(ys) + 1)
+                if box and box[2] - box[0] > 1 and box[3] - box[1] > 1:
+                    m = Image.new("L", (box[2] - box[0], box[3] - box[1]), 0); _D.Draw(m).polygon([(x - box[0], y - box[1]) for x, y in pts], fill=255)
+                    mk = np.asarray(m, np.float32) / 255
+                    if mk.any(): self.sel = dict(kind="mask", box=box, mask=mk, float=None)
+            self._x_overlay(); return
+        if kind.startswith("xf_"): self._x_drag = None; self._x_overlay(); return
         if kind == "sel_new":
             x0, y0 = self._x_drag[1]; x1, y1 = p[0], p[1]
             box = self._clip_box(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
@@ -224,12 +252,98 @@ class StudioExtras:
         if s["float"] is not None: dx, dy = s["float"]["off"]; return (x0 + dx, y0 + dy, x1 + dx, y1 + dy)
         return s["box"]
 
+    # ------------------------------------------------------------------ Free Transform (Ctrl+T): scale, turn and move the selection
+    def _xf_start(self):
+        """Ctrl+T: the selection (or, with none, everything on this layer) gets handles: drag a corner to resize (Shift: keep its
+        shape), drag outside it to turn (Shift: 15-degree steps), drag inside to move. Enter keeps it, Esc puts it back"""
+        if getattr(self, "_xf", None): return
+        if self.sel is None:
+            al = self.cur.cv.alpha; ys = np.flatnonzero(al.max(1) > 0.003); xs = np.flatnonzero(al.max(0) > 0.003)
+            if not len(ys): T.banner(self.app, "NOTHING TO TRANSFORM — paint something on this layer, or select an area first"); return
+            if self.tool not in SEL_TOOLS: self.set_tool("sel_rect")
+            self.sel = dict(kind="rect", box=(int(xs[0]), int(ys[0]), int(xs[-1]) + 1, int(ys[-1]) + 1), float=None)
+        elif self.tool not in SEL_TOOLS: self.set_tool("sel_rect")
+        if self.sel["float"] is None: self._sel_lift()
+        f = self.sel["float"]; x0, y0, x1, y1 = self._sel_box_now()
+        self._xf = dict(src_a=f["a"].copy(), src_al=f["alpha"].copy(), box0=(x0, y0, x1, y1), cx=(x0 + x1) / 2, cy=(y0 + y1) / 2, sx=1.0, sy=1.0, rot=0.0)
+        self._x_overlay()
+
+    def _xf_corners(self):
+        X = self._xf; w0, h0 = X["box0"][2] - X["box0"][0], X["box0"][3] - X["box0"][1]; c, s_ = math.cos(X["rot"]), math.sin(X["rot"])
+        return [(X["cx"] + (u * w0 * X["sx"] / 2) * c - (v * h0 * X["sy"] / 2) * s_, X["cy"] + (u * w0 * X["sx"] / 2) * s_ + (v * h0 * X["sy"] / 2) * c)
+                for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+
+    def _xf_render(self):
+        """the selection redrawn at its new size and angle (colour pre-multiplied, so the edges stay clean)"""
+        X = self._xf; a, al = X["src_a"], X["src_al"]; h0, w0 = al.shape; sx, sy, r = max(0.01, X["sx"]), max(0.01, X["sy"]), X["rot"]
+        cs = self._xf_corners(); xs, ys = [q[0] for q in cs], [q[1] for q in cs]
+        W, H = max(1, int(math.ceil(max(xs) - min(xs)))), max(1, int(math.ceil(max(ys) - min(ys)))); c, s_ = math.cos(r), math.sin(r)
+        # output (x, y) -> source: undo the turn, then the scale, about the centres
+        A = (c / sx, s_ / sx, w0 / 2 - (c * W / 2 + s_ * H / 2) / sx, -s_ / sy, c / sy, h0 / 2 - (-s_ * W / 2 + c * H / 2) / sy)
+        rs = Image.BILINEAR if max(sx, sy) >= 1 else Image.BICUBIC
+        tr = lambda arr: np.asarray(Image.fromarray(np.ascontiguousarray(arr, np.float32), "F").transform((W, H), Image.AFFINE, A, rs), np.float32)
+        nal = np.clip(tr(al), 0, 1); na = np.stack([tr(a[..., k] * al) for k in range(3)], -1) / np.maximum(nal, 1e-4)[..., None]
+        f = self.sel["float"]; f["a"], f["alpha"] = np.clip(na, 0, 255), nal
+        bx0, by0 = int(round(X["cx"] - W / 2)), int(round(X["cy"] - H / 2)); self.sel["box"] = (bx0, by0, bx0 + W, by0 + H); f["off"] = [0, 0]
+        self._sel_place(0, 0)
+
+    def _xf_down(self, p):
+        X = self._xf; z = self.zoom or 1; cs = self._xf_corners()
+        for i, q in enumerate(cs):
+            if math.hypot(p[0] - q[0], p[1] - q[1]) * z <= HANDLE * 1.8: self._x_drag = ("xf_scale", i); return
+        from PIL import ImageDraw as _D
+        inside = self._poly_inside(p, cs)
+        if inside: self._x_drag = ("xf_move", (p[0], p[1]), (X["cx"], X["cy"]))
+        else: self._x_drag = ("xf_rot", math.atan2(p[1] - X["cy"], p[0] - X["cx"]), X["rot"])
+
+    @staticmethod
+    def _poly_inside(p, poly):
+        x, y = p[0], p[1]; n = len(poly); ins = False
+        for i in range(n):
+            (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % n]
+            if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / ((y2 - y1) or 1e-9) + x1: ins = not ins
+        return ins
+
+    def _xf_drag(self, p):
+        X = self._xf; k = self._x_drag[0]; shift = bool(getattr(self, "_shift", False))
+        if k == "xf_move": (sx, sy), (cx, cy) = self._x_drag[1], self._x_drag[2]; X["cx"], X["cy"] = cx + p[0] - sx, cy + p[1] - sy
+        elif k == "xf_rot":
+            a = X["rot"] if False else self._x_drag[2] + math.atan2(p[1] - X["cy"], p[0] - X["cx"]) - self._x_drag[1]
+            if shift: a = round(a / (math.pi / 12)) * (math.pi / 12)
+            X["rot"] = a
+        else:                                                                    # a corner: resize about the middle
+            c, s_ = math.cos(X["rot"]), math.sin(X["rot"]); dx, dy = p[0] - X["cx"], p[1] - X["cy"]; lx, ly = dx * c + dy * s_, -dx * s_ + dy * c
+            w0, h0 = X["box0"][2] - X["box0"][0], X["box0"][3] - X["box0"][1]
+            sx, sy = max(0.02, 2 * abs(lx) / max(1, w0)), max(0.02, 2 * abs(ly) / max(1, h0))
+            if shift: sx = sy = max(sx, sy)
+            X["sx"], X["sy"] = sx, sy
+        self._xf_render(); self._x_overlay()
+
+    def _xf_end(self, keep=True):
+        X = self._xf; self._xf = None
+        if X is None: return
+        if not keep:                                                             # Esc: exactly as it was
+            f = self.sel["float"]; f["a"], f["alpha"] = X["src_a"], X["src_al"]; self.sel["box"] = X["box0"]; f["off"] = [0, 0]; self._sel_place(0, 0)
+        else:
+            f = self.sel["float"]; self.sel["kind"] = "mask"; self.sel["mask"] = (f["alpha"] > 0.002).astype(np.float32)
+        self._sel_commit(); self.sel = None; self._x_overlay()
+
+    def _xf_draw(self, cv):
+        cs = self._xf_corners(); sc = [c for q in cs + [cs[0]] for c in self._x_scr(*q)]
+        cv.create_line(*sc, fill="white", width=2, tags="xov"); cv.create_line(*sc, fill="black", dash=(4, 4), tags="xov")
+        for q in cs: X, Y = self._x_scr(*q); cv.create_rectangle(X - HANDLE, Y - HANDLE, X + HANDLE, Y + HANDLE, fill="white", outline="black", tags="xov")
+        X0, Y0 = self._x_scr(*cs[0]); X1, Y1 = self._x_scr(*cs[1]); mx, my = (X0 + X1) / 2, (Y0 + Y1) / 2
+        cv.create_text(mx, my - 16, text="drag a corner: size  ·  outside: turn  ·  inside: move  ·  Enter: keep  ·  Esc: undo", fill="white", font=T.f(8), tags="xov")
+
     def _sel_down(self, e, p):
+        self._shift = bool(getattr(e, "state", 0) & 0x1)
+        if getattr(self, "_xf", None): return self._xf_down(p)
         if self.sel is not None and self._sel_inside(p):                         # move what's selected
             if self.sel["float"] is None: self._sel_lift()
             self._x_drag = ("sel_move", (p[0], p[1]), tuple(self.sel["float"]["off"])); return
         self._sel_commit(); self.sel = None
         if self.tool == "wand": self._wand(p); return
+        if self.tool == "sel_lasso": self._x_drag = ("sel_lasso", [(p[0], p[1])]); return     # Lasso: draw round what you want
         self._x_drag = ("sel_new", (p[0], p[1])); self._x_overlay()
 
     def _wand(self, p):
@@ -249,11 +363,17 @@ class StudioExtras:
 
     def _sel_drag(self, p):
         kind = self._x_drag[0]
+        if kind == "sel_lasso":
+            pts = self._x_drag[1]
+            if math.hypot(p[0] - pts[-1][0], p[1] - pts[-1][1]) * (self.zoom or 1) >= 2: pts.append((p[0], p[1]))
+            self.cv.delete("xov"); sc = [c for q in pts + [pts[0]] for c in self._x_scr(*q)]
+            if len(sc) >= 4: self.cv.create_line(*sc, fill="black", dash=(4, 4), tags="xov"); self.cv.create_line(*sc, fill="white", dash=(4, 4), dashoffset=4, tags="xov")
+            return
+        if kind.startswith("xf_"): return self._xf_drag(p)
         if kind == "sel_new":
             x0, y0 = self._x_drag[1]; self.cv.delete("xov")
-            X0, Y0 = self._x_scr(x0, y0); X1, Y1 = self._x_scr(p[0], p[1])
-            f = self.cv.create_oval if self.tool == "sel_oval" else self.cv.create_rectangle
-            f(X0, Y0, X1, Y1, outline="black", dash=(4, 4), tags="xov"); f(X0, Y0, X1, Y1, outline="white", dash=(4, 4), dashoffset=4, tags="xov")
+            ov = self.tool == "sel_oval"
+            self._x_shape(self.cv, x0, y0, p[0], p[1], ov, outline="black", dash=(4, 4), tags="xov"); self._x_shape(self.cv, x0, y0, p[0], p[1], ov, outline="white", dash=(4, 4), dashoffset=4, tags="xov")
         elif kind == "sel_move":
             sx, sy = self._x_drag[1]; ox, oy = self._x_drag[2]
             self._sel_place(int(round(ox + p[0] - sx)), int(round(oy + p[1] - sy)))
@@ -347,9 +467,9 @@ class StudioExtras:
             for (ux, uy) in self._wand_outline[1]:
                 X, Y = self._x_scr(x0 + ux, y0 + uy); cv.create_rectangle(X, Y, X + 1, Y + 1, outline=col, tags="xov")
             return
-        f = cv.create_oval if self.sel["kind"] == "oval" else cv.create_rectangle
-        f(X0, Y0, X1, Y1, outline="black", dash=(6, 6), dashoffset=self._ants, tags="xov")
-        f(X0, Y0, X1, Y1, outline="white", dash=(6, 6), dashoffset=self._ants + 6, tags="xov")
+        ov = self.sel["kind"] == "oval"
+        self._x_shape(cv, x0, y0, x1, y1, ov, outline="black", dash=(6, 6), dashoffset=self._ants, tags="xov")
+        self._x_shape(cv, x0, y0, x1, y1, ov, outline="white", dash=(6, 6), dashoffset=self._ants + 6, tags="xov")
 
     # ------------------------------------------------------------------ crop
     def _crop_hit(self, p):

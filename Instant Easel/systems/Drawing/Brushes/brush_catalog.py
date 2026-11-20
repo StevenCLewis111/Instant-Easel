@@ -93,6 +93,7 @@ SECTIONS = [
         _b("Pattern Fill", "tool:pattern fill", kind="tool", tool="pattern_fill", look=dict(fx="pattern", pat="checks", col=(150, 80, 40))),
         _b("Color Fill", "tool:color fill", kind="tool", tool="fill", look=dict(fx="blocks")),
         _b("Magic Wand", "tool:magic wand", kind="tool", tool="wand", look=dict(fx="icon", icon="Magic Wand")),
+        _b("Lasso", "tool:lasso", kind="tool", tool="sel_lasso", look=dict(fx="shape", shape="freehand")),
         _b("Eyedropper", "tool:eyedropper", kind="tool", tool="pick", look=dict(fx="icon", icon="Eyedropper")),
         _b("Crop", "tool:crop", kind="tool", tool="crop", look=dict(fx="icon", icon="Crop")),
         _b("Move", "tool:move", kind="tool", tool="move", look=dict(fx="icon", icon="Move")),

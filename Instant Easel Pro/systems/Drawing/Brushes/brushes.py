@@ -205,6 +205,27 @@ for _p in ("dots", "stripes", "checks", "plaid", "hearts", "stars", "flowers", "
 for _s in ART.stamp_names():
     brush("stamp " + _s.lower(), tip_round, stamp=_s, spacing=1.15, size_press=0.0)
 
+BLEND_MODES = ["normal", "multiply", "screen", "overlay", "soft light", "hard light", "darken", "lighten", "color dodge", "color burn",
+               "add", "subtract", "difference"]
+def blend_rgb(base, top, mode):
+    """what `top` colour over `base` colour gives in a blend mode (both 0..255); the result is then mixed in by coverage"""
+    if mode in ("normal", None): return np.broadcast_to(top, np.broadcast(base, top).shape)
+    B, Tp = np.asarray(base, np.float32) / 255, np.asarray(top, np.float32) / 255
+    if mode == "multiply": r = B * Tp
+    elif mode == "screen": r = 1 - (1 - B) * (1 - Tp)
+    elif mode == "overlay": r = np.where(B < 0.5, 2 * B * Tp, 1 - 2 * (1 - B) * (1 - Tp))
+    elif mode == "hard light": r = np.where(Tp < 0.5, 2 * B * Tp, 1 - 2 * (1 - B) * (1 - Tp))
+    elif mode == "soft light": r = np.where(Tp < 0.5, B - (1 - 2 * Tp) * B * (1 - B), B + (2 * Tp - 1) * (np.where(B < 0.25, ((16 * B - 12) * B + 4) * B, np.sqrt(B)) - B))
+    elif mode == "darken": r = np.minimum(B, Tp)
+    elif mode == "lighten": r = np.maximum(B, Tp)
+    elif mode == "color dodge": r = np.where(Tp >= 0.999, 1.0, np.minimum(1.0, B / np.maximum(1 - Tp, 1e-3)))
+    elif mode == "color burn": r = np.where(Tp <= 0.001, 0.0, 1 - np.minimum(1.0, (1 - B) / np.maximum(Tp, 1e-3)))
+    elif mode == "add": r = np.minimum(1.0, B + Tp)
+    elif mode == "subtract": r = np.maximum(0.0, B - Tp)
+    elif mode == "difference": r = np.abs(B - Tp)
+    else: r = np.broadcast_to(Tp, np.broadcast(B, Tp).shape)
+    return r * 255
+
 def _hsv_shift(col, dh):
     h, s, v = colorsys.rgb_to_hsv(*(np.asarray(col, np.float32) / 255)); r, g, b = colorsys.hsv_to_rgb((h + dh) % 1, s, v)
     return np.array([r, g, b], np.float32) * 255
@@ -249,7 +270,7 @@ class Canvas:
                 c = np.asarray(col, np.float32); col = np.clip(c * (0.45 + 0.8 * t[..., None]) + 18 * (t[..., None] - 0.5), 0, 255)
             elif how == "pattern": m = m * t
             else: m = m * (1 - k + k * t)
-        if self._wash is not None and mode in ("normal", "multiply", "screen", "erase"): self._wash_dab(cy0, cy1, cx0, cx1, m, col, mode)
+        if self._wash is not None and (mode in BLEND_MODES or mode == "erase"): self._wash_dab(cy0, cy1, cx0, cx1, m, col, mode)
         else: self._blend(cy0, cy1, cx0, cx1, m * self._op, col, mode)
 
     def _touch(self, x0, y0, x1, y1):
@@ -279,16 +300,14 @@ class Canvas:
         m3 = m[..., None]; c = np.asarray(color, np.float32)
         if ra is not None:
             if mode == "erase": self.alpha[y0:y1, x0:x1] = (ra * (1 - m3))[..., 0]; self.a[y0:y1, x0:x1] = reg; return
-            if mode in ("multiply", "screen"):
-                under = np.where(ra > 0.002, reg, 255.0)                      # empty layer acts as white for multiply/screen
-                new = under * (c / 255) if mode == "multiply" else 255 - (255 - under) * (255 - c) / 255
+            if mode != "normal":
+                under = np.where(ra > 0.002, reg, 255.0)                      # an empty layer acts as white for the blend modes
+                new = blend_rgb(under, c, mode)
             else: new = c
             keep = ra * (1 - m3); out_a = keep + m3
             self.a[y0:y1, x0:x1] = (reg * keep + new * m3) / np.maximum(out_a, 1e-4); self.alpha[y0:y1, x0:x1] = out_a[..., 0]; return
-        if mode == "multiply": new = reg * (c / 255)
-        elif mode == "screen": new = 255 - (255 - reg) * (255 - c) / 255
-        elif mode == "erase": new = np.broadcast_to(self.paper, reg.shape)
-        else: new = np.broadcast_to(c, reg.shape)
+        if mode == "erase": new = np.broadcast_to(self.paper, reg.shape)
+        else: new = blend_rgb(reg, c, mode)
         self.a[y0:y1, x0:x1] = reg * (1 - m3) + new * m3
 
     # ---------------- the stroke
