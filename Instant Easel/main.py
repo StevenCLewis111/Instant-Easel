@@ -720,7 +720,7 @@ class InstantEasel(tk.Tk):
 
     def _load_theme(self):
         try:
-            p = json.load(open(PREFS)); T.set_border_hue(p.get("border", 0.38)); T.set_background_hue(p.get("bg", 0.62), p.get("opacity", 1.0))
+            p = json.load(open(PREFS)); T.set_border_hue(p.get("border", 0.38)); T.set_background_hue(p.get("bg", 0.62), 1.0)
         except Exception: pass
 
 class Page(tk.Frame):
@@ -859,9 +859,9 @@ class ThemePage(Page):
         super().__init__(master, app)
         try: p = json.load(open(PREFS))
         except Exception: p = {}
-        self.p = dict(border=p.get("border", 0.38), bg=p.get("bg", 0.62), opacity=p.get("opacity", 1.0))
+        self.p = dict(border=p.get("border", 0.38), bg=p.get("bg", 0.62), opacity=1.0)      # (panels are always solid now)
         T.Title(self, "Theme").pack(pady=(0, 18)); self.sliders = {}
-        for label, key, cls in (("PANEL OPACITY", "opacity", T.PlainSlider), ("BACKGROUND COLOR", "bg", T.HueSlider), ("BORDER COLOR", "border", T.HueSlider)):
+        for label, key, cls in (("BACKGROUND COLOR", "bg", T.HueSlider), ("BORDER COLOR", "border", T.HueSlider)):
             T.Text(self, label).pack(pady=(10, 4)); s = cls(self, value=self.p[key], command=lambda v, k=key: self.change(k, v), width=700); s.pack(); self.sliders[key] = s
         T.Text(self, "BUILD A THEME FROM ONE COLOR", font=T.f(11)).pack(pady=(22, 4))
         T.Text(self, "Pick one color; the background and border are worked out from it with color harmony.", muted=True).pack()
