@@ -314,7 +314,8 @@ class DrawStudio(StudioExtras, tk.Frame):
                 T.Text(inner, "Stamps: coming soon", muted=True, font=T.f(7)).pack(anchor="w", padx=4)
                 continue
             for i, it in enumerate(items):
-                cell = tk.Frame(grid, bg=L["bg"]); cell.grid(row=i // 2, column=i % 2, padx=2, pady=2, sticky="n")
+                m_ = self._apx(7)                                                        # a gap from the box's lines on the left and right
+                cell = tk.Frame(grid, bg=L["bg"]); cell.grid(row=i // 2, column=i % 2, padx=(m_, 3) if i % 2 == 0 else (3, m_), pady=3, sticky="n")
                 art = UA.tile_image(it["name"], title); off = L["bg"] if art is not None else "#f4eee2"
                 lb = tk.Label(cell, bg=off, highlightthickness=2, highlightbackground=off, cursor="hand2"); lb.pack(); lb._off = off
                 lb._engine = it["engine"]; lb.bind("<Button-1>", lambda e, it=it, t=title: self._pick(it, t))
@@ -1015,7 +1016,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         """the brush box changed width: two tiles a row (and five stamps) that fit it exactly, nothing cut off at the right"""
         w = self._sc.winfo_width()
         if w < 60: return
-        tw = max(40, (w - 20) // 2); ic = max(20, min(40, (w - 4) // 5 - 4)); lh = self._name_h()
+        tw = max(40, (w - 2 * self._apx(7) - 6 - 8 - 4) // 2); ic = max(20, min(40, (w - 4) // 5 - 4)); lh = self._name_h()
         if (tw, ic, lh) == (self._tw, self._ic, self._lh) and self._fitted: return
         self._tw, self._ic, self._lh = tw, ic, lh; self._fitted = True
         self.after_idle(self._fit_pills)                                              # once the tiles have their new size: the titles match them
