@@ -328,7 +328,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                 m_ = self._apx(7)                                                        # a gap from the box's lines on the left and right
                 cell = tk.Frame(grid, bg=L["bg"]); cell.grid(row=i // 2, column=i % 2, padx=(m_, 3) if i % 2 == 0 else (3, m_), pady=3, sticky="n")
                 art = UA.tile_image(it["name"], title); off = L["bg"] if art is not None else "#f4eee2"
-                lb = tk.Label(cell, bg=off, highlightthickness=2, highlightbackground=off, cursor="hand2"); lb.pack(); lb._off = off
+                lb = tk.Label(cell, bg=off, highlightthickness=T.HL, highlightbackground=off, cursor="hand2"); lb.pack(); lb._off = off
                 lb._engine = it["engine"]; lb.bind("<Button-1>", lambda e, it=it, t=title: self._pick(it, t))
                 planned = it["engine"] is None and not it.get("studio_tool")
                 nm = tk.Label(cell, text=it["name"], bg=L["bg"], fg=T.PALETTE["muted"] if planned else "white", font=T.f(7)); nm._full = it["name"]
@@ -1442,7 +1442,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         for w in self.layer_box.winfo_children(): w.destroy()
         for i in range(len(self.layers) - 1, -1, -1):
             L = self.layers[i]; sel = i == self.li
-            r = tk.Frame(self.layer_box, bg=T.PALETTE["button"] if sel else T.PALETTE["field"], highlightthickness=2,
+            r = tk.Frame(self.layer_box, bg=T.PALETTE["button"] if sel else T.PALETTE["field"], highlightthickness=T.HL,
                          highlightbackground=T.PALETTE["border"] if sel else T.PALETTE["panel2"]); r.pack(fill="x", pady=1)
             eye = tk.Label(r, text="●" if L.visible else "○", fg="white", bg=r["bg"], font=T.f(12), cursor="hand2"); eye.pack(side="left", padx=4)
             eye.bind("<Button-1>", lambda e, i=i: self._toggle_vis(i))

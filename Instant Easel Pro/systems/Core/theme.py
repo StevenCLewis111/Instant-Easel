@@ -293,7 +293,7 @@ class Text(_Painted, tk.Label):
 class Button(_Painted, tk.Label):
     """blue rounded-look button; green outline on hover/focus; Enter or Space activates it"""
     def __init__(self, master, text, command=None, kind="normal", width=None, **kw):
-        super().__init__(master, text=text, font=MONO, padx=14, pady=6, cursor="hand2", takefocus=1, highlightthickness=2, width=width or 0, **kw)
+        super().__init__(master, text=text, font=MONO, padx=14, pady=6, cursor="hand2", takefocus=1, highlightthickness=HL, width=width or 0, **kw)
         self.kind = kind; self.command = command; self.enabled = True; self.hover = False
         self.bind("<Button-1>", lambda e: self.invoke()); self.bind("<Enter>", lambda e: self._set_hover(True)); self.bind("<Leave>", lambda e: self._set_hover(False))
         self.bind("<FocusIn>", lambda e: self._style()); self.bind("<FocusOut>", lambda e: self._style())
@@ -590,6 +590,8 @@ class ScrollArea(tk.Frame):
             self.cv.configure(bg=bg); self.inner.configure(bg=bg)
         except tk.TclError: pass
 
+HL = 3          # the standard highlight ring (hover / focus / chosen) round buttons, tabs and tiles: thick enough to stand out
+
 class Line(tk.Frame):
     """thin divider in the border colour (follows the Theme tab and the zoom)"""
     def __init__(self, master, vertical=True, **kw):
@@ -602,7 +604,7 @@ class Tabs(tk.Frame):
     def __init__(self, master, names, command):
         super().__init__(master); self.command = command; self.btns = {}; self.active = names[0]
         for n in names:
-            b = tk.Label(self, text=n, font=MONO, padx=18, pady=8, cursor="hand2", highlightthickness=2)
+            b = tk.Label(self, text=n, font=MONO, padx=18, pady=8, cursor="hand2", highlightthickness=HL)
             b.pack(side="left", padx=3); b.bind("<Button-1>", lambda e, n=n: self.select(n)); self.btns[n] = b
         self._style(); on_change(self._style)
     def select(self, n): self.active = n; self._style(); self.command(n)
@@ -647,7 +649,7 @@ class Entry(tk.Entry):
 class Choice(_Painted, tk.Label):
     """click to cycle through choices, shown as a blue setting button: 'CLOUDS: MANY'"""
     def __init__(self, master, label, choices, variable):
-        super().__init__(master, font=MONO_S, padx=12, pady=6, cursor="hand2", takefocus=1, highlightthickness=2)
+        super().__init__(master, font=MONO_S, padx=12, pady=6, cursor="hand2", takefocus=1, highlightthickness=HL)
         self.label = label; self.choices = choices; self.var = variable; self.hover = False
         self._bar = PAINT_TEXT and bar_art() is not None                          # drawn on the painted HISTORY bar
         if self._bar:
