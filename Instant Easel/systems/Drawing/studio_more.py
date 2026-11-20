@@ -25,7 +25,7 @@ class StudioMore:
     def _more_options(self, parent, frame):
         """GUIDES, FILL, CANVAS and SAVING under the layers and text. frame(parent, **pack) makes a themed row"""
         def head(text):
-            r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, text, font=T.f(10, "underline")).pack()
+            self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, text, font=T.f(10, "underline")).pack()
         def choice(label, var, choices, tip=None):
             r = frame(parent, fill="x", pady=2); T.Text(r, label, font=T.f(8), width=10, anchor="w").pack(side="left")
             c = T.Choice(r, "", choices, var); c.pack(side="left", fill="x", expand=True)
@@ -228,7 +228,7 @@ class StudioMore:
 
     # ------------------------------------------------------------------ NAVIGATOR (Options): the whole picture small, the view on it
     def _navigator(self, parent, frame, width_px):
-        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "NAVIGATOR", font=T.f(10, "underline")).pack()
+        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "NAVIGATOR", font=T.f(10, "underline")).pack()
         self._nav = tk.Canvas(parent, width=width_px, height=int(width_px * 0.62), highlightthickness=1, bd=0, cursor="hand2", bg="#2a2d36")
         self._nav.pack(pady=(2, 2)); self._nav_w = width_px
         edge = lambda: self._nav.configure(highlightbackground=T.PALETTE["border"], bg=parent["bg"]); edge(); T.on_change(edge)
@@ -262,7 +262,7 @@ class StudioMore:
 
     # ------------------------------------------------------------------ LAYER COLOR (Options): hue / saturation / brightness / contrast
     def _layer_color(self, parent, frame):
-        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "LAYER COLOR", font=T.f(10, "underline")).pack()
+        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "LAYER COLOR", font=T.f(10, "underline")).pack()
         self.lc = dict(hue=0.0, sat=0.0, bright=0.0, contrast=0.0); self.lc_rows = {}; self._lc_orig = None; self._lc_job = None
         for key, label, tip in (("hue", "Hue:", "Turn every colour on this layer round the colour wheel"), ("sat", "Saturation:", "More or less colourful"),
                                 ("bright", "Brightness:", "Lighter or darker"), ("contrast", "Contrast:", "More or less difference between light and dark")):
@@ -319,7 +319,7 @@ class StudioMore:
 
     # ------------------------------------------------------------------ TIMELAPSE (Options): a frame after every change, saved as an animation
     def _timelapse(self, parent, frame):
-        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "TIMELAPSE", font=T.f(10, "underline")).pack()
+        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "TIMELAPSE", font=T.f(10, "underline")).pack()
         self.tl_on = tk.BooleanVar(value=False); self._tl_frames = []
         r = frame(parent, fill="x", pady=2); T.Text(r, "Record", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(r, self.tl_on, command=self._tl_toggle), "Keeps a small picture after every stroke, to play back how the drawing was made").pack(side="right")

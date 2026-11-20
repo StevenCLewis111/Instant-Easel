@@ -595,7 +595,7 @@ class StudioExtras:
         bg = parent["bg"]
         def fr(**pack):
             f = tk.Frame(parent, bg=bg); f.pack(**pack); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
-        hdr = fr(fill="x", pady=(6, 1)); T.Text(hdr, "TEXT", font=T.f(10, "underline")).pack()
+        self._rule(parent, (8, 0)); hdr = fr(fill="x", pady=(4, 1)); T.Text(hdr, "TEXT", font=T.f(10, "underline")).pack()
         self.txt_box = T.Field(parent, height=2); self.txt_box.configure(font=T.f(10), padx=6, pady=4); self.txt_box.pack(fill="x", pady=(2, 4))
         self.txt_box.bind("<KeyRelease>", lambda e: self._txt_changed(), add="+")
         self.txt_box.bind("<<Paste>>", lambda e: self.after(10, self._txt_changed), add="+")

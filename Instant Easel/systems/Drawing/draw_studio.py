@@ -452,7 +452,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         T.wheel_area(self.opt_view, lambda n: asb.can_scroll() and acv.yview_scroll(n, "units"))
         T.on_change(lambda: (rail.configure(bg=L["bg"]), acv.configure(bg=L["bg"]), O.configure(bg=L["bg"])))
         self._adj_canvas = acv
-        hd = tk.Frame(O, bg=O["bg"]); hd.pack(fill="x", pady=(2, 4)); self._title(hd, "BRUSH OPTIONS").pack()
+        self._rule(O, (6, 0)); hd = tk.Frame(O, bg=O["bg"]); hd.pack(fill="x", pady=(4, 4)); self._title(hd, "BRUSH OPTIONS").pack()
         ft = tk.Frame(O, bg=O["bg"]); ft.pack(side="bottom", fill="x", pady=(4, 0)); T.on_change(lambda: ft.configure(bg=O["bg"]))      # Reset: bottom right
         self._tip(small(T.Button(ft, "Reset", lambda: self._load_brush_opts(self.brush))), "Back to this brush's own settings").pack(side="right")
         OPTS = [("spacing", "Spacing:", 1, 200, "%", "How far apart the dabs are, in brush widths (low = smooth, high = dotted / spaced stamps)"),
@@ -472,7 +472,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
             row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._set_opt(k, x, sync=True))); row.unit, row.range = unit, (lo, hi)
             self._tip(row.slider, tip); self.opt_rows[key] = row
         def head(text):                                                           # a small heading between the groups
-            r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=(8, 1)); T.on_change(lambda: r.configure(bg=O["bg"]))
+            self._rule(O); r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=(4, 1)); T.on_change(lambda: r.configure(bg=O["bg"]))
             T.Text(r, text, muted=True, font=T.f(8)).pack()
         def choice(label, var, choices, tip=None):
             r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=2); T.on_change(lambda: r.configure(bg=O["bg"]))
@@ -577,6 +577,9 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         self._art_items = [lb for lb in self._art_items if lb.winfo_exists()]
         for lb in self._art_items: self._art_paint(lb)
     def _apx(self, v): return max(1, int(round(v * T.Z)))
+    def _rule(self, parent, pady=(10, 0)):
+        """the border line above a section's title, dividing it from the one before (follows the theme colour and zoom)"""
+        l = T.Line(parent, vertical=False); l.pack(fill="x", pady=pady); return l
     def _art_label(self, parent, cursor="hand2"):
         return tk.Label(parent, bd=0, highlightthickness=0, padx=0, pady=0, bg=parent["bg"], cursor=cursor)
     def _panel_button(self, parent, piece, command, tip, size=34):
@@ -779,7 +782,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         # room) and open again when there's space (big mode); clicking the header decides from then on
         self._pal_open, self._pal_auto = True, True
         pal_group = frame(fill="x")                                                   # the palettes header and its colours, one group
-        ph_ = self._art(self._art_label(pal_group), header("PALETTES", 24, arrow=lambda: "-" if self._pal_open else "+")); ph_.pack(pady=(0, 1))
+        self._rule(pal_group, (4, 4)); ph_ = self._art(self._art_label(pal_group), header("PALETTES", 24, arrow=lambda: "-" if self._pal_open else "+")); ph_.pack(pady=(0, 1))
         self._pal_box = frame(pal_group, fill="x"); self._pal_hdr = ph_
         for pair in (("Warm", "Cool"), ("Pastel", "Earth")): swatches(self._pal_box, PALETTES[pair[0]] + PALETTES[pair[1]], 20)
         ph_.bind("<Button-1>", lambda e: (setattr(self, "_pal_auto", False), self._set_palettes(not self._pal_open)))
@@ -798,17 +801,17 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
                 return AP.text(im, "HISTORY", x0 + ic + gap, H // 2, px, anchor="lm")
             return AP.photo(("hist2", W, H, hv), make)
         hb2 = self._art(self._art_label(hist_group), hist_img); hb2.bind("<Button-1>", lambda e: self._toggle_hist())
-        self.hist_row.pack_forget(); hb2.pack(side="top"); self.hist_row.pack(side="top", fill="x", pady=(4, 0))   # the HISTORY button, its colours under it
+        self.hist_row.pack_forget(); self._rule(hist_group, (6, 4)); hb2.pack(side="top"); self.hist_row.pack(side="top", fill="x", pady=(4, 0))   # the HISTORY button, its colours under it
         self._tip(hb2, "Show / hide the colours you used last")
         self.after_idle(lambda: self._remember(add=False))                          # the 8 white history slots show from the start
         # ---- colour sliders (scroll down to them): hue / saturation / value and red / green / blue, typed values, a random colour
         sl_group = frame(fill="x"); self._csl = {}; self._csl_busy = None
-        hd_ = frame(sl_group, fill="x", pady=(8, 2)); T.Text(hd_, "STICKERS", muted=True, font=T.f(8)).pack()
+        self._rule(sl_group, (8, 0)); hd_ = frame(sl_group, fill="x", pady=(4, 2)); T.Text(hd_, "STICKERS", muted=True, font=T.f(8)).pack()
         self._sticker_box = frame(sl_group, pady=(0, 2))
         rr3 = frame(sl_group, fill="x", pady=(0, 6))
         self._tip(small(T.Button(rr3, "Make sticker", self.make_sticker)), "What's selected on this layer (or all of it) becomes a sticker").pack(side="right")
         self._tip(small(T.Button(rr3, "Import…", self.import_stickers)), "Add sticker pictures you have: PNG files, or a .zip of them").pack(side="left")
-        hd_ = frame(sl_group, fill="x", pady=(0, 2)); T.Text(hd_, "COLOR SLIDERS", muted=True, font=T.f(8)).pack()
+        self._rule(sl_group, (4, 0)); hd_ = frame(sl_group, fill="x", pady=(4, 2)); T.Text(hd_, "COLOR SLIDERS", muted=True, font=T.f(8)).pack()
         for key, lab, top in (("h", "Hue:", 360), ("s", "Saturation:", 100), ("v", "Value:", 100), ("r", "Red:", 255), ("g", "Green:", 255), ("b", "Blue:", 255)):
             row = self._slider_row(sl_group, lab, 0.5, lambda v, k=key: self._csl_set(k, v), ""); row.top = top
             row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k, row=row: self._csl_set(k, x / row.top)))
@@ -819,7 +822,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
                   "The colour opposite this one on the wheel (its complement)").pack(side="right", padx=4)
         self._sync_csl()
         # ---- MY COLORS: colours you keep (+ adds yours, right-click one to drop it) and the picture's own main colours
-        hd_ = frame(sl_group, fill="x", pady=(10, 2)); T.Text(hd_, "MY COLORS", muted=True, font=T.f(8)).pack()
+        self._rule(sl_group); hd_ = frame(sl_group, fill="x", pady=(4, 2)); T.Text(hd_, "MY COLORS", muted=True, font=T.f(8)).pack()
         self._my_lbls = []
         for row_i in range(2):
             row = frame(sl_group, pady=1)

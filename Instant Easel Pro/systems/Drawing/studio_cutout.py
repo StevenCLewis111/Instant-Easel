@@ -169,7 +169,7 @@ class StudioCutout:
         T.banner(self.app, f"{'CUT' if cut else 'COPIED'} TO A NEW LAYER" + (f" — and kept as '{nm}' (Color view > Stickers)" if nm else ""), "success")
 
     def _cutout_options(self, parent, frame):
-        r = frame(parent, fill="x", pady=(10, 2)); T.Text(r, "CUT OUT", font=T.f(10, "underline")).pack()
+        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "CUT OUT", font=T.f(10, "underline")).pack()
         rows = [(("Remove background", self.remove_background, "Erase the background round the edges of this layer (photos too). Ctrl+Z puts it back"),),
                 (("Cut to layer", lambda: self.sel_to_layer(True), "What's selected moves onto a new layer of its own"),
                  ("Copy to layer", lambda: self.sel_to_layer(False), "What's selected is copied onto a new layer")),
