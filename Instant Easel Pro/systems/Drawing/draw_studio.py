@@ -1026,21 +1026,22 @@ class DrawStudio(StudioExtras, tk.Frame):
         out = Image.new("RGBA", (D, D), (0, 0, 0, 0))
         if self.tool == "brush":
             try:
-                n = max(8, int(self.size * 1.6) + 6); c = brushes.Canvas(n, n, paper=(0, 0, 0), transparent=True)
+                rs = max(1, min(self.size, 260, max(12, int(self.size * z))))                 # drawn at about the size it shows on screen
+                n = max(8, int(rs * 1.6) + 6); c = brushes.Canvas(n, n, paper=(0, 0, 0), transparent=True)
                 brushes.B["__tip__"] = self._live_brush()
                 try:
-                    c.stroke([(n / 2, n / 2, 1.0), (n / 2 + 0.6, n / 2, 1.0)], "__tip__", color=self._stroke_color(), size=self.size, opacity=1.0)
+                    c.stroke([(n / 2, n / 2, 1.0), (n / 2 + 0.6, n / 2, 1.0)], "__tip__", color=self._stroke_color(), size=rs, opacity=1.0)
                     if np.nan_to_num(c.alpha).max() < 0.05:                     # tapering brushes leave nothing on one touch: a short line instead
-                        L = self.size * 0.35
+                        L = rs * 0.35
                         c.stroke([(n / 2 + (t - 0.5) * 2 * L, n / 2 - (t - 0.5) * 0.6 * L, 0.4 + 0.6 * math.sin(math.pi * t)) for t in np.linspace(0, 1, 16)], "__tip__",
-                                 color=self._stroke_color(), size=self.size, opacity=1.0)
+                                 color=self._stroke_color(), size=rs, opacity=1.0)
                 finally: brushes.B.pop("__tip__", None)
                 al = np.nan_to_num(c.alpha); top = float(al.max())
                 if 0 < top < 0.6: al = al * min(4.0, 0.6 / top)                     # very soft brushes: strong enough to see
                 rgb = Image.fromarray(np.clip(np.nan_to_num(c.a), 0, 255).astype(np.uint8))
                 a = Image.fromarray(np.clip(al * 255 * 0.85, 0, 255).astype(np.uint8))
                 dab = rgb.convert("RGBA"); dab.putalpha(a)
-                k = z                                                                    # image pixels to screen pixels
+                k = z * self.size / rs                                                   # its pixels to screen pixels
                 dab = dab.resize((max(1, round(n * k)), max(1, round(n * k))), Image.LANCZOS if k < 1 else Image.NEAREST if k > 3 else Image.BILINEAR)
                 if dab.width > D: dab = dab.crop(((dab.width - D) // 2, (dab.height - D) // 2, (dab.width - D) // 2 + D, (dab.height - D) // 2 + D))
                 out.alpha_composite(dab, ((D - dab.width) // 2, (D - dab.height) // 2))
@@ -1252,8 +1253,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         d.text((im.width - w / 2, im.height - h / 2), "SOON", fill=(245, 196, 0), font=font, anchor="mm"); return im
 
     def _size_max(self):
-        """the biggest brush: as big as the canvas (its longer side)"""
-        return max(16, max(getattr(self, "size_wh", (300, 300))))
+        """the biggest brush: the whole mark still fits inside the canvas (its shorter side)"""
+        return max(16, min(getattr(self, "size_wh", (300, 300))))
     def _s2v(self, s): return math.log(max(1, s)) / math.log(self._size_max())
     def _v2s(self, v): return max(1, int(round(self._size_max() ** v)))
     def set_size(self, s, from_slider=False):
@@ -1330,7 +1331,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             for k, P in enumerate(self._mirror_sets(pts)):
                 self.cur.cv.stroke(P, name, color=color, size=self.size, opacity=self.opacity, state=None if st is None else st.setdefault(k, {}))
             if self.lock_alpha.get() and self._edit is not None and self.tool != "eraser":   # Lock transparency: coverage stays as it was
-                x0, y0, x1, y1 = (int(max(0, v)) for v in self._bbox(pts)); sl = (slice(y0, int(y1) + 1), slice(x0, int(x1) + 1))
+                x0, y0, x1, y1 = (int(max(0, v)) for v in (self.cur.cv.touched or self._bbox(pts))); sl = (slice(y0, int(y1) + 1), slice(x0, int(x1) + 1))
                 self.cur.cv.alpha[sl] = self._edit[2][sl]
         finally: brushes.B.pop("__live__", None)
 
@@ -1368,7 +1369,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._begin_edit(); self.points = [p]; self._pending = []; self._last_pt = p
         if t in ("brush", "eraser"): self.cur.cv.begin_stroke(self._edit[1], self._edit[2])   # one stroke: never more than your Opacity
         self._stroke_state = {}; self._smooth_pt = p; self._smooth_pr = 1.0                 # one stroke: smoothed direction, position and pressure
-        if self._live(): self._paint([p, p]); self._show_change(self._bbox([p]))
+        self._raw = [p]                                                          # the mouse's points, smoothed into curves as they come
+        if self._live(): self._paint_show([p, p])
 
     def drag(self, e):
         if self.tool == "move":
@@ -1390,21 +1392,40 @@ class DrawStudio(StudioExtras, tk.Frame):
             p = (p[0], p[1], self._smooth_pr)
         self.points.append(p)
         if self._live():
-            self._pending.append(p)                                              # painted on the next frame tick, together with any other moves since
+            self._pending.extend(self._curve_in(p))                              # painted on the next frame tick, together with any other moves since
             if self._tick_job is None: self._tick_job = self.after(8, self._tick)
         else: ox, oy, z = self._geom(); a, b = self.points[-2], self.points[-1]; self.cv.create_line(ox + a[0] * z, oy + a[1] * z, ox + b[0] * z, oy + b[1] * z, fill="#888", tags="shape")
+
+    def _curve_in(self, p):
+        """the mouse jumps between the points it reports (more so while the computer is busy): instead of straight corners,
+        the stroke curves through them (each corner becomes a smooth bend between the middles of its two sides)"""
+        R = self._raw; R.append(p)
+        if len(R) > 3: del R[0]
+        mid = lambda a, b: ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2)
+        if len(R) == 2: return [mid(R[0], R[1])]
+        m0, c, m1 = mid(R[-3], R[-2]), R[-2], mid(R[-2], R[-1])
+        n = max(2, min(40, int(math.hypot(m1[0] - m0[0], m1[1] - m0[1]) / 3)))
+        return [tuple((1 - t) ** 2 * m0[j] + 2 * (1 - t) * t * c[j] + t * t * m1[j] for j in range(3)) for t in (k / n for k in range(1, n + 1))]
 
     def _tick(self):
         """one frame: paint every mouse position since the last frame as one piece, then update only that part of the screen"""
         self._tick_job = None
         if not self._pending: return
         pts = [self._last_pt] + self._pending; self._pending = []; self._last_pt = pts[-1]
-        self._paint(pts); self._show_change(self._bbox(pts))
+        self._paint_show(pts)
+
+    def _paint_show(self, pts):
+        """paint a piece, then update the screen for exactly the area the dabs touched (not a box the size of the brush round every point)"""
+        cv = self.cur.cv; cv.touched = None; self._paint(pts); t = cv.touched; cv.touched = None
+        if t is not None: self._show_change(t)
 
     def up(self, e):
         if self.tool == "move": self._pan0 = None; return
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_up(e, self.to_img(e))
         if self._tick_job is not None: self.after_cancel(self._tick_job); self._tick_job = None
+        if self._live() and len(getattr(self, "_raw", [])) >= 2:                   # the last bit, right to where you let go (smoothing lags behind)
+            q = self.to_img(e); last = self._raw[-1]; self._pending.append(last)
+            if math.hypot(q[0] - last[0], q[1] - last[1]) > 0.5: self._pending.append((q[0], q[1], last[2]))
         self._tick()
         p = self.to_img(e); t = self.tool
         if t in ("line", "rect", "oval"):

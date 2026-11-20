@@ -82,8 +82,28 @@ def _tip(fn, s, ta):
     m = _tips.get(key)
     if m is None:
         if len(_tips) > 6000: _tips.clear()
-        m = _tips[key] = fn(s, **ta).astype(np.float32)
+        ang = ta.get("angle", 0.0)
+        if s > 48 and isinstance(ang, float) and abs(ang) > 1e-3 and fn is not tip_shape:     # big tips: turn the straight one (much faster than redrawing it)
+            base = _tip(fn, s, dict(ta, angle=0.0))
+            m = np.asarray(Image.fromarray(base, "F").rotate(-math.degrees(ang), resample=Image.BILINEAR), np.float32)
+        else: m = fn(s, **ta).astype(np.float32) if s > 3 else None
+        if m is None or m.max() < 0.35: m = np.ones((s, s), np.float32) if fn is not tip_sponge else np.full((s, s), 0.7, np.float32)   # a 1-3 pixel brush: a solid dot, never nothing
+        _tips[key] = m
     return m
+
+_tipcs = {}
+def _tipc(fn, s, ta):
+    """the tip cut down to where it actually has paint (a flat brush turned diagonally is mostly empty corners), with where
+    that piece sits in the full square: (piece, x offset, y offset, full size). Big brushes paint much faster this way"""
+    key = (fn, s, tuple(sorted((k_, round(v, 2) if isinstance(v, float) else v) for k_, v in ta.items())))
+    r = _tipcs.get(key)
+    if r is None:
+        m = _tip(fn, s, ta); ys = np.flatnonzero(m.max(1) > 0.003); xs = np.flatnonzero(m.max(0) > 0.003)
+        if len(ys) and (len(ys) < s or len(xs) < s): r = (np.ascontiguousarray(m[ys[0]:ys[-1] + 1, xs[0]:xs[-1] + 1]), int(xs[0]), int(ys[0]), s)
+        else: r = (m, 0, 0, s)
+        if len(_tipcs) > 6000: _tipcs.clear()
+        _tipcs[key] = r
+    return r
 
 # ---------------- brushes: name -> settings ----------------
 B = {}
@@ -197,7 +217,7 @@ class Canvas:
         self.w, self.h = w, h; self.a = np.zeros((h, w, 3), np.float32) + np.array(paper, np.float32)
         self.paper = np.array(paper, np.float32); self.grain = _grain(h, w, seed); self.rng = random.Random(seed)
         self.alpha = np.zeros((h, w), np.float32) if transparent else None
-        self._wash = None; self._op = 1.0
+        self._wash = None; self._op = 1.0; self.touched = None             # touched: the box dabs changed since it was last cleared
 
     def image(self): return Image.fromarray(np.clip(np.nan_to_num(self.a), 0, 255).astype(np.uint8))
 
@@ -206,14 +226,19 @@ class Canvas:
         """start a stroke painted in pieces. base_*: the layer as it was before the stroke (copies are made if not given)"""
         self._wash = dict(base_a=self.a.copy() if base_a is None else base_a,
                           base_al=(None if self.alpha is None else (self.alpha.copy() if base_alpha is None else base_alpha)),
-                          S=np.zeros((self.h, self.w), np.float32), C=np.zeros((self.h, self.w, 3), np.float32), mode="normal")
+                          S=np.zeros((self.h, self.w), np.float32), C=None, const=None, mode="normal")    # C: made only if the colour varies
 
     def end_stroke(self): self._wash = None
 
-    def _dab(self, x, y, mask, color, alpha, mode, grain, tex=None):
-        s0, s1 = mask.shape; x0, y0 = int(round(x - s1 / 2)), int(round(y - s0 / 2)); x1, y1 = x0 + s1, y0 + s0
+    def _dab(self, x, y, mask, color, alpha, mode, grain, tex=None, off=None):
+        s0, s1 = mask.shape
+        fl = math.floor                                                   # (floor, not round: Python rounds halves to even, which skipped pixels on thin lines)
+        if off is None: x0, y0 = int(fl(x - s1 / 2 + 0.5)), int(fl(y - s0 / 2 + 0.5))
+        else: x0, y0 = int(fl(x - off[2] / 2 + 0.5)) + off[0], int(fl(y - off[2] / 2 + 0.5)) + off[1]       # a cut-down tip: where its piece sits
+        x1, y1 = x0 + s1, y0 + s0
         cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(self.w, x1), min(self.h, y1)
         if cx0 >= cx1 or cy0 >= cy1: return
+        self._touch(cx0, cy0, cx1, cy1)
         m = mask[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0] * alpha
         if grain: m = m * np.clip((self.grain[cy0:cy1, cx0:cx1] - grain * 0.55) / (1 - grain * 0.55), 0, 1)
         col = color
@@ -227,13 +252,23 @@ class Canvas:
         if self._wash is not None and mode in ("normal", "multiply", "screen", "erase"): self._wash_dab(cy0, cy1, cx0, cx1, m, col, mode)
         else: self._blend(cy0, cy1, cx0, cx1, m * self._op, col, mode)
 
+    def _touch(self, x0, y0, x1, y1):
+        t = self.touched; self.touched = (x0, y0, x1, y1) if t is None else (min(t[0], x0), min(t[1], y0), max(t[2], x1), max(t[3], y1))
+
     def _wash_dab(self, y0, y1, x0, x1, m, color, mode):
         """add a dab to the stroke buffer (never past full), then lay the buffer on the layer at the stroke's opacity"""
-        W = self._wash; sl = (slice(y0, y1), slice(x0, x1)); S = W["S"][sl]; C = W["C"][sl]
-        c = np.broadcast_to(np.asarray(color, np.float32), C.shape)
-        S2 = S + m * (1 - S); keep = (S * (1 - m))[..., None]
+        W = self._wash; sl = (slice(y0, y1), slice(x0, x1)); S = W["S"][sl]; W["mode"] = mode
+        S2 = S + m * (1 - S); W["S"][sl] = S2
+        flat = not (isinstance(color, np.ndarray) and color.ndim == 3)
+        if flat and W["C"] is None:                                       # one colour so far: no per-pixel colour needed (much faster)
+            c3 = tuple(float(v) for v in np.asarray(color, np.float32).reshape(3))
+            if W["const"] is None: W["const"] = c3
+            if W["const"] == c3 or np.allclose(W["const"], c3, atol=0.5):
+                self._blend(y0, y1, x0, x1, S2 * self._op, W["const"], mode, base=(W["base_a"][sl], None if W["base_al"] is None else W["base_al"][sl])); return
+        if W["C"] is None:                                               # the colour starts varying: from now on, colour per pixel
+            W["C"] = np.empty((self.h, self.w, 3), np.float32); W["C"][:] = np.asarray(W["const"] if W["const"] is not None else (0, 0, 0), np.float32)
+        C = W["C"][sl]; c = np.broadcast_to(np.asarray(color, np.float32), C.shape); keep = (S * (1 - m))[..., None]
         W["C"][sl] = np.where(S2[..., None] > 1e-5, (C * keep + c * m[..., None]) / np.maximum(S2, 1e-5)[..., None], c)
-        W["S"][sl] = S2; W["mode"] = mode
         self._blend(y0, y1, x0, x1, S2 * self._op, W["C"][sl], mode, base=(W["base_a"][sl], None if W["base_al"] is None else W["base_al"][sl]))
 
     def _blend(self, y0, y1, x0, x1, m, color, mode, base=None):
@@ -244,12 +279,12 @@ class Canvas:
         m3 = m[..., None]; c = np.asarray(color, np.float32)
         if ra is not None:
             if mode == "erase": self.alpha[y0:y1, x0:x1] = (ra * (1 - m3))[..., 0]; self.a[y0:y1, x0:x1] = reg; return
-            under = np.where(ra > 0.002, reg, 255.0)                          # empty layer acts as white for multiply/screen
-            if mode == "multiply": new = under * (c / 255)
-            elif mode == "screen": new = 255 - (255 - under) * (255 - c) / 255
-            else: new = np.broadcast_to(c, reg.shape)
-            out_a = ra * (1 - m3) + m3
-            self.a[y0:y1, x0:x1] = (reg * ra * (1 - m3) + new * m3) / np.maximum(out_a, 1e-4); self.alpha[y0:y1, x0:x1] = out_a[..., 0]; return
+            if mode in ("multiply", "screen"):
+                under = np.where(ra > 0.002, reg, 255.0)                      # empty layer acts as white for multiply/screen
+                new = under * (c / 255) if mode == "multiply" else 255 - (255 - under) * (255 - c) / 255
+            else: new = c
+            keep = ra * (1 - m3); out_a = keep + m3
+            self.a[y0:y1, x0:x1] = (reg * keep + new * m3) / np.maximum(out_a, 1e-4); self.alpha[y0:y1, x0:x1] = out_a[..., 0]; return
         if mode == "multiply": new = reg * (c / 255)
         elif mode == "screen": new = 255 - (255 - reg) * (255 - c) / 255
         elif mode == "erase": new = np.broadcast_to(self.paper, reg.shape)
@@ -319,7 +354,7 @@ class Canvas:
             else: tp = 1.0
             szf = (1 - b["size_press"] * (1 - p)) * tp; opf = 1 - b["opac_press"] * (1 - p)
             if b["opacity_jitter"]: opf *= 1 - self.rng.uniform(0, b["opacity_jitter"])
-            s = max(2, int(size * b["size_scale"] * szf * (1 + self.rng.uniform(-b["jitter_size"], b["jitter_size"]) if b["jitter_size"] else 1)))
+            s = max(1, int(round(size * b["size_scale"] * szf * (1 + self.rng.uniform(-b["jitter_size"], b["jitter_size"]) if b["jitter_size"] else 1))))
             ta = dict(b["tipargs"])
             if b["angle_follow"]: ta["angle"] = ang + math.pi / 2 + ta.get("angle", 0)
             if b["jitter_angle"]: ta["angle"] = ta.get("angle", 0) + self.rng.uniform(-b["jitter_angle"], b["jitter_angle"])
@@ -331,7 +366,7 @@ class Canvas:
             if b["color_jitter"]: col = np.clip(col * (1 + self.rng.uniform(-b["color_jitter"], b["color_jitter"])), 0, 255)
             if b["hue_jitter"]: col = _hsv_shift(col if b["hue_jitter"] < 0.99 else np.array([235, 70, 90], np.float32), self.rng.uniform(-b["hue_jitter"], b["hue_jitter"]) if b["hue_jitter"] < 0.99 else self.rng.random())
             if b["stamp"]:                                                # a stamp picture: its own colours, or yours with its shading
-                st = ART.stamp(b["stamp"], s, ta.get("angle", 0.0))
+                st = ART.stamp(b["stamp"], max(2, s), ta.get("angle", 0.0))
                 if st is None: continue
                 mask, rgb = st
                 if not self.stamp_own_colors:
@@ -366,7 +401,7 @@ class Canvas:
                 g = _tip(tip_soft, max(3, int(s * 2.4)), {}); self._blend_direct(x, y, g, col, 0.06 * opacity)
                 core = _tip(tip_round, max(2, int(s * 0.38)), {"hard": 0.7}); self._dab(x, y, core, np.clip(col * 0.35 + 255 * 0.65, 0, 255), opf, "normal", 0)
                 continue
-            self._dab(x + dx, y + dy, mask, col, b["flow"] * opf, b["mode"], b["grain"], tex)
+            pc = _tipc(b["tip"], s, ta); self._dab(x + dx, y + dy, pc[0], col, b["flow"] * opf, b["mode"], b["grain"], tex, off=pc[1:])
             if sp == "knife":                                            # palette knife: hard edge streaked with the paint beneath
                 self._dab(x + dx + 2, y + dy + 2, mask * 0.4, np.clip(col * 1.25, 0, 255), 0.5, "normal", 0.5)
             if sp == "ribbon":                                           # a shine along the middle of the ribbon
@@ -389,6 +424,7 @@ class Canvas:
         from scipy.ndimage import uniform_filter
         r = max(2, s // 2); x0, y0, x1, y1 = max(0, int(x - r)), max(0, int(y - r)), min(self.w, int(x + r)), min(self.h, int(y + r))
         if x1 <= x0 + 2 or y1 <= y0 + 2: return
+        self._touch(x0, y0, x1, y1)
         reg = self.a[y0:y1, x0:x1]; k = max(3, int(s / 10) | 1); bl = np.stack([uniform_filter(reg[..., c], k) for c in range(3)], -1)
         yy, xx = np.mgrid[y0:y1, x0:x1]; mm = np.clip(1 - np.hypot(xx - x, yy - y) / r, 0, 1)[..., None] ** 1.5 * amount
         new = bl if how == "blur" else np.clip(reg + (reg - bl) * 1.6, 0, 255)
@@ -405,6 +441,7 @@ class Canvas:
         xs = [q[0] for q in out]; ys = [q[1] for q in out]; m = int(size) + 12
         X0, Y0, X1, Y1 = max(0, int(min(xs)) - m), max(0, int(min(ys)) - m), min(self.w, int(max(xs)) + m), min(self.h, int(max(ys)) + m)
         if X1 <= X0 or Y1 <= Y0: return
+        self._touch(X0, Y0, X1, Y1)
         fp = np.zeros((Y1 - Y0, X1 - X0), np.float32)                     # only around the stroke, not the whole picture
         for x, y, p, ang in out:
             r = size * 0.45; x0, x1 = int(max(X0, x - r)), int(min(X1, x + r)); y0, y1 = int(max(Y0, y - r)), int(min(Y1, y + r))
@@ -453,7 +490,7 @@ class Canvas:
     def _shape(self, pts, color, size, opacity):
         from PIL import ImageDraw
         layer = Image.new("L", (self.w, self.h), 0); ImageDraw.Draw(layer).polygon([(x, y) for x, y, p in pts], fill=255)
-        m = np.asarray(layer, np.float32) / 255 * opacity; self._blend(0, self.h, 0, self.w, m, color, "normal")
+        m = np.asarray(layer, np.float32) / 255 * opacity; self._blend(0, self.h, 0, self.w, m, color, "normal"); self._touch(0, 0, self.w, self.h)
 
     def _grass(self, pts, color, size, opacity):
         for x, y, p in pts[::2]:
