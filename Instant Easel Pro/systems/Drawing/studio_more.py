@@ -107,6 +107,8 @@ class StudioMore:
     # ------------------------------------------------------------------ saving with a see-through background
     def flatten_clear(self):
         """the layers only (no background), as RGBA: blend modes are kept where there's paint beneath"""
+        col, al = self._stack_clear()                                              # layers and groups, on nothing (studio_groups)
+        return Image.fromarray(np.dstack([np.clip(col, 0, 255), np.clip(al, 0, 1)[..., None] * 255]).astype(np.uint8), "RGBA")
         w, h = self.size_wh; col = np.zeros((h, w, 3), np.float32); al = np.zeros((h, w), np.float32); base_al = None
         import brushes
         for L in self.layers:

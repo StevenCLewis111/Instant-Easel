@@ -14,6 +14,7 @@ import theme as T, brushes, brush_art, prefs, brush_catalog as BC, ui_art as UA,
 from paint_window import GROUPS, WHOLE_STROKE
 from studio_extras import StudioExtras, SEL_TOOLS
 from studio_more import StudioMore
+from studio_groups import StudioGroups, Group
 
 import paths; HERE = paths.APP                                    # (fonts/)
 MODES = list(brushes.BLEND_MODES)                                              # layer blend modes (the same list brushes use)
@@ -85,10 +86,10 @@ def blend_layer(bg, layer, sl=(slice(None), slice(None)), clip=None):
     c = L if layer.mode == "normal" else brushes.blend_rgb(bg, L, layer.mode)
     return bg * (1 - a) + c * a
 
-class DrawStudio(StudioMore, StudioExtras, tk.Frame):
+class DrawStudio(StudioGroups, StudioMore, StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
-        super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self)
+        super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self); self._groups_init()
         self.color = (196, 92, 44); self.color2 = (255, 255, 255); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.opacity = 0.5   # brushes start half see-through
         self._x_init()                                                              # select / crop / text state (studio_extras)
         self.mirror = tk.BooleanVar(value=False); self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
@@ -688,6 +689,9 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         self.clip_var = tk.BooleanVar(value=False)
         ck = frame(fill="x", pady=(0, 3)); T.Text(ck, "Clip to layer below", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(ck, self.clip_var, command=self._set_clip), "This layer only shows where the layer under it has paint (shade or texture inside a shape)").pack(side="right")
+        gb = frame(fill="x", pady=(0, 3))
+        self._tip(small(T.Button(gb, "Group", self.group_layers)), "Put this layer and the one under it in a group (click a group's row to pick the whole group)").pack(side="left")
+        self._tip(small(T.Button(gb, "Ungroup", self.ungroup)), "Take the layers out of their group").pack(side="right")
         self.mask_var = tk.BooleanVar(value=False)
         mk = frame(fill="x", pady=(0, 3)); T.Text(mk, "Paint on mask", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(mk, self.mask_var, command=self._mask_toggle), "Layer mask: painting now hides this layer (the eraser brings it back); nothing is lost. Turn off to paint the layer again").pack(side="right")
@@ -908,46 +912,73 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
 
     def _rows(self): return getattr(self, "_lay_rows", 4)                          # layer rows shown (as many as fit, see _fit_layer_rows)
     def _lay_scroll(self, d):
-        self._lay_off = max(0, min(max(0, len(self.layers) + 1 - self._rows()), self._lay_off + d))   # (+1: the Background row)
+        self._lay_off = max(0, min(max(0, len(self._row_items()) + 1 - self._rows()), self._lay_off + d))   # (+1: the Background row)
         self._lay_free = True
         try: self._layers_ui()                                                     # scrolling moves freely (the chosen layer may scroll out of view)
         finally: self._lay_free = False
 
     def _layers_ui_art(self):
-        """layer rows: green-framed = the layer you're painting on; the ball shows / hides it; as many rows as fit (the wheel scrolls more)"""
+        """layer rows: green-framed = the layer you're painting on (or the group you picked); the ball shows / hides it; a group's row
+        sits above its layers (its arrow folds them away); as many rows as fit (the wheel scrolls more)"""
         for w in self.layer_box.winfo_children(): w.destroy()
-        n = len(self.layers); top_first = list(range(n - 1, -1, -1)); pos = top_first.index(self.li)
-        k = self._rows(); total = n + 1                                                # every layer, then the Background row
+        items = self._row_items(); n = len(items)
+        want = ("g", self.sel_group) if self.sel_group is not None else ("l", self.li)
+        if want not in items:                                                     # its group is folded: the group's row stands for it
+            g = self._group_of(self.cur); want = ("g", g) if g is not None else want
+        pos = items.index(want) if want in items else 0
+        k = self._rows(); total = n + 1                                                # every row, then the Background row
         if not getattr(self, "_lay_free", False):                                   # a layer was chosen / added: bring it into view
             if pos < self._lay_off: self._lay_off = pos
             if pos >= self._lay_off + k: self._lay_off = pos - k + 1
         self._lay_off = max(0, min(self._lay_off, max(0, total - k)))
         if getattr(self, "_lay_sb", None) is not None: self._lay_sb.set(self._lay_off / total, min(1.0, (self._lay_off + k) / total))
         IW, RH = self._IW - 34, 26                                                    # (room for the list's scroll bar)
-        for i in top_first[self._lay_off:self._lay_off + k]:
-            L = self.layers[i]; sel = i == self.li; info = (L.name, L.visible, int(L.opacity * 100), L.mode, sel)
-            def render(b, info=info):
-                W, H = self._apx(IW), self._apx(RH); name, vis, op, mode, sel = info
-                def make():
-                    im = AP.bar("bar_navy_green" if sel else "bar_navy", W, H, 0.4).copy(); d = int(H * 0.6)
-                    im.alpha_composite(AP.fit("ball_white" if vis else "ball_grey", d, d), (int(H * 0.32), (H - d) // 2))
-                    AP.text(im, name[:12], int(H * 1.2), H // 2, int(H * 0.44), anchor="lm")
-                    return AP.text(im, f"{op}% {mode}", W - int(H * 0.4), H // 2, int(H * 0.36), fill=(70, 220, 255), anchor="rm")
-                return AP.photo(("row", W, H) + info, make)
-            lb = self._art(self._art_label(self.layer_box), render, hover=False); lb.pack(pady=1)
-            lb.bind("<Button-1>", lambda e, i=i: self._toggle_vis(i) if e.x < self._apx(RH) * 1.1 else self._select(i))
+        for kind, v in items[self._lay_off:self._lay_off + k]:
+            if kind == "g":
+                G = self.groups[v]; info = ("g", G.name, G.visible, int(G.opacity * 100), G.mode, self.sel_group == v, G.collapsed)
+                def render(b, info=info):
+                    W, H = self._apx(IW), self._apx(RH); _, name, vis, op, mode, sel, folded = info
+                    def make():
+                        from PIL import ImageDraw as _D
+                        im = AP.bar("bar_navy_green" if sel else "bar_dark", W, H, 0.4).copy(); d = int(H * 0.6)
+                        im.alpha_composite(AP.fit("ball_white" if vis else "ball_grey", d, d), (int(H * 0.32), (H - d) // 2))
+                        x0, cy, r = int(H * 1.25), H / 2, H * 0.2                        # the fold arrow: pointing right when folded, down when open
+                        pts = [(x0, cy - r), (x0 + r * 1.6, cy), (x0, cy + r)] if folded else [(x0, cy - r * 0.7), (x0 + r * 2, cy - r * 0.7), (x0 + r, cy + r * 0.9)]
+                        _D.Draw(im).polygon(pts, fill=(245, 196, 0))
+                        AP.text(im, name[:11], int(H * 2.1), H // 2, int(H * 0.44), anchor="lm", fill=(245, 196, 0))
+                        return AP.text(im, f"{op}% {mode}", W - int(H * 0.4), H // 2, int(H * 0.36), fill=(70, 220, 255), anchor="rm")
+                    return AP.photo(("grow", W, H) + info, make)
+                lb = self._art(self._art_label(self.layer_box), render, hover=False); lb.pack(pady=1)
+                lb.bind("<Button-1>", lambda e, g=v: self.toggle_group(g, "visible") if e.x < self._apx(RH) * 1.1 else
+                        (self.toggle_group(g, "fold") if e.x < self._apx(RH) * 2.0 else self.select_group(g)))
+            else:
+                i = v; L = self.layers[i]; ing = self._group_of(L) is not None
+                info = (L.name, L.visible, int(L.opacity * 100), L.mode, i == self.li and self.sel_group is None, ing, L.maskcv is not None)
+                def render(b, info=info):
+                    W, H = self._apx(IW), self._apx(RH); name, vis, op, mode, sel, ing, has_mask = info
+                    def make():
+                        im = AP.bar("bar_navy_green" if sel else "bar_navy", W, H, 0.4).copy(); d = int(H * 0.6); ind = int(H * 0.55) if ing else 0
+                        if ing: im.paste((245, 196, 0, 255), (int(H * 0.12), int(H * 0.2), int(H * 0.12) + max(2, H // 10), int(H * 0.8)))   # in a group: a gold mark, set in
+                        im.alpha_composite(AP.fit("ball_white" if vis else "ball_grey", d, d), (int(H * 0.32) + ind, (H - d) // 2))
+                        AP.text(im, (name[:10] if ing else name[:12]), int(H * 1.2) + ind, H // 2, int(H * 0.44), anchor="lm")
+                        return AP.text(im, f"{'M ' if has_mask else ''}{op}% {mode}", W - int(H * 0.4), H // 2, int(H * 0.36), fill=(70, 220, 255), anchor="rm")
+                    return AP.photo(("row", W, H) + info, make)
+                lb = self._art(self._art_label(self.layer_box), render, hover=False); lb.pack(pady=1)
+                off = 0.55 if ing else 0
+                lb.bind("<Button-1>", lambda e, i=i, off=off: self._toggle_vis(i) if e.x < self._apx(RH) * (1.1 + off) else self._select(i))
             lb.bind("<MouseWheel>", lambda e: self._lay_scroll(-1 if e.delta > 0 else 1), add="+")
         def bg_row(b):
             W, H = self._apx(IW), self._apx(RH)
             return AP.photo(("bgrow", W, H), lambda: AP.text(AP.bar("bar_dark", W, H, 0.4).copy(), "Background", int(H * 0.5), H // 2, int(H * 0.44), anchor="lm"))
         if self._lay_off + k > n: self._art(self._art_label(self.layer_box, cursor=""), bg_row, hover=False).pack(pady=1)   # scrolled to the bottom
         L = self.cur; self._in_layers_ui = True
+        src = self.groups[self.sel_group] if getattr(self, "sel_group", None) is not None and self.sel_group in self.groups else L
         try:
-            self.mode.set(L.mode)
+            self.mode.set(src.mode)
             if hasattr(self, "clip_var") and self.clip_var.get() != getattr(L, "clip", False): self.clip_var.set(getattr(L, "clip", False))
             if hasattr(self, "mask_var") and self.mask_var.get() != L.mask_edit: self.mask_var.set(L.mask_edit)
         finally: self._in_layers_ui = False
-        self.lop_s.value = L.opacity; self.lop_s._draw(); self.lop_lbl.configure(text=f"{int(L.opacity * 100)}%")
+        self.lop_s.value = src.opacity; self.lop_s._draw(); self.lop_lbl.configure(text=f"{int(src.opacity * 100)}%")
 
     def _draw_wheel_art(self):
         S = self._wS; c = S / 2; self.wheel.delete("all")
@@ -976,6 +1007,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
     def new(self, w=1600, h=1100, background=None):
         self.size_wh = (w, h); self.bg = np.full((h, w, 3), 255.0, np.float32) if background is None else np.asarray(background.convert("RGB").resize((w, h)), dtype=np.float32)
         self.layers = [Layer(w, h, "Layer 1")]; self.li = 0; self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
+        self.groups = {}; self.sel_group = None
         self._comp = np.empty((h, w, 3), np.uint8); self._recomp(); self.changed = False
         self._layers_ui(); self.refresh()
         if hasattr(self, "size_s"): self.set_size(self.size)                         # the size slider's range follows the canvas size
@@ -1000,13 +1032,7 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         x0, y0, x1, y1 = (0, 0, w, h) if rect is None else (max(0, int(rect[0])), max(0, int(rect[1])), min(w, int(math.ceil(rect[2]))), min(h, int(math.ceil(rect[3]))))
         if x1 <= x0 or y1 <= y0: return
         sl = (slice(y0, y1), slice(x0, x1)); part = self.bg[sl].copy()
-        base_al = None
-        for L in self.layers:
-            if getattr(L, "clip", False):                                        # clipped: only where the layer it sits on has paint
-                if L.visible: part = blend_layer(part, L, sl, clip=base_al if base_al is not None else np.zeros(part.shape[:2], np.float32))
-                continue
-            base_al = L.shown(sl) * L.opacity if L.visible else np.zeros(part.shape[:2], np.float32)
-            if L.visible: part = blend_layer(part, L, sl)
+        part = self._composite(part, sl)                                         # layers and groups (studio_groups)
         self._comp[sl] = np.clip(part, 0, 255).astype(np.uint8)
 
     def flatten(self):
@@ -1030,12 +1056,21 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         import zipfile, io
         from xml.sax.saxutils import quoteattr
         w, h = self.size_wh; png = lambda im: (lambda b: (im.save(b, "PNG", compress_level=3), b.getvalue())[1])(io.BytesIO())
-        rows = []; files = []
+        rows = []; files = []; open_g = None
         for i, L in reversed(list(enumerate(self.layers))):                       # stack.xml lists the top layer first
+            g = self._group_of(L)
+            if g != open_g:                                                       # a group: its layers inside a stack of their own
+                if open_g is not None: rows.append("</stack>")
+                if g is not None:
+                    G = self.groups[g]
+                    rows.append(f'<stack name={quoteattr(G.name)} opacity="{G.opacity:.3f}" visibility="{"visible" if G.visible else "hidden"}" '
+                                f'composite-op="{self.ORA_OPS.get(G.mode, "svg:src-over")}" isolation="isolate" x-instant-mode={quoteattr(G.mode)} x-instant-folded="{1 if G.collapsed else 0}">')
+                open_g = g
             px = Image.fromarray(np.rint(np.dstack([np.clip(L.img.a, 0, 255), np.clip(L.shown(), 0, 1)[..., None] * 255])).astype(np.uint8), "RGBA")   # (a mask is applied)
             src = f"data/layer{i}.png"; files.append((src, png(px)))
             rows.append(f'<layer name={quoteattr(L.name)} src="{src}" x="0" y="0" opacity="{L.opacity:.3f}" visibility="{"visible" if L.visible else "hidden"}" '
                         f'composite-op="{self.ORA_OPS.get(L.mode, "svg:src-over")}" x-instant-mode={quoteattr(L.mode)} x-instant-clip="{1 if getattr(L, "clip", False) else 0}"/>')
+        if open_g is not None: rows.append("</stack>")
         files.append(("data/background.png", png(Image.fromarray(np.clip(self.bg, 0, 255).astype(np.uint8)))))
         rows.append('<layer name="Background" src="data/background.png" x="0" y="0" opacity="1.000" visibility="visible" composite-op="svg:src-over" x-instant-background="1"/>')
         xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="{w}" h="{h}"><stack>{"".join(rows)}</stack></image>'
@@ -1052,18 +1087,31 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         import zipfile, io, xml.etree.ElementTree as ET
         with zipfile.ZipFile(path) as z:
             root = ET.fromstring(z.read("stack.xml")); w, h = int(root.get("w")), int(root.get("h"))
-            items = [el for el in root.iter("layer")][::-1]                          # bottom layer first
+            items = []; gstacks = {}                                                 # bottom layer first; layers inside a <stack> are a group
+            def walk(st, parent_stack=None):
+                for el in st:
+                    if el.tag == "layer": items.append((el, parent_stack))
+                    elif el.tag == "stack": walk(el, el)
+            top = root.find("stack"); walk(top if top is not None else root)
+            items = items[::-1]; stacks = [s_ for _, s_ in items]; items = [el for el, _ in items]
             pics = [Image.open(io.BytesIO(z.read(el.get("src")))).convert("RGBA") for el in items]
         bg = None
-        if items and (items[0].get("x-instant-background") == "1" or (items[0].get("name", "").lower() == "background" and pics[0].getchannel("A").getextrema()[0] == 255)):
-            bg = Image.new("RGB", (w, h), (255, 255, 255)); bg.paste(pics[0].convert("RGB"), (int(float(items[0].get("x", 0))), int(float(items[0].get("y", 0))))); items, pics = items[1:], pics[1:]
-        self.new(w, h, background=bg); self.layers = []
+        if items and stacks[0] is None and (items[0].get("x-instant-background") == "1" or (items[0].get("name", "").lower() == "background" and pics[0].getchannel("A").getextrema()[0] == 255)):
+            bg = Image.new("RGB", (w, h), (255, 255, 255)); bg.paste(pics[0].convert("RGB"), (int(float(items[0].get("x", 0))), int(float(items[0].get("y", 0))))); items, pics, stacks = items[1:], pics[1:], stacks[1:]
+        self.new(w, h, background=bg); self.layers = []; gids = {}
         ops = {v: k for k, v in self.ORA_OPS.items()}
         for el, im in zip(items, pics):
             L = Layer(w, h, el.get("name", "Layer")); full = Image.new("RGBA", (w, h), (0, 0, 0, 0)); full.paste(im, (int(float(el.get("x", 0))), int(float(el.get("y", 0)))))
             px = np.asarray(full, np.float32); L.img.a = px[..., :3].copy(); L.img.alpha = px[..., 3] / 255
             L.visible = el.get("visibility", "visible") != "hidden"; L.opacity = float(el.get("opacity", 1.0))
             L.mode = el.get("x-instant-mode") or ops.get(el.get("composite-op", "svg:src-over"), "normal"); L.clip = el.get("x-instant-clip") == "1"
+            st = stacks[len(self.layers)]
+            if st is not None:
+                if id(st) not in gids:
+                    self._gid += 1; gids[id(st)] = self._gid; G = Group(st.get("name", "Group")); G.opacity = float(st.get("opacity", 1.0))
+                    G.visible = st.get("visibility", "visible") != "hidden"; G.mode = st.get("x-instant-mode") or ops.get(st.get("composite-op", "svg:src-over"), "normal")
+                    G.collapsed = st.get("x-instant-folded") == "1"; self.groups[self._gid] = G
+                L.group = gids[id(st)]
             self.layers.append(L)
         if not self.layers: self.layers = [Layer(w, h, "Layer 1")]
         self.li = len(self.layers) - 1; self._recomp(); self._layers_ui(); self.fit(); self.changed = False
@@ -1911,7 +1959,8 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
             bg = np.clip(self.bg, 0, 255).astype(np.uint8)
             layers = [(L.name, L.visible, float(L.opacity), L.mode, np.rint(np.dstack([np.clip(L.img.a, 0, 255), L.img.alpha[..., None] * 255])).astype(np.uint8)) for L in self.layers]
             masks = [(i, np.rint(np.clip(L.maskcv.alpha, 0, 1) * 255).astype(np.uint8)) for i, L in enumerate(self.layers) if L.maskcv is not None]
-            meta = dict(size=list(self.size_wh), li=self.li, layers=[dict(name=n, visible=v, opacity=o, mode=m, clip=bool(getattr(L, "clip", False))) for (n, v, o, m, _), L in zip(layers, self.layers)])
+            meta = dict(size=list(self.size_wh), li=self.li, layers=[dict(name=n, visible=v, opacity=o, mode=m, clip=bool(getattr(L, "clip", False)), group=self._group_of(L)) for (n, v, o, m, _), L in zip(layers, self.layers)],
+                        groups={str(g): dict(name=G.name, visible=G.visible, opacity=G.opacity, mode=G.mode, collapsed=G.collapsed) for g, G in self.groups.items()})
             self.changed = False
         except Exception: self._saving.release(); raise
         def write():
@@ -1939,10 +1988,14 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         for i, m in enumerate(meta["layers"]):
             L = Layer(w, h, m["name"]); px = np.asarray(Image.open(os.path.join(d, f"layer{i}.png")).convert("RGBA"), dtype=np.float32)
             L.img.a = px[..., :3].copy(); L.img.alpha = px[..., 3] / 255; L.visible, L.opacity, L.mode = m["visible"], m["opacity"], m["mode"]; L.clip = bool(m.get("clip", False))
+            if m.get("group") is not None: L.group = int(m["group"])
             mp = os.path.join(d, f"mask{i}.png")
             if os.path.exists(mp): L.add_mask(); L.maskcv.alpha = np.asarray(Image.open(mp).convert("L"), np.float32) / 255
             self.layers.append(L)
-        self.li = min(meta.get("li", 0), len(self.layers) - 1); self._recomp(); self._layers_ui(); self.changed = True; self.fit()
+        for g, gm in meta.get("groups", {}).items():
+            G = Group(gm.get("name", "Group")); G.visible, G.opacity, G.mode, G.collapsed = gm.get("visible", True), gm.get("opacity", 1.0), gm.get("mode", "normal"), gm.get("collapsed", False)
+            self.groups[int(g)] = G; self._gid = max(self._gid, int(g))
+        self._tidy_groups(); self.li = min(meta.get("li", 0), len(self.layers) - 1); self._recomp(); self._layers_ui(); self.changed = True; self.fit()
 
     def _mask_toggle(self):
         L = self.cur
@@ -1976,14 +2029,15 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
             for wdg in (r, nm): wdg.bind("<Button-1>", lambda e, i=i: self._select(i))
         tk.Label(self.layer_box, text="  Background", fg=T.PALETTE["muted"], bg=T.PALETTE["field"], font=T.f(9), anchor="w").pack(fill="x", pady=1)
         L = self.cur; self._in_layers_ui = True
+        src = self.groups[self.sel_group] if getattr(self, "sel_group", None) is not None and self.sel_group in self.groups else L
         try:
-            self.mode.set(L.mode)
+            self.mode.set(src.mode)
             if hasattr(self, "clip_var") and self.clip_var.get() != getattr(L, "clip", False): self.clip_var.set(getattr(L, "clip", False))
             if hasattr(self, "mask_var") and self.mask_var.get() != L.mask_edit: self.mask_var.set(L.mask_edit)
         finally: self._in_layers_ui = False
-        self.lop_s.value = L.opacity; self.lop_s._draw(); self.lop_lbl.configure(text=f"{int(L.opacity * 100)}%")
+        self.lop_s.value = src.opacity; self.lop_s._draw(); self.lop_lbl.configure(text=f"{int(src.opacity * 100)}%")
 
-    def _select(self, i): self.li = i; self._layers_ui()
+    def _select(self, i): self.li = i; self.sel_group = None; self._layers_ui()
     def _picture_changed(self):
         """a layer setting or the layer stack changed: rebuild the finished picture, at most ~25 times a second"""
         self.changed = True
@@ -1994,22 +2048,26 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
     def _toggle_vis(self, i): self.layers[i].visible = not self.layers[i].visible; self._layers_ui(); self._picture_changed()
     def _set_layer(self, **kw):
         if not hasattr(self, "layers") or self._in_layers_ui: return
-        for k, v in kw.items(): setattr(self.cur, k, v)
-        if "opacity" in kw: self.lop_lbl.configure(text=f"{int(self.cur.opacity * 100)}%")
+        target = self.groups[self.sel_group] if getattr(self, "sel_group", None) is not None else self.cur       # a picked group: its own blend / opacity
+        for k, v in kw.items(): setattr(target, k, v)
+        if "opacity" in kw: self.lop_lbl.configure(text=f"{int(target.opacity * 100)}%")
         if self._ui_job is None: self._ui_job = self.after(120, self._layers_ui_later)          # the list's "%" text, not on every slider move
         self._picture_changed()
     def _layers_ui_later(self): self._ui_job = None; self._layers_ui()
     def add_layer(self):
-        w, h = self.size_wh; self.layers.insert(self.li + 1, Layer(w, h, f"Layer {len(self.layers) + 1}")); self.li += 1; self._layers_ui()
+        w, h = self.size_wh; L = Layer(w, h, f"Layer {len(self.layers) + 1}"); L.group = self._group_of(self.cur)      # a new layer goes in with the one you're on
+        self.layers.insert(self.li + 1, L); self.li += 1; self.sel_group = None; self._layers_ui()
     def dup_layer(self):
         w, h = self.size_wh; src = self.cur; L = Layer(w, h, src.name + " copy"); L.img.a, L.img.alpha = src.img.a.copy(), src.img.alpha.copy()
         if src.maskcv is not None: L.add_mask(); L.maskcv.alpha = src.maskcv.alpha.copy()
-        L.opacity, L.mode = src.opacity, src.mode; self.layers.insert(self.li + 1, L); self.li += 1; self._layers_ui(); self._picture_changed()
+        L.opacity, L.mode = src.opacity, src.mode; L.group = self._group_of(src); self.layers.insert(self.li + 1, L); self.li += 1; self._layers_ui(); self._picture_changed()
     def del_layer(self):
+        if getattr(self, "sel_group", None) is not None: return self.delete_group()      # a picked group goes with its layers
         if len(self.layers) == 1: self.cur.mask_edit = False; self.cur.maskcv = None; self._begin_edit(); self.cur.cv.alpha[:] = 0; self._commit_edit()
         else: self.layers.pop(self.li); self.li = max(0, self.li - 1)
         self.undo_stack = [u for u in self.undo_stack if u[0] < len(self.layers)]; self._layers_ui(); self._picture_changed()
     def merge_down(self):
+        if getattr(self, "sel_group", None) is not None: return self.merge_group()       # a picked group: flattened into one layer
         if self.li == 0: return
         top, low = self.layers[self.li], self.layers[self.li - 1]
         a_t = (top.shown() * top.opacity)[..., None]; a_l = low.shown()[..., None]          # (masks are applied first)
@@ -2019,7 +2077,10 @@ class DrawStudio(StudioMore, StudioExtras, tk.Frame):
         self.layers.pop(self.li); self.li -= 1; self.undo_stack = [u for u in self.undo_stack if u[0] < len(self.layers)]; self._layers_ui(); self._picture_changed()
     def move_layer(self, d):
         j = self.li + d
-        if 0 <= j < len(self.layers): self.layers[self.li], self.layers[j] = self.layers[j], self.layers[self.li]; self.li = j; self.undo_stack.clear(); self._layers_ui(); self._picture_changed()
+        if getattr(self, "sel_group", None) is not None: return self.move_group(d)       # a picked group moves as one
+        if 0 <= j < len(self.layers):
+            self.layers[self.li], self.layers[j] = self.layers[j], self.layers[self.li]; self.li = j; self.undo_stack.clear()
+            self._tidy_groups(); self._layers_ui(); self._picture_changed()
 
     # ------------------------------------------------------------------ colour
     def _swatch_row(self, parent, colors, size, side=None, **pack):
