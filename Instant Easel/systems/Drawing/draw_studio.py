@@ -30,7 +30,7 @@ LEFT_W, RIGHT_W = 276, 282                                                   # s
 
 def slim(btn): btn.configure(padx=5, pady=3, font=T.f(9)); return btn            # narrow buttons for the side panels
 
-TB_SIZES = [(26, 11, 6), (23, 10, 5), (20, 9, 4)]                               # toolbar sizes, biggest first: icon, text, padding (design pixels)
+TB_SIZES = [(44, 14, 6), (40, 13, 6), (36, 12, 6), (32, 12, 6), (29, 11, 6), (26, 11, 6), (23, 10, 5), (20, 9, 4)]                               # toolbar sizes, biggest first: icon, text, padding (design pixels)
 
 def icon_btn(btn): btn.configure(padx=4, pady=4); return btn                    # icon-only buttons: just enough room round the picture
 
@@ -91,7 +91,7 @@ class DrawStudio(StudioExtras, tk.Frame):
                  "line": "Draw line", "rect": "Draw rectangle", "oval": "Draw circle", "text": "Text", "sel_rect": "Select area (rectangle)",
                  "sel_oval": "Select area (circle)", "crop": "Crop"}
         keys = {tool: key for _, tool, key in TOOLS}
-        order = ["new", "open", "save", "undo", "redo", "fit", "crop", "sel_rect", "sel_oval", "brush", "fill", "eraser",   # (colour picking: Pick on the Color side)
+        order = ["new", "open", "save", "undo", "redo", "brush", "eraser", "fill", "fit", "crop", "sel_rect", "sel_oval",   # (colour picking: Pick on the Color side)
                  "line", "rect", "oval", "zoom out", "zoom in", "text"]
         self.tool_btns = {}
         for k in order:
@@ -146,7 +146,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._fit_w = width
         for size in TB_SIZES:
             self._size_toolbar(size); self._bar.update_idletasks()
-            need = sum(w.winfo_reqwidth() for w, _, _ in self._tb) + 3 * (len(self._tb) - 1)
+            need = sum(w.winfo_reqwidth() for w, _, _ in self._tb) + self._apx(6) * (len(self._tb) - 1)     # biggest buttons that still leave a small gap
             if need <= width: break
         if self._bar.winfo_width() != width and tries < 2: self._fit_now(tries + 1)      # the width moved while measuring: once more
         self._fit_w = self._bar.winfo_width()
