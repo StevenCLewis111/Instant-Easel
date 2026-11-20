@@ -10,7 +10,7 @@ import os, sys, math, json, shutil, threading, colorsys, types, tkinter as tk
 from tkinter import filedialog, simpledialog
 import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
-import theme as T, brushes, prefs, brush_catalog as BC, ui_art as UA, art_panel as AP, skin
+import theme as T, brushes, brush_art, prefs, brush_catalog as BC, ui_art as UA, art_panel as AP, skin
 from paint_window import GROUPS, WHOLE_STROKE
 from studio_extras import StudioExtras, SEL_TOOLS
 
@@ -29,6 +29,10 @@ PALETTES = {"Warm": [(120, 30, 20), (200, 70, 30), (240, 140, 50), (250, 200, 90
 LEFT_W, RIGHT_W = 276, 282                                                   # side panel widths (design pixels): the canvas gets everything else
 
 def slim(btn): btn.configure(padx=5, pady=3, font=T.f(9)); return btn            # narrow buttons for the side panels
+
+OPT_KEYS = ("spacing", "flow", "hardness", "roundness", "angle", "rotation", "size_jitter", "scatter", "press_size", "press_opacity", "texture")
+POLY_TOOLS = ("polygon", "polyline", "curve_tool")                            # click the corners, double-click (or Enter) to finish
+GRAD_TOOLS = ("gradient", "gradient_radial")
 
 TB_SIZES = [(44, 14, 6), (40, 13, 6), (36, 12, 6), (32, 12, 6), (29, 11, 6), (26, 11, 6), (23, 10, 5), (20, 9, 4)]                               # toolbar sizes, biggest first: icon, text, padding (design pixels)
 
@@ -59,7 +63,9 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.mirror = tk.BooleanVar(value=False); self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
         self.mirror_y = tk.BooleanVar(value=False); self.use_pressure = tk.BooleanVar(value=False)                      # Brush Options switches
         self.color_mode = tk.StringVar(value="Normal"); self.blend_mode = tk.StringVar(value="Brush default"); self._hue = 0.0
-        self.opts = dict(spacing=None, hardness=None, rotation=None, angle=None); self._icons = {}
+        self.opts = {k: None for k in OPT_KEYS}; self._icons = {}
+        self.lock_alpha = tk.BooleanVar(value=False); self.radial = tk.StringVar(value="Off"); self.stamp_colors = tk.StringVar(value="Their own colors"); self.fill_sample = tk.StringVar(value="All layers")
+        self.gopts = dict(smooth=45.0, tolerance=24.0); self._last_pattern = "checks"; self._poly = None
         self._big = False; self._hidden = []; self._tight = []; self._tipsets = {}     # "studio fills the page" mode                     # None = the brush's own setting
         self._job = None; self.points = []; self._prev = None
         self._tick_job = None; self._pending = []; self._last_pt = None; self._patches = []; self._edit = None; self._dirty = None
@@ -167,7 +173,8 @@ class DrawStudio(StudioExtras, tk.Frame):
                        ("<Button-4>", lambda e: self.zoom_by(1.15, (e.x, e.y))), ("<Button-5>", lambda e: self.zoom_by(1 / 1.15, (e.x, e.y))), ("<Configure>", lambda e: self._cv_resized())):
             cv.bind(ev, fn)
         cv.bind("<Enter>", lambda e: cv.focus_set())
-        cv.bind("<Double-Button-1>", lambda e: self.fit() if self.tool == "move" else None, add="+")   # Move: double-click fits the picture back
+        cv.bind("<Double-Button-1>", lambda e: self.fit() if self.tool == "move" else (self._poly_finish() if self.tool in POLY_TOOLS else None), add="+")   # Move: fit back; Polygon / Curve: finish
+        cv.bind("<Motion>", lambda e: self._poly_preview(self.to_img(e)) if self.tool in POLY_TOOLS and self._poly else None, add="+")
         for ev in ("<Motion>", "<B1-Motion>", "<Enter>"): cv.bind(ev, lambda e: self._tip_move(e), add="+")   # the brush tip follows the mouse
         cv.bind("<Leave>", lambda e: self._tip_hide(e.widget), add="+"); cv.bind("<Unmap>", lambda e: self._tip_hide(e.widget), add="+")
         cv.bind("<Escape>", lambda e: self.x_key(e) or ((self.toggle_big(), "break")[1] if self._big else None))
@@ -376,18 +383,52 @@ class DrawStudio(StudioExtras, tk.Frame):
         hd = tk.Frame(O, bg=O["bg"]); hd.pack(fill="x", pady=(2, 4)); self._title(hd, "BRUSH OPTIONS").pack()
         ft = tk.Frame(O, bg=O["bg"]); ft.pack(side="bottom", fill="x", pady=(4, 0)); T.on_change(lambda: ft.configure(bg=O["bg"]))      # Reset: bottom right
         self._tip(small(T.Button(ft, "Reset", lambda: self._load_brush_opts(self.brush))), "Back to this brush's own settings").pack(side="right")
-        RANGES = dict(spacing=(1, 100, "%"), hardness=(0, 100, "%"), rotation=(0, 180, "°"), angle=(0, 180, "°"))
+        OPTS = [("spacing", "Spacing:", 1, 200, "%", "How far apart the dabs are, in brush widths (low = smooth, high = dotted / spaced stamps)"),
+                ("flow", "Flow:", 1, 100, "%", "How much paint each dab adds. Low builds up softly; the stroke never goes past your Opacity"),
+                ("hardness", "Hardness:", 0, 100, "%", "Soft or crisp edge"),
+                ("roundness", "Round:", 5, 100, "%", "100% is round; lower squashes the tip flat (turn it with Angle)"),
+                ("angle", "Angle:", 0, 180, "°", "Turns the tip and keeps it that way (it stops following the stroke)"),
+                ("rotation", "Rotate:", 0, 180, "°", "Turns each dab a random amount, up to this"),
+                ("size_jitter", "Jitter:", 0, 100, "%", "Makes each dab a random amount bigger or smaller"),
+                ("scatter", "Scatter:", 0, 300, "%", "Spreads the dabs out from the line you draw"),
+                ("press_size", "Pr. Size:", 0, 100, "%", "How much pressure (a pen, or the mouse's speed) changes the size"),
+                ("press_opacity", "Pr. Opac:", 0, 100, "%", "How much pressure (a pen, or the mouse's speed) changes how see-through it is"),
+                ("texture", "Texture:", 0, 100, "%", "How strongly a texture brush's texture shows")]
         self.opt_rows = {}
-        for key in ("spacing", "hardness", "rotation", "angle"):
-            lo, hi, unit = RANGES[key]
-            row = self._slider_row(O, key.capitalize() + ":", 0.5, lambda v, k=key, lo=lo, hi=hi: self._set_opt(k, lo + v * (hi - lo)), "")
+        for key, label, lo, hi, unit, tip in OPTS:
+            row = self._slider_row(O, label, 0.5, lambda v, k=key, lo=lo, hi=hi: self._set_opt(k, lo + v * (hi - lo)), "")
             row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._set_opt(k, x, sync=True))); row.unit, row.range = unit, (lo, hi)
-            self.opt_rows[key] = row
-        for label, var, choices in (("Color Mode:", self.color_mode, ["Normal", "Color Jitter", "Rainbow"]), ("Blend Mode:", self.blend_mode, ["Brush default", "Normal", "Multiply", "Screen"])):
-            r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=2); T.Text(r, label, font=T.f(8), width=11, anchor="w").pack(side="left"); T.Choice(r, "", choices, var).pack(side="left", fill="x", expand=True)
-        for label, var in (("Mirror X", self.mirror), ("Mirror Y", self.mirror_y), ("Pressure (by speed)", self.use_pressure)):
-            r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=2); T.Text(r, label, font=T.f(8)).pack(side="left"); T.Toggle(r, var, command=self.refresh).pack(side="right")
-        self.mirror.trace_add("write", lambda *a: self.refresh()); self.mirror_y.trace_add("write", lambda *a: self.refresh())
+            self._tip(row.slider, tip); self.opt_rows[key] = row
+        def head(text):                                                           # a small heading between the groups
+            r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=(8, 1)); T.on_change(lambda: r.configure(bg=O["bg"]))
+            T.Text(r, text, muted=True, font=T.f(8)).pack()
+        def choice(label, var, choices, tip=None):
+            r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=2); T.on_change(lambda: r.configure(bg=O["bg"]))
+            T.Text(r, label, font=T.f(8), width=11, anchor="w").pack(side="left"); c = T.Choice(r, "", choices, var); c.pack(side="left", fill="x", expand=True)
+            if tip: self._tip(c, tip)
+        def toggle(label, var, tip=None):
+            r = tk.Frame(O, bg=O["bg"]); r.pack(fill="x", pady=2); T.on_change(lambda: r.configure(bg=O["bg"]))
+            T.Text(r, label, font=T.f(8)).pack(side="left"); t_ = T.Toggle(r, var, command=self.refresh); t_.pack(side="right")
+            if tip: self._tip(t_, tip)
+        self.g_rows = {}
+        def gslider(key, label, tip):
+            row = self._slider_row(O, label, self.gopts[key] / 100, lambda v, k=key: self._set_g(k, v * 100), f"{int(self.gopts[key])}%")
+            row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._set_g(k, x, sync=True))); self._tip(row.slider, tip); self.g_rows[key] = row
+        head("STROKE")
+        gslider("smooth", "Smooth:", "Steadies your hand: the line follows the mouse a little behind, so wobbles smooth out (0 = off)")
+        toggle("Pressure (by speed)", self.use_pressure, "A mouse has no pressure: draw slowly for full strength, faster for lighter / thinner")
+        toggle("Mirror X", self.mirror, "Paint is mirrored left / right")
+        toggle("Mirror Y", self.mirror_y, "Paint is mirrored top / bottom")
+        choice("Radial:", self.radial, ["Off", "3", "4", "5", "6", "8", "12", "16"], "Radial symmetry: your stroke repeats round the middle of the picture")
+        head("COLOR")
+        choice("Color Mode:", self.color_mode, ["Normal", "Color Jitter", "Rainbow"])
+        choice("Blend Mode:", self.blend_mode, ["Brush default", "Normal", "Multiply", "Screen"])
+        choice("Stamps:", self.stamp_colors, ["Their own colors", "My color"], "Stamps in their own colours, or in the colour you've picked")
+        head("FILL")
+        gslider("tolerance", "Tolerance:", "How different a colour can be and still get filled (higher fills more)")
+        choice("Fill from:", self.fill_sample, ["All layers", "This layer"], "Fill looks at the whole picture, or just the layer you're on")
+        self.mirror.trace_add("write", lambda *a: self.refresh()); self.mirror_y.trace_add("write", lambda *a: self.refresh()); self.radial.trace_add("write", lambda *a: self.refresh())
+        self.stamp_colors.trace_add("write", lambda *a: self._preview())
         self._left_view("Brushes"); self._load_brush_opts(self.brush)
 
     def _right(self, body):
@@ -552,6 +593,8 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.lop_row = types.SimpleNamespace(slider=sl, var=var, entry=box.entry); self.lop_s = sl
         box.entry.bind("<Return>", lambda e: self._typed(self.lop_row, lambda x: (self._sync_slider(self.lop_row, x / 100), self._set_layer(opacity=min(1, max(0, x / 100))))))
         self.lop_lbl = types.SimpleNamespace(configure=lambda text: var.set(text))
+        lk = frame(fill="x", pady=(0, 3)); T.Text(lk, "Lock transparency", font=T.f(9)).pack(side="left")
+        self._tip(T.Toggle(lk, self.lock_alpha), "Paint only where this layer already has paint (great for shading inside a shape)").pack(side="right")
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
         # ---- COLOR header
         def header(word, H, arrow=None):
@@ -577,8 +620,9 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.wheel = tk.Canvas(wf, width=self._wS, height=self._wS, bg=R["bg"], highlightthickness=0, cursor="hand2"); self.wheel.place(relx=0.5, rely=0.5, anchor="center")
         T.on_change(lambda: self.wheel.configure(bg=R["bg"]))
         def fit_wheel():
-            others = sum(g.winfo_reqheight() for g in self._col_groups if g is not wf); gaps = self._apx(10) * (len(self._col_groups) + 1)
-            room = CV.winfo_height() - others - gaps; need = self._apx(118)
+            others = sum(g.winfo_reqheight() for g in self._col_groups if g is not wf and g is not getattr(self, "_col_extra", None)); gaps = self._apx(10) * len(self._col_groups)
+            view = self._col_canvas.winfo_height() if getattr(self, "_col_canvas", None) is not None else CV.winfo_height()
+            room = view - others - gaps; need = self._apx(118)                       # (the sliders sit below: scroll down to them)
             if self._pal_auto:                                                    # palettes give way to the ring when the panel is short
                 pal_h = self._apx(46)
                 if self._pal_open and room < need: return self._set_palettes(False)
@@ -586,6 +630,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             S = max(60, min(room, self._apx(IW)) - 2)
             if S != self._wS: self._wS = S; self.wheel.configure(width=S, height=S); wf.configure(width=S, height=S); self._draw_wheel()
         CV.bind("<Configure>", lambda e: T.defer(self, "wheel", 30, fit_wheel), add="+"); self._fit_wheel = fit_wheel
+        self._col_canvas.bind("<Configure>", lambda e: T.defer(self, "wheel", 30, fit_wheel), add="+")      # the view's own height sets the ring's size
         self.wheel.bind("<Button-1>", self._wheel_pick); self.wheel.bind("<B1-Motion>", self._wheel_pick); self._wheel_target = None
         self.wheel.bind("<ButtonRelease-1>", lambda e: (setattr(self, "_wheel_target", None), self._remember()))
         # ---- current colour, hex, Pick
@@ -638,8 +683,20 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.hist_row.pack_forget(); hb2.pack(side="top"); self.hist_row.pack(side="top", fill="x", pady=(4, 0))   # the HISTORY button, its colours under it
         self._tip(hb2, "Show / hide the colours you used last")
         self.after_idle(lambda: self._remember(add=False))                          # the 8 white history slots show from the start
+        # ---- colour sliders (scroll down to them): hue / saturation / value and red / green / blue, typed values, a random colour
+        sl_group = frame(fill="x"); self._csl = {}; self._csl_busy = None
+        hd_ = frame(sl_group, fill="x", pady=(0, 2)); T.Text(hd_, "COLOR SLIDERS", muted=True, font=T.f(8)).pack()
+        for key, lab, top in (("h", "Hue:", 360), ("s", "Saturation:", 100), ("v", "Value:", 100), ("r", "Red:", 255), ("g", "Green:", 255), ("b", "Blue:", 255)):
+            row = self._slider_row(sl_group, lab, 0.5, lambda v, k=key: self._csl_set(k, v), ""); row.top = top
+            row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k, row=row: self._csl_set(k, x / row.top)))
+            self._csl[key] = row
+        rr_ = frame(sl_group, fill="x", pady=(3, 0))
+        self._tip(small(T.Button(rr_, "Random", self._random_color)), "A random colour (nice and bright)").pack(side="right")
+        self._tip(small(T.Button(rr_, "Opposite", lambda: (self.set_color(tuple(int(x * 255) for x in colorsys.hsv_to_rgb((self.h + 0.5) % 1, self.s, self.v))), self._remember()))),
+                  "The colour opposite this one on the wheel (its complement)").pack(side="right", padx=4)
+        self._sync_csl()
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
-        self._col_groups = [top_row, wf, basic, pal_group, hist_group]
+        self._col_groups = [top_row, wf, basic, pal_group, hist_group, sl_group]; self._col_extra = sl_group
         for g in self._col_groups: g.pack_forget()
         # spaced out a little (up to a set gap, less on a short panel), the whole block kept toward the top: a tall panel
         # (full screen, studio expanded) adds room below the block, not big holes between its parts
@@ -895,6 +952,10 @@ class DrawStudio(StudioExtras, tk.Frame):
         self.ph = ImageTk.PhotoImage(im); self.cv.delete("all"); self.cv.create_image(ox + x0 * z, oy + y0 * z, image=self.ph, anchor="nw")
         if self.mirror.get(): self.cv.create_line(ox + w * z / 2, oy, ox + w * z / 2, oy + h * z, fill=T.PALETTE["border"], dash=(4, 4))
         if self.mirror_y.get(): self.cv.create_line(ox, oy + h * z / 2, ox + w * z, oy + h * z / 2, fill=T.PALETTE["border"], dash=(4, 4))
+        n = self._radial_n()
+        if n > 1:                                                                 # the spokes of radial symmetry
+            cx, cy, R = ox + w * z / 2, oy + h * z / 2, math.hypot(w, h) * z / 2
+            for k in range(n): a = 2 * math.pi * k / n - math.pi / 2; self.cv.create_line(cx, cy, cx + math.cos(a) * R, cy + math.sin(a) * R, fill=T.PALETTE["border"], dash=(3, 5))
         self._tip_redraw()
         if getattr(self, "_x_ready", False): self._x_overlay()                  # selection ants, crop box, text box
 
@@ -907,7 +968,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
         cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur"}.get(t, "crosshair")
+                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan"}.get(t, "crosshair")
         for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
             try: cv.configure(cursor=cur)
             except tk.TclError: cv.configure(cursor="crosshair")
@@ -1011,6 +1072,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if it.get("engine"):
             pic = UA.tile_image(it["name"], section) or UA.preview(it["name"], section)       # the picture of the tile that was clicked
             if pic is not None: self._art_by_engine[it["engine"]] = pic
+            if it["engine"].endswith(" pattern"): self._last_pattern = it["engine"][:-len(" pattern")]      # Pattern Fill uses it
             self.set_brush(it["engine"], it["name"])
         elif it.get("studio_tool"): self.set_tool(it["studio_tool"]); self.brush_lbl.configure(text=it["name"])
         else: T.banner(self.app, f"COMING SOON — {it['name']} isn't built yet")
@@ -1050,13 +1112,17 @@ class DrawStudio(StudioExtras, tk.Frame):
     def _sync_slider(self, row, v01): row.slider.value = min(1, max(0, v01)); row.slider._draw()
 
     def _brush_defaults(self, n):
-        b = brushes.B.get(n) or {}; ta = b.get("tipargs", {})
-        return dict(spacing=round(b.get("spacing", 0.15) * 100), hardness=round(ta.get("hard", 0.85) * 100),
-                    rotation=round(math.degrees(b.get("jitter_angle", 0.0))) % 181, angle=round(math.degrees(ta.get("angle", 0.0))) % 181)
+        b = brushes.B.get(n) or {}; ta = b.get("tipargs", {}); flat = b.get("tip") in (brushes.tip_ellipse, brushes.tip_rect)
+        return dict(spacing=round(b.get("spacing", 0.15) * 100), flow=round(b.get("flow", 1.0) * 100), hardness=round(ta.get("hard", 0.85) * 100),
+                    roundness=round((ta.get("aspect", 0.35) if flat else ta.get("roundness", 1.0)) * 100),
+                    angle=round(math.degrees(ta.get("angle", 0.0))) % 181, rotation=min(180, round(math.degrees(b.get("jitter_angle", 0.0)))),
+                    size_jitter=round(b.get("jitter_size", 0.0) * 100), scatter=round(b.get("scatter", 0.0) * 100),
+                    press_size=round(b.get("size_press", 1.0) * 100), press_opacity=round(b.get("opac_press", 0.0) * 100),
+                    texture=round(b.get("tex_strength", 0.85) * 100))
 
     def _load_brush_opts(self, n):
         """the sliders show this brush's own settings; nothing is overridden until you move one"""
-        self.opts = dict(spacing=None, hardness=None, rotation=None, angle=None)
+        self.opts = {k: None for k in OPT_KEYS}
         for k, v in self._brush_defaults(n).items(): self._show_opt(k, v)
 
     def _show_opt(self, key, val):
@@ -1065,10 +1131,24 @@ class DrawStudio(StudioExtras, tk.Frame):
     def _set_opt(self, key, val, sync=False):
         lo, hi = self.opt_rows[key].range; val = min(hi, max(lo, val)); self.opts[key] = val; self._show_opt(key, val); self._preview()
 
+    def _set_g(self, key, val, sync=False):
+        val = min(100.0, max(0.0, float(val))); self.gopts[key] = val; row = self.g_rows[key]
+        self._sync_slider(row, val / 100); row.var.set(f"{int(round(val))}%")
+
     def _live_brush(self):
         """the brush with your Brush Options applied (a copy; the brush's own settings are never changed)"""
         b = dict(brushes.B[self.brush]); b["tipargs"] = dict(b["tipargs"]); o = self.opts
         if o["spacing"] is not None: b["spacing"] = max(0.01, o["spacing"] / 100)
+        if o["flow"] is not None: b["flow"] = max(0.01, o["flow"] / 100)
+        if o["roundness"] is not None:
+            if b["tip"] in (brushes.tip_ellipse, brushes.tip_rect): b["tipargs"]["aspect"] = max(0.05, o["roundness"] / 100)
+            else: b["tipargs"]["roundness"] = max(0.05, o["roundness"] / 100)
+        if o["size_jitter"] is not None: b["jitter_size"] = o["size_jitter"] / 100
+        if o["scatter"] is not None: b["scatter"] = o["scatter"] / 100
+        if o["press_size"] is not None: b["size_press"] = o["press_size"] / 100
+        if o["press_opacity"] is not None: b["opac_press"] = o["press_opacity"] / 100
+        if o["texture"] is not None: b["tex_strength"] = o["texture"] / 100
+        brushes.Canvas.stamp_own_colors = self.stamp_colors.get() != "My color"
         if o["hardness"] is not None: b["tipargs"]["hard"] = min(0.98, o["hardness"] / 100)
         if o["rotation"] is not None: b["jitter_angle"] = math.radians(o["rotation"])
         if o["angle"] is not None:                                                # an angle you set is kept exactly: the tip no longer turns with the stroke
@@ -1230,7 +1310,16 @@ class DrawStudio(StudioExtras, tk.Frame):
         if self.mirror.get(): out.append([(w - x, y, p) for x, y, p in pts])
         if self.mirror_y.get(): out.append([(x, h - y, p) for x, y, p in pts])
         if self.mirror.get() and self.mirror_y.get(): out.append([(w - x, h - y, p) for x, y, p in pts])
+        n = self._radial_n()
+        if n > 1:                                                                 # radial: every copy again, turned round the middle
+            cx, cy = w / 2, h / 2; base = list(out)
+            for k in range(1, n):
+                a = 2 * math.pi * k / n; ca, sa = math.cos(a), math.sin(a)
+                for P in base: out.append([(cx + (x - cx) * ca - (y - cy) * sa, cy + (x - cx) * sa + (y - cy) * ca, p) for x, y, p in P])
         return out
+
+    def _radial_n(self):
+        v = self.radial.get() if hasattr(self, "radial") else "Off"; return int(v) if v.isdigit() else 1
 
     def _paint(self, pts):
         if self.tool == "eraser": name, color = "eraser", self.color
@@ -1240,6 +1329,9 @@ class DrawStudio(StudioExtras, tk.Frame):
             st = getattr(self, "_stroke_state", None) if self._live() else None
             for k, P in enumerate(self._mirror_sets(pts)):
                 self.cur.cv.stroke(P, name, color=color, size=self.size, opacity=self.opacity, state=None if st is None else st.setdefault(k, {}))
+            if self.lock_alpha.get() and self._edit is not None and self.tool != "eraser":   # Lock transparency: coverage stays as it was
+                x0, y0, x1, y1 = (int(max(0, v)) for v in self._bbox(pts)); sl = (slice(y0, int(y1) + 1), slice(x0, int(x1) + 1))
+                self.cur.cv.alpha[sl] = self._edit[2][sl]
         finally: brushes.B.pop("__live__", None)
 
     def _live(self):
@@ -1247,8 +1339,9 @@ class DrawStudio(StudioExtras, tk.Frame):
         return self.tool == "eraser" or (self.tool == "brush" and self.brush not in WHOLE_STROKE)
 
     def _bbox(self, pts):
-        m = self.size * 1.5 + 6; xs = [q[0] for q in pts]; ys = [q[1] for q in pts]
-        box = [min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m]; W, H = self.size_wh
+        m = self.size * 1.5 + 6; xs = [q[0] for q in pts]; ys = [q[1] for q in pts]; W, H = self.size_wh
+        if self._radial_n() > 1: return [0, 0, W, H]                              # radial copies go all round
+        box = [min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m]
         if self.mirror.get(): box[0], box[2] = min(box[0], W - box[2]), max(box[2], W - box[0])
         if self.mirror_y.get(): box[1], box[3] = min(box[1], H - box[3]), max(box[3], H - box[1])
         return box
@@ -1266,12 +1359,14 @@ class DrawStudio(StudioExtras, tk.Frame):
                 self.set_color(tuple(int(c) for c in self._comp[y, x])); self._remember()
                 self.set_tool(getattr(self, "_before_pick", "brush") or "brush")           # back to the tool you had before pressing Pick
             return
-        if t == "fill":
-            self._begin_edit(); self._fill(p); r = self._commit_edit()
+        if t in POLY_TOOLS: self._poly_click(p); return
+        if t in ("fill", "pattern_fill"):
+            self._begin_edit(); self._fill(p, pattern=t == "pattern_fill"); r = self._commit_edit()
             if r: self._recomp(r); self._draw()
             return
         if t == "text" or t in SEL_TOOLS or t == "crop": return self.x_down(e, p)     # text box, selection, crop (studio_extras)
         self._begin_edit(); self.points = [p]; self._pending = []; self._last_pt = p
+        if t in ("brush", "eraser"): self.cur.cv.begin_stroke(self._edit[1], self._edit[2])   # one stroke: never more than your Opacity
         self._stroke_state = {}; self._smooth_pt = p; self._smooth_pr = 1.0                 # one stroke: smoothed direction, position and pressure
         if self._live(): self._paint([p, p]); self._show_change(self._bbox([p]))
 
@@ -1280,13 +1375,14 @@ class DrawStudio(StudioExtras, tk.Frame):
             if getattr(self, "_pan0", None) is not None: self._pan_move(e)
             return
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_drag(e, self.to_img(e))
-        if self._edit is None and self.tool not in ("line", "rect", "oval"): return     # press happened somewhere else
+        if self._edit is None and self.tool not in ("line", "rect", "oval") + GRAD_TOOLS: return     # press happened somewhere else
         p = self.to_img(e); t = self.tool
-        if t in ("pick", "fill", "text"): return
-        if t in ("line", "rect", "oval"): self.cv.delete("shape"); self._preview_shape(self.start, p); return
+        if t in ("pick", "fill", "text", "pattern_fill") or t in POLY_TOOLS: return
+        if t in ("line", "rect", "oval") + GRAD_TOOLS: self.cv.delete("shape"); self._preview_shape(self.start, p); return
         if self.points and abs(p[0] - self.points[-1][0]) + abs(p[1] - self.points[-1][1]) < 1.5 / max(self.zoom, 0.01): return
         sp_ = getattr(self, "_smooth_pt", None)                                   # steady the hand: follow the mouse a little behind, not every jiggle
-        if sp_ is not None: p = (sp_[0] + (p[0] - sp_[0]) * 0.55, sp_[1] + (p[1] - sp_[1]) * 0.55, p[2])
+        f_ = 1 - 0.9 * self.gopts["smooth"] / 100                                 # Smooth 0 = right on the mouse, 100 = a long way behind
+        if sp_ is not None: p = (sp_[0] + (p[0] - sp_[0]) * f_, sp_[1] + (p[1] - sp_[1]) * f_, p[2])
         self._smooth_pt = p
         if self.use_pressure.get() and self.points:                              # a mouse has no pressure: slower = harder, faster = lighter (eased in)
             q = self.points[-1]; speed = math.hypot(p[0] - q[0], p[1] - q[1]) * max(self.zoom or 1, 0.01)
@@ -1315,7 +1411,12 @@ class DrawStudio(StudioExtras, tk.Frame):
             if self._edit is None: self._begin_edit()
             self._paint(self._shape_pts(t, self.start, p))
         elif t == "brush" and self.brush in WHOLE_STROKE and len(self.points) > 1: self._paint(self.points); self._dirty = None   # whole-stroke brushes: check everywhere
-        if t in ("line", "rect", "oval"): self._dirty = None
+        elif t in GRAD_TOOLS:
+            if self._edit is None: self._begin_edit()
+            self.cv.delete("shape"); self._gradient(self.start, p, radial=t == "gradient_radial")
+        if t in ("line", "rect", "oval") + GRAD_TOOLS: self._dirty = None
+        try: self.cur.cv.end_stroke()
+        except Exception: pass
         self.points = []; self._pending = []
         r = self._commit_edit()
         if r: self._recomp(r)                                                    # exactly what changed, even far-flung splatter
@@ -1335,16 +1436,80 @@ class DrawStudio(StudioExtras, tk.Frame):
     def _preview_shape(self, a, b):
         """the outline while dragging a shape: drawn on top of the view (the picture itself isn't redrawn)"""
         ox, oy, z = self._geom(); X0, Y0, X1, Y1 = ox + a[0] * z, oy + a[1] * z, ox + b[0] * z, oy + b[1] * z; col = "#%02x%02x%02x" % self.color
+        if self.tool in GRAD_TOOLS:                                              # the gradient's line (and its reach, for a radial one)
+            self.cv.create_line(X0, Y0, X1, Y1, fill=col, width=2, arrow="last", tags="shape")
+            if self.tool == "gradient_radial": r = math.hypot(X1 - X0, Y1 - Y0); self.cv.create_oval(X0 - r, Y0 - r, X0 + r, Y0 + r, outline=col, dash=(4, 4), tags="shape")
+            return
         {"line": self.cv.create_line, "rect": self.cv.create_rectangle, "oval": self.cv.create_oval}[self.tool](X0, Y0, X1, Y1, outline=col, width=2, tags="shape") if self.tool != "line" \
             else self.cv.create_line(X0, Y0, X1, Y1, fill=col, width=2, tags="shape")
 
-    def _fill(self, p):
-        from scipy.ndimage import label
-        x, y = int(p[0]), int(p[1]); comp = self._comp.astype(np.float32); h, w = comp.shape[:2]
+    def _fill(self, p, pattern=False):
+        """the paint bucket: the area of about the same colour (Tolerance), from the whole picture or this layer (Fill from).
+        pattern=True fills it with the last pattern you used, in your colour"""
+        from scipy.ndimage import label, binary_dilation
+        x, y = int(p[0]), int(p[1]); w, h = self.size_wh
         if not (0 <= x < w and 0 <= y < h): return
-        same = np.abs(comp - comp[y, x]).sum(2) < 60; lab, _ = label(same); m = (lab == lab[y, x]).astype(np.float32)
-        from scipy.ndimage import binary_dilation; m = binary_dilation(m > 0, iterations=1).astype(np.float32) * self.opacity   # covers the anti-aliased edge
+        if self.fill_sample.get() == "This layer":
+            L = self.cur.cv; src = np.dstack([L.a * L.alpha[..., None], L.alpha[..., None] * 255]).astype(np.float32)
+        else: src = self._comp.astype(np.float32)
+        tol = 1 + self.gopts["tolerance"] / 100 * 255 * src.shape[2] * 0.45
+        same = np.abs(src - src[y, x]).sum(2) < tol; lab, _ = label(same); m = lab == lab[y, x]
+        m = binary_dilation(m, iterations=1).astype(np.float32) * self.opacity          # covers the anti-aliased edge
+        if pattern:
+            pat = brush_art.pattern(self._last_pattern); m = m * pat[np.arange(h)[:, None] % pat.shape[0], np.arange(w)[None, :] % pat.shape[1]]
         self.cur.cv._blend(0, h, 0, w, m, self.color, "normal")
+
+    def _gradient(self, a, b, radial=False):
+        """your colour fading to clear: along the line you dragged (Gradient) or out from where you started (Gradient Fill)"""
+        w, h = self.size_wh; dx, dy = b[0] - a[0], b[1] - a[1]; L2 = dx * dx + dy * dy
+        if L2 < 4: return
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        t = np.sqrt((xx - a[0]) ** 2 + (yy - a[1]) ** 2) / math.sqrt(L2) if radial else ((xx - a[0]) * dx + (yy - a[1]) * dy) / L2
+        m = np.clip(1 - t, 0, 1) * self.opacity
+        if self.sel is not None and self.sel.get("float") is None:                   # inside the selection only
+            x0, y0, x1, y1 = self.sel["box"]; keep = np.zeros((h, w), np.float32); keep[y0:y1, x0:x1] = self._sel_mask(self.sel["kind"], x1 - x0, y1 - y0); m = m * keep
+        self.cur.cv._blend(0, h, 0, w, m, self.color, "normal")
+
+    def _poly_click(self, p):
+        """Polygon / Polyline / Curve: each click adds a point; double-click or Enter draws it with your brush, Esc cancels"""
+        if self._poly and math.hypot(p[0] - self._poly[-1][0], p[1] - self._poly[-1][1]) < 2 / max(self.zoom or 1, 0.01): return
+        self._poly = (self._poly or []) + [p]; self._poly_preview()
+
+    def _poly_path(self, pts, closed):
+        P = [(q[0], q[1]) for q in pts]
+        if closed and len(P) > 2: P = P + [P[0]]
+        if self.tool == "curve_tool" and len(P) > 2:                                # a smooth curve through every point (Catmull-Rom)
+            Q = [P[0]] + P + [P[-1]] if not closed else [P[-2]] + P + [P[1]]; out = []
+            for i in range(1, len(Q) - 2):
+                p0, p1, p2, p3 = Q[i - 1], Q[i], Q[i + 1], Q[i + 2]; n = max(4, int(math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / 3))
+                for k in range(n):
+                    t = k / n; t2, t3 = t * t, t * t * t
+                    out.append(tuple(0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3) for j in (0, 1)))
+            P = out + [P[-1]]
+        res = []
+        for (ax, ay), (bx, by) in zip(P, P[1:]):
+            n = max(1, int(math.hypot(bx - ax, by - ay) / 3)); res += [(ax + (bx - ax) * i / n, ay + (by - ay) * i / n, 1.0) for i in range(n)]
+        return res + [(P[-1][0], P[-1][1], 1.0)]
+
+    def _poly_preview(self, cursor=None):
+        self.cv.delete("poly")
+        if not self._poly: return
+        pts = self._poly + ([cursor] if cursor is not None else []); path = self._poly_path(pts, closed=self.tool == "polygon" and cursor is None)
+        ox, oy, z = self._geom(); col = "#%02x%02x%02x" % self.color
+        if len(path) > 1: self.cv.create_line(*[c for q in path for c in (ox + q[0] * z, oy + q[1] * z)], fill=col, width=2, tags="poly")
+        for q in self._poly: X, Y = ox + q[0] * z, oy + q[1] * z; self.cv.create_rectangle(X - 3, Y - 3, X + 3, Y + 3, outline="white", fill=col, tags="poly")
+
+    def _poly_finish(self, cancel=False):
+        pts = self._poly; self._poly = None
+        try: self.cv.delete("poly")
+        except tk.TclError: pass
+        if cancel or not pts or len(pts) < 2: return
+        self._begin_edit(); brush_tool = self.tool; self.tool = "brush"
+        try: self._paint(self._poly_path(pts, closed=brush_tool == "polygon"))
+        finally: self.tool = brush_tool
+        self._dirty = None; r = self._commit_edit()
+        if r: self._recomp(r)
+        self._draw()
 
     def _text(self, p, s):
         h, w = self.cur.cv.h, self.cur.cv.w; mask = Image.new("L", (w, h), 0); d = ImageDraw.Draw(mask)
@@ -1500,13 +1665,41 @@ class DrawStudio(StudioExtras, tk.Frame):
             b.pack(side="left", padx=1); b.bind("<Button-1>", lambda e, c=c: (self.set_color(c), self._remember()))
         return row
 
+    def _sync_csl(self):
+        """the colour sliders show the current colour"""
+        rows = getattr(self, "_csl", None)
+        if not rows: return
+        h, s_, v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); vals = dict(h=h, s=s_, v=v, r=self.color[0] / 255, g=self.color[1] / 255, b=self.color[2] / 255)
+        for k, row in rows.items():
+            if k != self._csl_busy: self._sync_slider(row, vals[k])
+            row.var.set(str(int(round(vals[k] * row.top))))
+
+    def _csl_set(self, key, v):
+        v = min(1.0, max(0.0, v)); c = list(self.color)
+        if key in "rgb": c["rgb".index(key)] = int(round(v * 255))
+        else:
+            h, s_, vv = colorsys.rgb_to_hsv(*(x / 255 for x in self.color))
+            if key == "h": h = v
+            elif key == "s": s_ = v
+            else: vv = v
+            if key == "h" and s_ < 0.02: s_ = 0.6                                   # a grey has no hue: give it some colour to turn
+            c = [int(round(x * 255)) for x in colorsys.hsv_to_rgb(h % 1.0, s_, vv)]
+        self._csl_busy = key
+        try: self.set_color(tuple(c))
+        finally: self._csl_busy = None
+        if key == "h": self.h = v; self._draw_wheel()
+
+    def _random_color(self):
+        import random as _r
+        self.set_color(tuple(int(x * 255) for x in colorsys.hsv_to_rgb(_r.random(), _r.uniform(0.55, 1.0), _r.uniform(0.6, 1.0)))); self._remember()
+
     def set_color(self, rgb):
         self.color = tuple(int(c) for c in rgb[:3]); self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color))
         hx = "#%02X%02X%02X" % self.color; self.hexv.set(hx)
         if getattr(self, "_artp", False): self._art_paint(self.swatch)
         else: self.swatch.configure(bg=hx)
         if not getattr(self, "_quiet_wheel", False): self._draw_wheel()           # dragging on the wheel redraws it once, after
-        self._preview()
+        self._sync_csl(); self._preview()
     def _remember(self, add=True):
         if add:
             if self.color in self.history: self.history.remove(self.color)

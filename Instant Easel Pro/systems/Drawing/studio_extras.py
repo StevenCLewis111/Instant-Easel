@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import theme as T, paths
 
-SEL_TOOLS = ("sel_rect", "sel_oval")
+SEL_TOOLS = ("sel_rect", "sel_oval", "wand")                                # wand: Magic Wand (selects an area of about one colour)
 HANDLE = 7                                                                   # handle size on screen (pixels)
 
 # ---------------------------------------------------------------- fonts: the app's own, plus common ones the PC has
@@ -140,6 +140,7 @@ class StudioExtras:
     def _x_leaving(self, new_tool):
         """the tool is changing: finish what the old tool had going"""
         self._x_init()
+        if getattr(self, "_poly", None) and new_tool != self.tool: self._poly_finish()      # a polygon / curve in progress gets drawn
         if self.tool in SEL_TOOLS and new_tool not in SEL_TOOLS: self._sel_commit(); self.sel = None
         if self.tool == "crop" and new_tool != "crop": self._crop = None
         if self.tool == "text" and new_tool != "text": self._txt_commit()
@@ -159,6 +160,9 @@ class StudioExtras:
     def x_key(self, e):
         """keys on the canvas for these tools; returns "break" when used"""
         self._x_init(); k = e.keysym; ctrl = bool(e.state & 0x4)
+        if getattr(self, "_poly", None):                                         # Polygon / Polyline / Curve: Enter draws it, Esc drops it
+            if k == "Return": self._poly_finish(); return "break"
+            if k == "Escape": self._poly_finish(cancel=True); return "break"
         if self.tool == "crop" and self._crop is not None:
             if k == "Return": self._crop_apply(); return "break"
             if k == "Escape": self._crop = None; self._x_overlay(); return "break"
@@ -203,6 +207,9 @@ class StudioExtras:
     # ------------------------------------------------------------------ selection
     def _sel_mask(self, kind, bw, bh):
         if kind == "rect": return np.ones((bh, bw), np.float32)
+        if kind == "mask":                                                      # Magic Wand: the exact area it picked
+            m = (self.sel or {}).get("mask")
+            return m if m is not None and m.shape == (bh, bw) else np.ones((bh, bw), np.float32)
         yy, xx = np.mgrid[0:bh, 0:bw]; cx, cy = (bw - 1) / 2, (bh - 1) / 2
         d = ((xx - cx) / max(1, bw / 2)) ** 2 + ((yy - cy) / max(1, bh / 2)) ** 2
         return np.clip((1 - d) * max(bw, bh) / 2 + 0.5, 0, 1).astype(np.float32)      # soft 1-pixel edge
@@ -222,7 +229,23 @@ class StudioExtras:
             if self.sel["float"] is None: self._sel_lift()
             self._x_drag = ("sel_move", (p[0], p[1]), tuple(self.sel["float"]["off"])); return
         self._sel_commit(); self.sel = None
+        if self.tool == "wand": self._wand(p); return
         self._x_drag = ("sel_new", (p[0], p[1])); self._x_overlay()
+
+    def _wand(self, p):
+        """Magic Wand: select the joined-up area of about the colour you clicked (Fill's Tolerance and Fill from settings)"""
+        from scipy.ndimage import label, binary_dilation
+        x, y = int(p[0]), int(p[1]); w, h = self.size_wh
+        if not (0 <= x < w and 0 <= y < h): return
+        if self.fill_sample.get() == "This layer":
+            L = self.cur.cv; src = np.dstack([L.a * L.alpha[..., None], L.alpha[..., None] * 255]).astype(np.float32)
+        else: src = self._comp.astype(np.float32)
+        tol = 1 + self.gopts["tolerance"] / 100 * 255 * src.shape[2] * 0.45
+        lab, _ = label(np.abs(src - src[y, x]).sum(2) < tol); m = binary_dilation(lab == lab[y, x], iterations=1)
+        ys, xs = np.nonzero(m)
+        if not len(ys): return
+        x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+        self.sel = dict(kind="mask", box=(x0, y0, x1, y1), mask=m[y0:y1, x0:x1].astype(np.float32), float=None); self._x_overlay()
 
     def _sel_drag(self, p):
         kind = self._x_drag[0]
@@ -301,7 +324,7 @@ class StudioExtras:
         if self.tool not in SEL_TOOLS: self.set_tool("sel_rect")
         w, h = self.size_wh; ch, cw = c["alpha"].shape; x0 = min(max(0, c["box"][0]), max(0, w - cw)); y0 = min(max(0, c["box"][1]), max(0, h - ch))
         self._begin_edit(); L = self.cur.cv
-        self.sel = dict(kind=c["kind"], box=(x0, y0, x0 + cw, y0 + ch),
+        self.sel = dict(kind=c["kind"], box=(x0, y0, x0 + cw, y0 + ch), mask=(c["alpha"] > 0.002).astype(np.float32) if c["kind"] == "mask" else None,
                         float=dict(a=c["a"].copy(), alpha=c["alpha"].copy(), off=[0, 0], base_a=L.a.copy(), base_al=L.alpha.copy(), shown=None))
         self._sel_place(0, 0)
 
@@ -312,6 +335,18 @@ class StudioExtras:
 
     def _sel_draw(self, cv):
         x0, y0, x1, y1 = self._sel_box_now(); X0, Y0 = self._x_scr(x0, y0); X1, Y1 = self._x_scr(x1, y1)
+        if self.sel["kind"] == "mask" and self.sel.get("mask") is not None:       # Magic Wand: its outline (worked out once per size)
+            m = self.sel["mask"]; z = self._geom()[2]; key = (id(m), round(z, 3), x0, y0)
+            if getattr(self, "_wand_outline", (None,))[0] != key:
+                from PIL import Image as _I, ImageFilter as _F
+                sc = max(0.05, min(1.0, z)); sm = _I.fromarray((m * 255).astype(np.uint8)).resize((max(1, int(m.shape[1] * sc)), max(1, int(m.shape[0] * sc))))
+                e = np.asarray(sm.filter(_F.FIND_EDGES)) > 60; ys, xs = np.nonzero(e)
+                if len(ys) > 2500: k = len(ys) // 2500 + 1; ys, xs = ys[::k], xs[::k]
+                self._wand_outline = (key, [(xx / sc, yy / sc) for yy, xx in zip(ys, xs)])
+            col = ("white", "black")[(self._ants // 6) % 2]
+            for (ux, uy) in self._wand_outline[1]:
+                X, Y = self._x_scr(x0 + ux, y0 + uy); cv.create_rectangle(X, Y, X + 1, Y + 1, outline=col, tags="xov")
+            return
         f = cv.create_oval if self.sel["kind"] == "oval" else cv.create_rectangle
         f(X0, Y0, X1, Y1, outline="black", dash=(6, 6), dashoffset=self._ants, tags="xov")
         f(X0, Y0, X1, Y1, outline="white", dash=(6, 6), dashoffset=self._ants + 6, tags="xov")
