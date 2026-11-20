@@ -590,9 +590,22 @@ class DrawStudio(StudioExtras, tk.Frame):
         self._tip(hb2, "Show / hide the colours you used last")
         self.after_idle(lambda: self._remember(add=False))                          # the 8 white history slots show from the start
         self.h, self.s, self.v = colorsys.rgb_to_hsv(*(c / 255 for c in self.color)); self._draw_wheel()
-        self._col_groups = [top_row, wf, basic, pal_group, hist_group]                  # evenly spaced down the panel (each takes an equal share of the room)
+        self._col_groups = [top_row, wf, basic, pal_group, hist_group]
         for g in self._col_groups: g.pack_forget()
-        for g in self._col_groups: g.pack(expand=True)                                   # (each centred in its share)
+        # spaced out a little (up to a set gap, less on a short panel), the whole block kept centred top to bottom: a tall panel
+        # (full screen, studio expanded) adds room above and below the block, not big holes between its parts
+        sp_top = tk.Frame(CV, height=0, bg=R["bg"]); sp_bot = tk.Frame(CV, height=0, bg=R["bg"])
+        T.on_change(lambda: (sp_top.configure(bg=R["bg"]), sp_bot.configure(bg=R["bg"])))
+        sp_top.pack(fill="both", expand=True)
+        for g in self._col_groups: g.pack()
+        sp_bot.pack(fill="both", expand=True)
+        def col_gaps():
+            try:
+                free = CV.winfo_height() - sum(g.winfo_reqheight() for g in self._col_groups)
+                gap = max(2, min(self._apx(16), free // (len(self._col_groups) + 1)))
+                for i, g in enumerate(self._col_groups): g.pack_configure(pady=(0 if i == 0 else gap, 0))
+            except tk.TclError: pass
+        CV.bind("<Configure>", lambda e: T.defer(self, "colgaps", 40, col_gaps), add="+")
         self._right_view({"Layers": "Options"}.get(prefs.get("draw_right_view"), prefs.get("draw_right_view")) if prefs.get("draw_right_view") in ("Color", "Layers", "Options") else "Color")
 
     @staticmethod
