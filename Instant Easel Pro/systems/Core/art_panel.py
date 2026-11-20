@@ -19,7 +19,7 @@ def src(name): return UA.load("panel/" + name)
 def photo(key, make):
     """a cached PhotoImage (make() builds the PIL picture the first time)"""
     if key not in _ph:
-        if len(_ph) > 900: _ph.clear()
+        if len(_ph) > 4000: _ph.clear()
         _ph[key] = ImageTk.PhotoImage(make())
     return _ph[key]
 

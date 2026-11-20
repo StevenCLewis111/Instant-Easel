@@ -93,7 +93,7 @@ def picture(text, W, H, pt, state="normal", ring=False, piece="rainbow"):
         d.text((W / 2, H / 2), text, font=_pil_font(px), anchor="mm", fill=(245, 245, 250) if state != "disabled" else (170, 170, 180),
                stroke_width=max(1, round(H / 15)), stroke_fill=(8, 12, 40))
     im = ringed(im, ring, key=("btn",) + key)
-    if len(_ph) > 600: _ph.clear()
+    if len(_ph) > 4000: _ph.clear()
     _ph[key] = ImageTk.PhotoImage(im); return _ph[key]
 
 def select(w, on):

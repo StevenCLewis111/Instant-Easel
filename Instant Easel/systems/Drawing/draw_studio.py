@@ -971,7 +971,7 @@ class DrawStudio(StudioExtras, tk.Frame):
             if self._tile_soon.get(key): im = self._soon(im)
             th = h
         ph = ImageTk.PhotoImage(im); self._tile_ph[key] = ph
-        if len(self._tile_cache) > 1500: self._tile_cache.clear()
+        if len(self._tile_cache) > 5000: self._tile_cache.clear()
         self._tile_cache[ck] = ph; self.tiles[key].configure(image=ph, width=self._tw, height=th)
 
     def _set_icon(self, lb, name):

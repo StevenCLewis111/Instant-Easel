@@ -293,7 +293,9 @@ class InstantEasel(tk.Tk):
             self.logo_lbl.grid_configure(padx=f"{max(0, 2 * shift)} {max(0, -2 * shift)}")      # measured pixels, passed as text so zoom leaves them alone
             lh = int(round(150 * T.Z))
             if abs(self.logo.width() - tw) > 1 or self.logo.height() != lh:
-                self._logo_pil = self.logo_src.resize((tw, lh), Image.LANCZOS)
+                lc = self.__dict__.setdefault("_logo_cache", {})                               # sizes seen before (switching modes back and forth) are kept
+                if (tw, lh) not in lc: lc[(tw, lh)] = self.logo_src.resize((tw, lh), Image.LANCZOS)
+                self._logo_pil = lc[(tw, lh)]
                 self.logo = ImageTk.PhotoImage(self._logo_pil); self.logo_lbl.configure(image=self.logo)
                 self.update_idletasks()
         for lbl in self.mascot_lbl.values(): lbl.configure(image="", width=0, height=0)   # the old-size pictures would hold the header tall
@@ -315,7 +317,9 @@ class InstantEasel(tk.Tk):
             self._mdz = getattr(self, "_mdz", {})
             if abs(self.view_cv.winfo_width() - fw) <= 4 and abs(self.view_cv.winfo_height() - fh) <= 4: self._mdz[col] = src.height * k / T.Z   # the windowed size (design pixels)...
             elif col in self._mdz: k = min(h, self._mdz[col] * T.Z) / src.height           # ...kept, scaled, at every other window size
-            im = src.resize((max(1, int(src.width * k)), max(1, int(src.height * k))), Image.LANCZOS)
+            mc = self.__dict__.setdefault("_mascot_cache", {}); mk = (col, max(1, int(src.width * k)), max(1, int(src.height * k)))
+            if mk not in mc: mc[mk] = src.resize(mk[1:], Image.LANCZOS)
+            im = mc[mk]
             over = int(self.frame.cget("highlightthickness")) - (body_y - im.height)   # rows that would reach the top border or above it
             if over > 0: im = im.crop((0, over, im.width, im.height))            # cut those off, so nothing shows on or above the top line
             self._mph[col] = ImageTk.PhotoImage(im); self.mascot_lbl[col].configure(image=self._mph[col], width=0, height=0)   # 0 = the picture's own size
@@ -327,7 +331,7 @@ class InstantEasel(tk.Tk):
             self._fit_tries = getattr(self, "_fit_tries", 0) + 1; return self.after(30, self._size_mascots)    # the layout moved: measure once more
         self._fit_tries = 0
         self._paint_header()
-        if not getattr(self, "_settling", False):                                # once more when the window has settled (sizes read mid-resize are stale)
+        if not getattr(self, "_settling", False) and not getattr(self, "_in_transition", False):   # once more when the window has settled (a mode change has already waited)
             self._settling = True
             self.after(150, lambda: (self._size_mascots(), setattr(self, "_settling", False)))
 
@@ -338,6 +342,8 @@ class InstantEasel(tk.Tk):
     def _header_band(self, W, H):
         key = (W, H, T.PALETTE["panel"])
         if getattr(self, "_hband_key", None) == key: return self._hband
+        bc = self.__dict__.setdefault("_hband_cache", {})                         # the header for sizes seen before (switching modes back and forth)
+        if key in bc: self._hband, self._hband_key, self._hcache = bc[key]; return self._hband
         src = getattr(self, "_hsrc", None)
         if src is None:
             try: src = self._hsrc = Image.open(paths.ui("Header", "header-background.png")).convert("RGBA")
@@ -348,7 +354,9 @@ class InstantEasel(tk.Tk):
         top = min(round(s.height * self.HEADER_CROP), s.height - H); band = s.crop((0, top, W, top + H))
         rgb = ImageEnhance.Brightness(band.convert("RGB")).enhance(self.HEADER_DIM).convert("RGBA"); rgb.putalpha(band.getchannel("A"))
         out = Image.new("RGBA", (W, H), T.PALETTE["panel"]); out.alpha_composite(rgb)
-        self._hband, self._hband_key = out, key; self._hcache = {}; return out
+        self._hband, self._hband_key = out, key; self._hcache = {}
+        if len(bc) > 4: bc.clear()
+        bc[key] = (out, key, self._hcache); return out
 
     def _hbox(self, w):
         """where a widget sits on the header picture"""
@@ -426,15 +434,18 @@ class InstantEasel(tk.Tk):
             if i < steps: self.after(16, fade, i + 1)
         fade()
 
-    def _settle(self, timeout=1.5):
-        """wait until the window has its final size (a maximize can arrive in steps), then zoom once"""
-        end = time.monotonic() + timeout; last = None; same = 0
+    def _settle(self, timeout=1.5, quick=False):
+        """wait until the window has its final size (a maximize can arrive in steps), then zoom once.
+        quick: a mode change: done as soon as the size has changed and held for two looks (or held from the start for a few)"""
+        end = time.monotonic() + timeout; last = None; same = 0; first = None
         while time.monotonic() < end:
             self.update()
             size = (self.view_cv.winfo_width(), self.view_cv.winfo_height())
+            if first is None: first = size
             same = same + 1 if size == last else 0; last = size
-            if same >= 3 and size[0] > 50: break
-            time.sleep(0.015)
+            if quick and size[0] > 50 and ((size != first and same >= 2) or same >= 6): break
+            if not quick and same >= 3 and size[0] > 50: break
+            time.sleep(0.01 if quick else 0.015)
         if self._zoom_job: self.after_cancel(self._zoom_job); self._zoom_job = None
         self._rezoom(now=True)
 
@@ -531,6 +542,7 @@ class InstantEasel(tk.Tk):
         first size change until the new zoom is finished, so a maximize / restore shows the old layout, then the new one: no steps between"""
         if self._zoom_job: self.after_cancel(self._zoom_job)
         self._layout_view()
+        if getattr(self, "_in_transition", False): self._zoom_job = None; return  # a mode change zooms once, when the size has settled
         self._zoom_job = self.after_idle(self._rezoom)                        # as soon as the size has arrived (several size events = one zoom)
 
     def _rezoom(self, now=False):
@@ -558,9 +570,8 @@ class InstantEasel(tk.Tk):
         self._in_transition = True
         try:
             self._hide(); self.update_idletasks()
-            change(); self._settle(0.9)
+            change(); self._settle(0.5, quick=True)                               # (it zooms once for the new size at the end)
             if self._zoom_job: self.after_cancel(self._zoom_job); self._zoom_job = None
-            self._rezoom(); self.update_idletasks()
         finally:
             self._in_transition = False; self._unhide(steps=4)
 
