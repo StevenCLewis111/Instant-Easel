@@ -39,7 +39,7 @@ TOOLBAR = {
     "new": "buttons/new", "open": "buttons/open", "picture": "buttons/last", "save": "buttons/save", "send": "buttons/send",
     "undo": "toolbar/undo", "redo": "toolbar/redo", "zoom in": "toolbar/zoom_in", "zoom out": "toolbar/zoom_out",
     "brush": "toolbar/brush", "eraser": "toolbar/eraser", "eyedropper": "toolbar/color", "paint bucket": "toolbar/bucket", "text": "toolbar/text",
-    "restore": "toolbar/win_restore", "maximize": "toolbar/win_max",       # the studio-size button: double square = make bigger, square = back
+    "restore": "toolbar/win_restore", "maximize": "toolbar/win_max",       # the studio-size button: single square at normal size, double square expanded
     "fit": "toolbar/fit", "line": "toolbar/shape_line", "rect": "toolbar/shape_rect", "oval": "toolbar/shape_oval",
     "select rect": "toolbar/select_rect", "select oval": "toolbar/select_oval", "crop": "toolbar/crop",          # selection and crop tools
     "mirror": "toolbar/mirror", "toggle_on": "toolbar/toggle_on", "toggle_off": "toolbar/toggle_off",   # mirror icon and its on/off switch

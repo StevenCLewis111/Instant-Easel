@@ -82,25 +82,36 @@ class DrawStudio(StudioExtras, tk.Frame):
             if self._tb:                                                           # a stretchy gap before every item but the first: all gaps equal
                 g = tk.Frame(bar, width=2, height=1, bg=self["bg"]); g.pack(side="left", fill="x", expand=True); T.on_change(lambda g=g: g.configure(bg=self["bg"]))
             w.pack(side="left"); self._tb.append((w, kind, icon)); return w
-        for text, cmd, kind, ic in (("New", lambda: self.new(*self.size_wh), "danger", "new"), ("Open", self.open, "normal", "open"),
-                                    ("Save", self.save, "normal", "save")):
-            add(T.Button(bar, text, cmd, kind=kind), "file", ic)
-        for tip, cmd, ic in (("Undo (Ctrl+Z)", self.undo, "undo"), ("Redo (Ctrl+Y)", self.redo, "redo"), ("Zoom out (mouse wheel)", lambda: self.zoom_by(1 / 1.25), "zoom out"),
-                             ("Zoom in (mouse wheel)", lambda: self.zoom_by(1.25), "zoom in"), ("Fit to the window (right-drag pans)", self.fit, "fit")):
-            add(self._tip(T.Button(bar, "", cmd), tip), "icon", ic)
+        # left to right: file, undo / redo, view, cut-outs, painting tools, shapes, zoom, text (then mirror and the studio-size button)
+        files = {"new": ("New", lambda: self.new(*self.size_wh), "danger", "New picture"), "open": ("Open", self.open, "normal", "Open a picture"),
+                 "save": ("Save", self.save, "normal", "Save the picture")}
+        icons = {"undo": ("Undo (Ctrl+Z)", self.undo), "redo": ("Redo (Ctrl+Y)", self.redo), "fit": ("Fit to window (right-drag moves the view)", self.fit),
+                 "zoom out": ("Zoom out (mouse wheel)", lambda: self.zoom_by(1 / 1.25)), "zoom in": ("Zoom in (mouse wheel)", lambda: self.zoom_by(1.25))}
+        names = {"brush": "Paint brush", "eraser": "Eraser", "pick": "Color picker (click the picture to take its color)", "fill": "Fill (paint bucket)",
+                 "line": "Draw line", "rect": "Draw rectangle", "oval": "Draw circle", "text": "Text", "sel_rect": "Select area (rectangle)",
+                 "sel_oval": "Select area (circle)", "crop": "Crop"}
+        keys = {tool: key for _, tool, key in TOOLS}
+        order = ["new", "open", "save", "undo", "redo", "fit", "crop", "sel_rect", "sel_oval", "brush", "fill", "pick", "eraser",
+                 "line", "rect", "oval", "zoom out", "zoom in", "text"]
         self.tool_btns = {}
-        for label, tool, key in TOOLS:
-            self.tool_btns[tool] = add(self._tip(T.Button(bar, "", lambda t=tool: self.set_tool(t)), label + (f" ({key.upper()})" if key else "")), "icon", TOOL_ICONS.get(tool))
+        for k in order:
+            if k in files:
+                text, cmd, kind, tip = files[k]; add(self._tip(T.Button(bar, text, cmd, kind=kind), tip), "file", k)
+            elif k in icons:
+                tip, cmd = icons[k]; add(self._tip(T.Button(bar, "", cmd), tip), "icon", k)
+            else:
+                tip = names[k] + (f"  ({keys[k].upper()})" if keys.get(k) else "")
+                self.tool_btns[k] = add(self._tip(T.Button(bar, "", lambda t=k: self.set_tool(t)), tip), "icon", TOOL_ICONS.get(k))
         r = tk.Frame(bar, bg=self["bg"]); T.on_change(lambda: r.configure(bg=self["bg"]))
-        self._mirror_lbl = self._tip(T.Text(r, ""), "Mirror (left-right)"); self._mirror_lbl.pack(side="left")
+        self._mirror_lbl = self._tip(T.Text(r, ""), "Mirror: paint both sides at once (left-right)"); self._mirror_lbl.pack(side="left")
         if UA.toolbar("toggle_on") is not None and UA.toolbar("toggle_off") is not None:     # painted on/off switch
             self._mirror_sw = tk.Label(r, bg=self["bg"], cursor="hand2", bd=0, highlightthickness=0); self._mirror_sw.pack(side="left", padx=4)
             self._mirror_sw.bind("<Button-1>", lambda e: self.mirror.set(not self.mirror.get()))
             self.mirror.trace_add("write", lambda *a: self._mirror_switch()); T.on_change(lambda: self._mirror_sw.configure(bg=self["bg"]))
-            self._tip(self._mirror_sw, "Mirror (left-right)")
+            self._tip(self._mirror_sw, "Mirror on / off")
         else: self._mirror_sw = None; T.Toggle(r, self.mirror).pack(side="left", padx=4)
         add(r, "mirror", "mirror")
-        self._big_btn = add(self._tip(T.Button(bar, "", self.toggle_big), "Studio fills the whole page", key="big"), "icon", "restore")
+        self._big_btn = add(self._tip(T.Button(bar, "", self.toggle_big), "Expand: the studio fills the whole page", key="big"), "icon", "maximize")
         self._fit_job = None; self._size_toolbar(TB_SIZES[-1]); bar.bind("<Configure>", lambda e: self._fit_toolbar())
 
     def _size_toolbar(self, size):
@@ -108,7 +119,7 @@ class DrawStudio(StudioExtras, tk.Frame):
         if size == self._tb_size: return
         self._tb_size = size; ic, fs, pad = size; px = max(10, int(round(ic * T.Z))); hpx = px + 2 * max(1, int(round(pad * T.Z))); self._art_h = hpx
         for w, kind, icon in self._tb:
-            if w is self._big_btn: icon = "maximize" if self._big else "restore"
+            if w is self._big_btn: icon = "restore" if self._big else "maximize"     # normal size: single square, expanded: double square
             art = UA.toolbar(icon, h=hpx) if kind in ("file", "icon") else None
             if art is not None: self._art_button(w, art); continue                 # painted picture: it is the whole button
             if kind == "file": w.configure(font=T.f(fs), padx=pad + 2, pady=pad); self._with_icon(w, icon, px)
@@ -200,10 +211,10 @@ class DrawStudio(StudioExtras, tk.Frame):
             if hasattr(m, "_zreapply"):
                 for w in [w for w, _, _ in self._hidden] + [w for w, _, _ in self._tight]: m._zreapply(w, T.Z)
             self._hidden = []; self._tight = []; self._big = False
-        icon = "maximize" if self._big else "restore"; art = UA.toolbar(icon, h=getattr(self, "_art_h", 30))     # double square -> single square
+        icon = "restore" if self._big else "maximize"; art = UA.toolbar(icon, h=getattr(self, "_art_h", 30))     # normal size: single square, expanded: double square
         if art is not None: self._art_button(self._big_btn, art)
         else: self._with_icon(self._big_btn, icon, getattr(self, "_icon_px", 18))
-        self._tipsets["big"]("Back to normal size (Esc)" if self._big else "Studio fills the whole page")
+        self._tipsets["big"]("Back to normal size (Esc)" if self._big else "Expand: the studio fills the whole page")
         self.update_idletasks(); self.cv.focus_set()                          # the view keeps its place (see _cv_resized)
 
     def _fixed_width(self, panel, design_w):
