@@ -284,6 +284,16 @@ class DrawStudio(StudioExtras, tk.Frame):
             b = skin.button(small(T.Button(sw, name, lambda n=name: self._left_view(n), width=10)), piece="bar"); b.pack(side="left", expand=True); self.view_btns[name] = b
         self.lib_view = tk.Frame(L, bg=L["bg"]); self.opt_view = tk.Frame(L, bg=L["bg"])
         T.on_change(lambda: (self.lib_view.configure(bg=L["bg"]), self.opt_view.configure(bg=L["bg"])))
+        sw.pack_configure(pady=(0, 9))                                                # room for the line under Brushes / Adjustments
+        lline = T.Line(L)                                                            # the line under the two buttons, edge to edge (like the right side)
+        def lborder(e=None):
+            try:
+                e_ = int(float(L.cget("bd"))) + int(float(L.cget("highlightthickness")))
+                px_, py_ = e_ + int(float(L.cget("padx"))), e_ + int(float(L.cget("pady"))); t_ = max(1, int(round(T.Z)))
+                y = sw.winfo_rooty() + sw.winfo_height() - L.winfo_rooty() - py_ + 4
+                lline.place(x=-px_ + e_, y=y, width=L.winfo_width() - 2 * e_, height=t_); lline.lift()
+            except tk.TclError: pass
+        for w_ in (sw, L): w_.bind("<Configure>", lambda e: L.after_idle(lborder), add="+")
         pinned = self._pinned = tk.Frame(L, bg=L["bg"]); pinned.pack(side="bottom", fill="x"); T.on_change(lambda: pinned.configure(bg=L["bg"]))
         self._art_by_engine = {}                                                     # brush -> its painted tile or preview strip (shown under its name)
         box = T.ScrollBox(self.lib_view, bg="panel2"); box.pack(fill="both", expand=True, pady=(0, 4))    # boxed list: wheel anywhere inside, slider sized to the list
