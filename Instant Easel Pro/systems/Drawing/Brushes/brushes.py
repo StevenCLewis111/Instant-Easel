@@ -34,21 +34,27 @@ def tip_round(s, hard=0.8, roundness=1.0, angle=0.0, **k):
     r = np.sqrt(x * x + y * y) * (s / (s + 1.0))
     return (np.clip((1 - r) / max(1e-3, 1 - hard), 0, 1) * (r <= 1)).astype(np.float32)
 
-def tip_soft(s, roundness=1.0, angle=0.0, **k):
+def tip_soft(s, roundness=1.0, angle=0.0, hard=0.0, **k):
+    """an airbrush tip: a soft glow. Hardness makes a solid middle that much of the radius, with the soft edge outside it"""
     y, x = np.mgrid[-1:1:s * 1j, -1:1:s * 1j]
     if roundness < 0.99:
         ca, sa = math.cos(angle), math.sin(angle); x, y = x * ca + y * sa, (-x * sa + y * ca) / max(0.05, roundness)
-    return np.clip(np.exp(-(x * x + y * y) * 4.5) - 0.01, 0, 1).astype(np.float32)
+    r = np.sqrt(x * x + y * y); hard = min(0.95, max(0.0, hard)); u = np.clip((r - hard) / (1 - hard), 0, None)
+    return np.clip(np.exp(-u * u * 4.5) - 0.01, 0, 1).astype(np.float32)
 
 def tip_ellipse(s, aspect=0.35, angle=0.0, hard=0.85, **k):
     y, x = np.mgrid[-1:1:s * 1j, -1:1:s * 1j]; ca, sa = math.cos(angle), math.sin(angle)
     u, v = x * ca + y * sa, (-x * sa + y * ca) / aspect; r = np.sqrt(u * u + v * v)
     return (np.clip((1 - r) / max(1e-3, 1 - hard), 0, 1) * (r <= 1)).astype(np.float32)
 
-def tip_rect(s, aspect=0.25, angle=0.0, **k):
+def tip_rect(s, aspect=0.25, angle=0.0, hard=None, **k):
+    """a flat tip. hard (Hardness): how much of it is solid; the rest fades to its edges (None: crisp, a one-pixel soft edge)"""
     y, x = np.mgrid[-1:1:s * 1j, -1:1:s * 1j]; ca, sa = math.cos(angle), math.sin(angle)
     u, v = x * ca + y * sa, -x * sa + y * ca
     soft = 2.0 / max(s, 2)                                               # a one-pixel soft edge (no jaggies)
+    if hard is not None and hard < 0.97:
+        su, sv = max(soft, (1 - hard) * 0.95), max(soft, (1 - hard) * aspect)
+        return (np.clip((0.95 - np.abs(u)) / su, 0, 1) * np.clip((aspect - np.abs(v)) / sv, 0, 1)).astype(np.float32)
     return (np.clip((0.95 - np.abs(u)) / soft + 0.5, 0, 1) * np.clip((aspect - np.abs(v)) / soft + 0.5, 0, 1)).astype(np.float32)
 
 def tip_bristles(s, n=14, aspect=0.3, angle=0.0, seed=0, **k):
@@ -75,6 +81,8 @@ def tip_sponge(s, seed=0, **k):
 
 def tip_shape(s, kind="star", angle=0.0, **k): return ART.shape_mask(kind, s, angle)
 
+HARD_TIPS = (tip_round, tip_ellipse, tip_rect, tip_soft)                  # tips Hardness and Round change (made from a formula;
+                                                                         # pictured tips - bristles, sponge, fan, shapes, stamps - aren't)
 _tips = {}
 def _tip(fn, s, ta):
     """tips are made once per size / angle and kept (making them for every dab was the slowest part of painting)"""
@@ -219,8 +227,8 @@ def blend_rgb(base, top, mode):
     elif mode == "soft light": r = np.where(Tp < 0.5, B - (1 - 2 * Tp) * B * (1 - B), B + (2 * Tp - 1) * (np.where(B < 0.25, ((16 * B - 12) * B + 4) * B, np.sqrt(B)) - B))
     elif mode == "darken": r = np.minimum(B, Tp)
     elif mode == "lighten": r = np.maximum(B, Tp)
-    elif mode == "color dodge": r = np.where(Tp >= 0.999, 1.0, np.minimum(1.0, B / np.maximum(1 - Tp, 1e-3)))
-    elif mode == "color burn": r = np.where(Tp <= 0.001, 0.0, 1 - np.minimum(1.0, (1 - B) / np.maximum(Tp, 1e-3)))
+    elif mode == "color dodge": r = np.where(B <= 0.001, 0.0, np.where(Tp >= 0.999, 1.0, np.minimum(1.0, B / np.maximum(1 - Tp, 1e-3))))   # (W3C: black stays black)
+    elif mode == "color burn": r = np.where(B >= 0.999, 1.0, np.where(Tp <= 0.001, 0.0, 1 - np.minimum(1.0, (1 - B) / np.maximum(Tp, 1e-3))))   # (white stays white)
     elif mode == "add": r = np.minimum(1.0, B + Tp)
     elif mode == "subtract": r = np.maximum(0.0, B - Tp)
     elif mode == "difference": r = np.abs(B - Tp)
@@ -276,8 +284,9 @@ class Canvas:
             arr, how, k, tname = tex; th, tw = arr.shape; t = arr[np.arange(cy0, cy1)[:, None] % th, np.arange(cx0, cx1)[None, :] % tw]
             if how == "color":
                 own = ART.TEX_COLORS.get(tname) if self.texture_own_colors else None
-                c = np.asarray(own if own is not None else col, np.float32); col = np.clip(c * (0.45 + 0.8 * t[..., None]) + 18 * (t[..., None] - 0.5), 0, 255)
-            elif how == "pattern": m = m * t
+                c = np.asarray(own if own is not None else col, np.float32); tx = np.clip(c * (0.45 + 0.8 * t[..., None]) + 18 * (t[..., None] - 0.5), 0, 255)
+                col = c + (tx - c) * k                                        # Texture (strength): 0 = plain colour, 100% = the full texture
+            elif how == "pattern": m = m * (1 - k + k * t)                    # 0 = a plain stroke, 100% = only the motif
             else: m = m * (1 - k + k * t)
         if self._wash is not None and (mode in BLEND_MODES or mode == "erase"): self._wash_dab(cy0, cy1, cx0, cx1, m, col, mode)
         else: self._blend(cy0, cy1, cx0, cx1, m * self._op, col, mode)
@@ -309,9 +318,8 @@ class Canvas:
         m3 = m[..., None]; c = np.asarray(color, np.float32)
         if ra is not None:
             if mode == "erase": self.alpha[y0:y1, x0:x1] = (ra * (1 - m3))[..., 0]; self.a[y0:y1, x0:x1] = reg; return
-            if mode != "normal":
-                under = np.where(ra > 0.002, reg, 255.0)                      # an empty layer acts as white for the blend modes
-                new = blend_rgb(under, c, mode)
+            if mode != "normal":                                              # the standard (W3C / Photoshop) way: the mode mixes with what's
+                new = (1 - ra) * c + ra * blend_rgb(reg, c, mode)             # on the layer; where the layer is empty, the paint's own colour
             else: new = c
             keep = ra * (1 - m3); out_a = keep + m3
             self.a[y0:y1, x0:x1] = (reg * keep + new * m3) / np.maximum(out_a, 1e-4); self.alpha[y0:y1, x0:x1] = out_a[..., 0]; return
@@ -371,7 +379,10 @@ class Canvas:
                 sm.append((x, y, p, math.atan2(vy, vx), dist))
             state["dir"] = (vx, vy); state["dist"] = dist; state["last"] = (lx, ly); state["ang"] = sm[-1][3]
             out = [q[:4] for q in sm]; travel = [q[4] for q in sm]
-        src = self.a.copy() if sp == "clone" else None
+        src = None
+        if sp == "clone":                                                    # copy from the layer as it was when the stroke began
+            src = (self._wash["base_a"], self._wash["base_al"]) if self._wash is not None else (self.a.copy(), None if self.alpha is None else self.alpha.copy())
+        prev = state.get("prev") if state is not None else None             # the last dab (smudge drags from there), across pieces
         tex = None
         if b["tex"]: tex = ((ART.pattern(b["tex"]) if b["tex_mode"] == "pattern" else ART.texture(b["tex"])), b["tex_mode"], b["tex_strength"], b["tex"])
         base_col = np.asarray(color, np.float32)
@@ -382,7 +393,7 @@ class Canvas:
             else: tp = 1.0
             szf = (1 - b["size_press"] * (1 - p)) * tp; opf = 1 - b["opac_press"] * (1 - p)
             if b["opacity_jitter"]: opf *= 1 - self.rng.uniform(0, b["opacity_jitter"])
-            s = max(1, int(round(size * b["size_scale"] * szf * (1 + self.rng.uniform(-b["jitter_size"], b["jitter_size"]) if b["jitter_size"] else 1))))
+            s = max(1, int(round(size * b["size_scale"] * szf * ((1 - 0.95 * self.rng.uniform(0, min(1.0, b["jitter_size"]))) if b["jitter_size"] else 1))))   # Size Jitter: down to 5% at 100%, never bigger
             ta = dict(b["tipargs"])
             if b["angle_follow"]: ta["angle"] = ang + math.pi / 2 + ta.get("angle", 0)
             if b["jitter_angle"]: ta["angle"] = ta.get("angle", 0) + self.rng.uniform(-b["jitter_angle"], b["jitter_angle"])
@@ -402,9 +413,9 @@ class Canvas:
                     rgb = np.clip(col[None, None, :] * np.clip(lum / max(ref, 1), 0.6, 1.25)[..., None], 0, 255)
                 self._dab(x + dx, y + dy, mask, rgb, b["flow"] * opf, b["mode"], 0); continue
             mask = _tip(b["tip"], s, ta)
-            if sp == "smudge":                                           # drag the colour under the brush along
-                if i: self._blend_direct(x, y, mask, self.a[int(np.clip(out[i - 1][1], 0, self.h - 1)), int(np.clip(out[i - 1][0], 0, self.w - 1))], 0.6 * opacity)
-                continue
+            if sp == "smudge":                                           # drag the paint under the brush along (like a finger through wet paint)
+                if prev is not None: self._smear(x, y, prev[0], prev[1], mask, min(1.0, 0.9 * opacity * opf))   # Opacity is the strength
+                prev = (x, y); continue
             if sp in ("blur", "sharpen"): self._filter_dab(x, y, s, opacity * opf, sp); continue
             if sp == "deform":                                           # push paint in the stroke direction
                 if i:
@@ -414,20 +425,19 @@ class Canvas:
                         if 0 <= tx and 0 <= ty and tx + s < self.w and ty + s < self.h:
                             mm = mask[..., None] * 0.5 * opacity; self.a[ty:ty + s, tx:tx + s] = self.a[ty:ty + s, tx:tx + s] * (1 - mm) + reg * mm
                 continue
-            if sp == "clone":                                            # stamp from an offset source
-                sx, sy = int(x - 140), int(y)
-                if 0 <= sx - s // 2 and sx + s // 2 < self.w:
-                    reg = src[max(0, sy - s // 2):max(0, sy - s // 2) + s, sx - s // 2:sx - s // 2 + s]
-                    if reg.shape[:2] == mask.shape: self._blend_direct(x, y, mask, reg.mean((0, 1)), opacity)
-                continue
+            if sp == "clone":                                            # paint with a copy of another part of the layer (Alt-click picks it)
+                off = b.get("clone_off")
+                if off is None: continue
+                P = self._patch(src[0], x + off[0], y + off[1], s, 0.0); PA = self._patch(src[1], x + off[0], y + off[1], s, 0.0) if src[1] is not None else 1.0
+                self._dab(x, y, mask * PA, P, b["flow"] * opf, "normal", 0); continue
             if sp == "spray":
                 for _ in range(10):
-                    rr = size * 0.7; ox, oy = self.rng.gauss(0, rr * 0.5), self.rng.gauss(0, rr * 0.5); ds = max(2, int(self.rng.uniform(1, 4)))
-                    self._dab(x + ox, y + oy, _tip(tip_round, ds, {"hard": 1}), col, b["flow"] * opf, "normal", 0)
+                    rr = s * 0.7; ox, oy = self.rng.gauss(0, rr * 0.5), self.rng.gauss(0, rr * 0.5); ds = max(2, int(self.rng.uniform(1, 4)))   # (s: pressure / jitter change the spray's spread)
+                    self._dab(x + dx + ox, y + dy + oy, _tip(tip_round, ds, {"hard": 1}), col, b["flow"] * opf, "normal", 0)
                 continue
             if sp == "neon":                                             # a wide soft glow, then a bright core
-                g = _tip(tip_soft, max(3, int(s * 2.4)), {}); self._blend_direct(x, y, g, col, 0.06 * opacity)
-                core = _tip(tip_round, max(2, int(s * 0.38)), {"hard": 0.7}); self._dab(x, y, core, np.clip(col * 0.35 + 255 * 0.65, 0, 255), opf, "normal", 0)
+                g = _tip(tip_soft, max(3, int(s * 2.4)), {}); self._blend_direct(x + dx, y + dy, g, col, 0.06 * opacity * b["flow"])
+                core = _tip(tip_round, max(2, int(s * 0.38)), {"hard": 0.7}); self._dab(x + dx, y + dy, core, np.clip(col * 0.35 + 255 * 0.65, 0, 255), opf * b["flow"], "normal", 0)
                 continue
             pc = _tipc(b["tip"], s, ta); self._dab(x + dx, y + dy, pc[0], col, b["flow"] * opf, b["mode"], b["grain"], tex, off=pc[1:])
             if sp == "knife":                                            # palette knife: hard edge streaked with the paint beneath
@@ -436,10 +446,31 @@ class Canvas:
                 hi = _tip(tip_rect, s, dict(ta, aspect=0.05)); self._dab(x + dx - math.sin(ang) * s * 0.03, y + dy + math.cos(ang) * s * 0.03, hi, np.clip(col * 0.4 + 255 * 0.6, 0, 255), 0.55, "normal", 0)
             if sp == "drip" and self.rng.random() < min(0.35, 2.2 * step / max(size, 1)):   # now and then a run of paint drips down
                 self._drip(x, y, s, col, opacity)
+        if state is not None: state["prev"] = prev
         if sp == "wet_edge": self._edge_darken(out, size, color, opacity)             # watercolour pools darker at the stroke edge
         if sp == "impasto":                                              # thick paint catches light on one side
             for (x, y, p, ang) in out[::3]:
                 self._dab(x - size * 0.12, y - size * 0.12, _tip(tip_ellipse, max(3, int(size * 0.5)), dict(aspect=0.2, angle=round((ang + math.pi / 2) / 0.03) * 0.03)), (255, 250, 240), 0.18, "normal", 0.3)
+
+    def _patch(self, arr, cx, cy, s, fill):
+        """the s x s piece of arr centred at (cx, cy), placed the way a dab is (fill where it runs off the picture)"""
+        x0, y0 = int(math.floor(cx - s / 2 + 0.5)), int(math.floor(cy - s / 2 + 0.5)); h, w = arr.shape[:2]
+        out = np.full((s, s) + arr.shape[2:], fill, np.float32); a0, b0, a1, b1 = max(0, x0), max(0, y0), min(w, x0 + s), min(h, y0 + s)
+        if a0 < a1 and b0 < b1: out[b0 - y0:b1 - y0, a0 - x0:a1 - x0] = arr[b0:b1, a0:a1]
+        return out
+
+    def _smear(self, x, y, px, py, mask, k):
+        """smudge: the paint at the last dab (px, py) is pushed to (x, y), see-through areas too (paint is dragged into them
+        and they're dragged into paint). k: the strength"""
+        s = mask.shape[0]; x0, y0 = int(math.floor(x - s / 2 + 0.5)), int(math.floor(y - s / 2 + 0.5))
+        a0, b0, a1, b1 = max(0, x0), max(0, y0), min(self.w, x0 + s), min(self.h, y0 + s)
+        if a0 >= a1 or b0 >= b1: return
+        self._touch(a0, b0, a1, b1); sl = (slice(b0, b1), slice(a0, a1)); ms = (slice(b0 - y0, b1 - y0), slice(a0 - x0, a1 - x0))
+        P = self._patch(self.a, px, py, s, 255.0)[ms]; m = (mask[ms] * k)[..., None]
+        if self.alpha is None: self.a[sl] = self.a[sl] * (1 - m) + P * m; return
+        PA = self._patch(self.alpha, px, py, s, 0.0)[ms][..., None]; TA = self.alpha[sl][..., None]
+        na = TA * (1 - m) + PA * m                                         # mixed as premultiplied colour, so see-through moves too
+        self.a[sl] = np.where(na > 1e-4, (self.a[sl] * TA * (1 - m) + P * PA * m) / np.maximum(na, 1e-4), self.a[sl]); self.alpha[sl] = na[..., 0]
 
     def _blend_direct(self, x, y, mask, color, alpha, mode="normal"):
         """a dab straight onto the layer, outside the stroke buffer (smudge, clone, glows)"""

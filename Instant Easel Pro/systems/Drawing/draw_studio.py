@@ -99,7 +99,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         self.opts = {k: None for k in OPT_KEYS}; self._icons = {}
         self.view_rot = 0.0; self.view_flip = False                                 # turning / mirroring the VIEW (the picture itself doesn't change)
         self.lock_alpha = tk.BooleanVar(value=False); self.radial = tk.StringVar(value="Off"); self.stamp_colors = tk.StringVar(value="Their own colors"); self.fill_sample = tk.StringVar(value="All layers")
-        self.gopts = dict(smooth=45.0, tolerance=24.0, feather=0.0); self.my_colors = self._load_my_colors(); self.pic_colors = []
+        self.fill_contig = tk.BooleanVar(value=True); self.gopts = dict(smooth=45.0, tolerance=24.0, feather=0.0); self.my_colors = self._load_my_colors(); self.pic_colors = []
         self.fill_sample = tk.StringVar(value="All layers"); self.grad_to = tk.StringVar(value="Clear"); self.texture_colors = tk.StringVar(value="Their own colors"); self._last_pattern = "checks"; self._poly = None
         self._big = False; self._hidden = []; self._tight = []; self._tipsets = {}     # "studio fills the page" mode                     # None = the brush's own setting
         self._job = None; self.points = []; self._prev = None
@@ -352,10 +352,10 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
     def _slider_row(self, parent, label, value, command, shown):
         """the guide's slider bar: name, slider, value box (type a number + Enter to set it exactly)"""
         r = tk.Frame(parent, bg=parent["bg"]); r.pack(fill="x", pady=1); T.on_change(lambda: r.configure(bg=r.master["bg"]))
-        T.Text(r, label, font=T.f(8), width=9, anchor="w").pack(side="left")
+        lb = T.Text(r, label, font=T.f(8), width=9, anchor="w"); lb.pack(side="left")
         v = tk.StringVar(value=shown); e = T.Entry(r, v, width=5); e.configure(font=T.f(8), justify="center"); e.pack(side="right")
         s = T.PlainSlider(r, value=value, width=98, command=command); s.pack(side="right", padx=3)
-        r.slider, r.var, r.entry = s, v, e; return r
+        r.slider, r.var, r.entry, r.label = s, v, e, lb; return r
 
     def _left(self, body):
         L = self._edged_panel(body, "left"); self.L = L; self._fixed_width(L, LEFT_W)
@@ -459,13 +459,13 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
                 ("flow", "Flow:", 1, 100, "%", "How much paint each dab adds. Low builds up softly; the stroke never goes past your Opacity"),
                 ("hardness", "Hardness:", 0, 100, "%", "Soft or crisp edge"),
                 ("roundness", "Round:", 5, 100, "%", "100% is round; lower squashes the tip flat (turn it with Angle)"),
-                ("angle", "Angle:", 0, 180, "°", "Turns the tip and keeps it that way (it stops following the stroke)"),
-                ("rotation", "Rotate:", 0, 180, "°", "Turns each dab a random amount, up to this"),
-                ("size_jitter", "Jitter:", 0, 100, "%", "Makes each dab a random amount bigger or smaller"),
-                ("scatter", "Scatter:", 0, 300, "%", "Spreads the dabs out from the line you draw"),
-                ("press_size", "Pr. Size:", 0, 100, "%", "How much pressure (a pen, or the mouse's speed) changes the size"),
-                ("press_opacity", "Pr. Opac:", 0, 100, "%", "How much pressure (a pen, or the mouse's speed) changes how see-through it is"),
-                ("texture", "Texture:", 0, 100, "%", "How strongly a texture brush's texture shows")]
+                ("angle", "Angle:", 0, 359, "°", "Turns the tip and keeps it that way (it stops following the stroke). A round tip at Round 100% looks the same at any angle"),
+                ("rotation", "Rotate:", 0, 180, "°", "Angle jitter: turns each dab a random amount, up to this either way"),
+                ("size_jitter", "Jitter:", 0, 100, "%", "Size jitter: each dab a random amount smaller (at 100%, down to a twentieth); never bigger than Size"),
+                ("scatter", "Scatter:", 0, 300, "%", "Spreads the dabs out round the line you draw (both ways), in brush widths"),
+                ("press_size", "Pr. Size:", 0, 100, "%", "How much pressure thins the stroke (100% = down to nothing). A mouse has none: turn on Pressure (by speed) below"),
+                ("press_opacity", "Pr. Opac:", 0, 100, "%", "How much pressure fades the stroke. A mouse has none: turn on Pressure (by speed) below"),
+                ("texture", "Texture:", 0, 100, "%", "Texture depth: how strongly the brush's texture or pattern shows (0 = plain paint). Only brushes with a texture")]
         self.opt_rows = {}
         for key, label, lo, hi, unit, tip in OPTS:
             row = self._slider_row(O, label, 0.5, lambda v, k=key, lo=lo, hi=hi: self._set_opt(k, lo + v * (hi - lo)), "")
@@ -1411,23 +1411,54 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
 
     def _brush_defaults(self, n):
         b = brushes.B.get(n) or {}; ta = b.get("tipargs", {}); flat = b.get("tip") in (brushes.tip_ellipse, brushes.tip_rect)
-        return dict(spacing=round(b.get("spacing", 0.15) * 100), flow=round(b.get("flow", 1.0) * 100), hardness=round(ta.get("hard", 0.85) * 100),
+        return dict(spacing=round(b.get("spacing", 0.15) * 100), flow=round(b.get("flow", 1.0) * 100), hardness=round(ta.get("hard", 0.0 if b.get("tip") is brushes.tip_soft else 0.85) * 100),
                     roundness=round((ta.get("aspect", 0.35) if flat else ta.get("roundness", 1.0)) * 100),
-                    angle=round(math.degrees(ta.get("angle", 0.0))) % 181, rotation=min(180, round(math.degrees(b.get("jitter_angle", 0.0)))),
+                    angle=round(math.degrees(ta.get("angle", 0.0))) % 360, rotation=min(180, round(math.degrees(b.get("jitter_angle", 0.0)))),
                     size_jitter=round(b.get("jitter_size", 0.0) * 100), scatter=round(b.get("scatter", 0.0) * 100),
                     press_size=round(b.get("size_press", 1.0) * 100), press_opacity=round(b.get("opac_press", 0.0) * 100),
                     texture=round(b.get("tex_strength", 0.85) * 100))
+
+    def _opt_applies(self, n):
+        """the Brush Options this brush really uses (the others are greyed out, so no slider ever does nothing):
+        Hardness and Round only change tips made from a formula (not bristles, sponges, fans, shapes, stamps - as in Photoshop);
+        Texture only brushes with a texture or pattern; the special brushes that draw their own way use only Size and Opacity"""
+        b = brushes.B.get(n)
+        if b is None: return set(OPT_KEYS)
+        sp = b["special"]
+        if sp in brushes.MOVING_ONLY: return set()
+        ok = set(OPT_KEYS)
+        if b["stamp"] or b["tip"] not in brushes.HARD_TIPS or sp in ("neon", "spray"): ok -= {"hardness", "roundness"}   # (neon / spray make their own tips)
+        rnd = self.opts.get("roundness") if getattr(self, "opts", None) and n == self.brush else None
+        if rnd is None: rnd = self._brush_defaults(n)["roundness"]
+        if (b["tip"] in (brushes.tip_round, brushes.tip_soft) or sp in ("neon", "spray")) and not b["stamp"] and (rnd >= 99.5 or "roundness" not in ok):
+            ok -= {"angle", "rotation"}                                          # a circle looks the same turned: Angle / Rotate wake up below Round 100%
+        if not b["tex"]: ok.discard("texture")
+        if sp in ("smudge", "blur", "sharpen", "deform"): ok -= {"flow", "scatter"}
+        if sp == "clone": ok.discard("scatter")
+        return ok
 
     def _load_brush_opts(self, n):
         """the sliders show this brush's own settings; nothing is overridden until you move one"""
         self.opts = {k: None for k in OPT_KEYS}
         for k, v in self._brush_defaults(n).items(): self._show_opt(k, v)
+        self._opt_enable()
+
+    def _opt_enable(self):
+        """grey out the Brush Options this brush can't use right now (see _opt_applies)"""
+        ok = self._opt_applies(self.brush); d = self._brush_defaults(self.brush)
+        for k, row in self.opt_rows.items():
+            on = k in ok; row.slider.set_enabled(on); row.label.muted = not on; row.label._style()
+            row.entry.configure(state="normal" if on else "disabled", disabledbackground=row.master["bg"], disabledforeground=T.PALETTE["muted"])
+            if not on: row.var.set("—")
+            elif row.var.get() == "—": self._show_opt(k, self.opts[k] if self.opts.get(k) is not None else d[k])
 
     def _show_opt(self, key, val):
         row = self.opt_rows[key]; lo, hi = row.range; self._sync_slider(row, (val - lo) / (hi - lo)); row.var.set(f"{int(round(val))}{row.unit}")
 
     def _set_opt(self, key, val, sync=False):
+        if key not in self._opt_applies(self.brush): return                     # (greyed out for this brush)
         lo, hi = self.opt_rows[key].range; val = min(hi, max(lo, val)); self.opts[key] = val; self._show_opt(key, val); self._preview()
+        if key == "roundness": self._opt_enable()                               # Angle / Rotate wake up (or go back to sleep)
 
     def _presets(self):
         try: return json.load(open(paths.json_file("draw_brushes.json"), encoding="utf-8"))
@@ -1484,7 +1515,8 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         if o["angle"] is not None:                                                # an angle you set is kept exactly: the tip no longer turns with the stroke
             b["tipargs"]["angle"] = math.radians(o["angle"]); b["angle_follow"] = False
         if self.blend_mode.get() != "Brush default" and b["mode"] != "erase": b["mode"] = self.blend_mode.get().lower()
-        if self.color_mode.get() == "Color Jitter": b["color_jitter"] = max(b["color_jitter"], 0.18)
+        if self.color_mode.get() == "Color Jitter": b["color_jitter"] = max(b["color_jitter"], 0.18); b["hue_jitter"] = max(b["hue_jitter"], 0.04)   # hue and brightness, each dab
+        if b["special"] == "clone": b["clone_off"] = getattr(self, "_clone_off", None)
         return b
 
     def _stroke_color(self):
@@ -1731,6 +1763,12 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
             if r: self._recomp(r); self._draw()
             return
         if t == "text" or t in SEL_TOOLS or t == "crop": return self.x_down(e, p)     # text box, selection, crop (studio_extras)
+        if t == "brush" and brushes.B.get(self.brush, {}).get("special") == "clone":
+            if getattr(e, "state", 0) & 0x20008:                                 # Alt-click: copy from here
+                self._clone_src = (p[0], p[1]); self._clone_off = None
+                T.banner(self.app, "CLONE SOURCE SET — now paint where the copy should go", "success"); return
+            if getattr(self, "_clone_src", None) is None: T.banner(self.app, "CLONE — Alt-click where to copy from first"); return
+            if getattr(self, "_clone_off", None) is None: self._clone_off = (self._clone_src[0] - p[0], self._clone_src[1] - p[1])   # (kept for later strokes: Aligned)
         self._begin_edit(); self.points = [p]; self._pending = []; self._last_pt = p
         if t in ("brush", "eraser"): self.cur.cv.begin_stroke(self._edit[1], self._edit[2])   # one stroke: never more than your Opacity
         self._stroke_state = {}; self._smooth_pt = p; self._smooth_pr = 1.0                 # one stroke: smoothed direction, position and pressure
@@ -1876,8 +1914,9 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         if self.fill_sample.get() == "This layer":
             L = self.cur.cv; src = np.dstack([L.a * L.alpha[..., None], L.alpha[..., None] * 255]).astype(np.float32)
         else: src = self._comp.astype(np.float32)
-        tol = 1 + self.gopts["tolerance"] / 100 * 255 * src.shape[2] * 0.45
-        same = np.abs(src - src[y, x]).sum(2) < tol; lab, _ = label(same); m = lab == lab[y, x]
+        same = np.abs(src - src[y, x]).max(2) <= self.gopts["tolerance"] / 100 * 255 + 0.5   # Tolerance: how far each channel may differ
+        if self.fill_contig.get(): lab, _ = label(same); m = lab == lab[y, x]          # joined-up only (Photoshop's Contiguous)
+        else: m = same
         m = binary_dilation(m, iterations=1).astype(np.float32) * self.opacity          # covers the anti-aliased edge
         k = self._sel_full()
         if k is not None: m = m * k                                                  # inside the selection only
@@ -1886,7 +1925,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         self.cur.cv._blend(0, h, 0, w, m, self.color, "normal")
 
     def _gradient(self, a, b, radial=False):
-        """your colour fading to clear: along the line you dragged (Gradient) or out from where you started (Gradient Fill)"""
+        """your colour fading to clear: along the line you dragged (Gradient) or out from where you started (Radial Gradient)"""
         w, h = self.size_wh; dx, dy = b[0] - a[0], b[1] - a[1]; L2 = dx * dx + dy * dy
         if L2 < 4: return
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)

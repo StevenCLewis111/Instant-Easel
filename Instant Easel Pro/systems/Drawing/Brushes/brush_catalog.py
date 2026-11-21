@@ -89,7 +89,7 @@ SECTIONS = [
     ("Stamps", "tiles", [_b(n, "stamp " + n.lower(), kind="stamp") for n in __import__("brush_art").stamp_names()]),   # one per picture in images/UI/Stamps
     ("Paint Tools", "tiles", [
         _b("Gradient", "tool:gradient", kind="tool", tool="gradient", look=dict(fx="rainbow")),
-        _b("Gradient Fill", "tool:gradient fill", kind="tool", tool="gradient_radial", look=dict(fx="gradfill")),
+        _b("Radial Gradient", "tool:gradient fill", kind="tool", tool="gradient_radial", look=dict(fx="gradfill")),
         _b("Pattern Fill", "tool:pattern fill", kind="tool", tool="pattern_fill", look=dict(fx="pattern", pat="checks", col=(150, 80, 40))),
         _b("Magic Wand", "tool:magic wand", kind="tool", tool="wand", look=dict(fx="icon", icon="Magic Wand")),
         _b("Lasso", "tool:lasso", kind="tool", tool="sel_lasso", look=dict(fx="shape", shape="freehand")),

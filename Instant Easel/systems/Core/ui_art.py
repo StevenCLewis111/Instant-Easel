@@ -177,7 +177,7 @@ PREVIEWS = {
     'Patterns:Chevron': 'previews/patterns/chevron',
     'Patterns:Waves': 'previews/patterns/waves',
     # Paint Tools
-    'Paint Tools:Gradient Fill': 'previews/paint_tools/gradient_fill',
+    'Paint Tools:Radial Gradient': 'previews/paint_tools/gradient_fill',
     'Paint Tools:Pattern Fill': 'previews/paint_tools/pattern_fill',
 }
 

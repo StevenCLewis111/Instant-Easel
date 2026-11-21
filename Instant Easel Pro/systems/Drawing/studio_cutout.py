@@ -70,8 +70,7 @@ class StudioCutout:
         from scipy.ndimage import label, binary_dilation
         src = self._source(); x, y = int(p[0]), int(p[1]); w, h = self.size_wh
         if not (0 <= x < w and 0 <= y < h): return None
-        tol = 1 + self.gopts["tolerance"] / 100 * 255 * src.shape[2] * 0.45
-        same = np.abs(src - src[y, x]).sum(2) < tol
+        same = np.abs(src - src[y, x]).max(2) <= self.gopts["tolerance"] / 100 * 255 + 0.5     # (the same Tolerance as Fill)
         if contiguous: lab, _ = label(same); same = lab == lab[y, x]
         return binary_dilation(same, iterations=1).astype(np.float32)
 

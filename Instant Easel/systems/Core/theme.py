@@ -377,13 +377,18 @@ class PlainSlider(tk.Canvas):
     """navy track with a white knob (0..1)"""
     def __init__(self, master, value=1.0, command=None, width=520, **kw):
         super().__init__(master, width=int(width * Z), height=int(26 * Z), highlightthickness=0, cursor="hand2", **kw)
-        self.dw = width; self.w = int(width * Z); self.value = value; self.command = command
+        self.dw = width; self.w = int(width * Z); self.value = value; self.command = command; self.enabled = True
         self.bind("<Button-1>", self._drag); self.bind("<B1-Motion>", self._drag); self._draw(); on_change(self._draw, zoom=True)
     KNOB = 8                                                     # knob radius (design pixels)
     def _ends(self):
         """the track runs between these x positions, inset by the knob's radius so the knob never goes past the edge"""
         p = (self.KNOB + 2) * Z; return p, max(p + 1, self.w - p)
+    def set_enabled(self, on):
+        """a slider that doesn't apply right now: greyed out, and it can't be moved"""
+        on = bool(on)
+        if on != self.enabled: self.enabled = on; self.configure(cursor="hand2" if on else "arrow"); self._draw()
     def _drag(self, e):
+        if not self.enabled: return
         a, b = self._ends(); self.value = min(1, max(0, (e.x - a) / (b - a))); self._draw()
         if self.command: self.command(self.value)
     def _draw(self):
@@ -391,9 +396,11 @@ class PlainSlider(tk.Canvas):
         ap = _art()
         if ap is not None:                                                       # the painted slider (images/UI/Sliders)
             H = int(26 * z); K = int(2 * (self.KNOB + 2) * z); v = round(self.value, 3)
-            self._ph = ap.photo(("psl", self.w, H, v, K), lambda: ap.slider_image(self.w, H, v, K)); self.create_image(0, 0, image=self._ph, anchor="nw"); return
-        a, b = self._ends(); self.create_line(a, 13 * z, b, 13 * z, fill=PALETTE["button"], width=max(4, int(4 * z)), capstyle="round")
-        k = a + self.value * (b - a); r = self.KNOB * z; self.create_oval(k - r, 5 * z, k + r, 21 * z, fill="white", outline="#ddd")
+            self._ph = ap.photo(("psl", self.w, H, v, K), lambda: ap.slider_image(self.w, H, v, K)); self.create_image(0, 0, image=self._ph, anchor="nw")
+        else:
+            a, b = self._ends(); self.create_line(a, 13 * z, b, 13 * z, fill=PALETTE["button"], width=max(4, int(4 * z)), capstyle="round")
+            k = a + self.value * (b - a); r = self.KNOB * z; self.create_oval(k - r, 5 * z, k + r, 21 * z, fill="white", outline="#ddd")
+        if not getattr(self, "enabled", True): self.create_rectangle(0, 0, self.w, int(26 * z), fill=self.master["bg"], outline="", stipple="gray75")   # greyed out
 
 # ---- mouse wheel: scrolls the scrolling box the pointer is in: anywhere inside its border, on its divider, its gaps,
 # and the whole scroll bar from arrow to arrow. Found by where the pointer is on screen, so it doesn't depend on which

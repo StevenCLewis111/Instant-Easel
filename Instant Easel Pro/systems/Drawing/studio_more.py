@@ -49,8 +49,9 @@ class StudioMore:
             row = self._slider_row(parent, label, self.gopts[key] / top, lambda v, k=key, t=top: self._set_g(k, v * t), f"{int(self.gopts[key])}{unit}")
             row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._set_g(k, x, sync=True)))
             row.top, row.unit = top, unit; self._tip(row.slider, tip); self.g_rows[key] = row
-        gslider("tolerance", "Tolerance:", "How different a colour can be and still get filled or selected (higher takes more)")
+        gslider("tolerance", "Tolerance:", "How different a colour can be and still get filled or selected: 0 = only that exact colour, 100% = every colour")
         choice("Fill from:", self.fill_sample, ["All layers", "This layer"], "Fill and Magic Wand look at the whole picture, or just the layer you're on")
+        toggle("Fill joined-up only", self.fill_contig, "On: the bucket fills only the area joined to where you click. Off: that colour everywhere")
         self.grad_to = tk.StringVar(value="Clear")
         choice("Gradient to:", self.grad_to, ["Clear", "2nd color"], "Gradients fade from your colour to see-through, or to your second colour")
         gslider("feather", "Feather:", "Softens the edges of selections (pixels), so what you cut, fill or paint inside them blends in", top=50, unit="px")
@@ -265,7 +266,7 @@ class StudioMore:
         self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "LAYER COLOR", font=T.f(10, "underline")).pack()
         self.lc = dict(hue=0.0, sat=0.0, bright=0.0, contrast=0.0); self.lc_rows = {}; self._lc_orig = None; self._lc_job = None
         for key, label, tip in (("hue", "Hue:", "Turn every colour on this layer round the colour wheel"), ("sat", "Saturation:", "More or less colourful"),
-                                ("bright", "Brightness:", "Lighter or darker"), ("contrast", "Contrast:", "More or less difference between light and dark")):
+                                ("bright", "Lightness:", "Toward white or black (+100 is white, -100 black), like Hue/Saturation's Lightness"), ("contrast", "Contrast:", "More or less difference between light and dark")):
             lo, hi = (-180, 180) if key == "hue" else (-100, 100)
             row = self._slider_row(parent, label, 0.5, lambda v, k=key, lo=lo, hi=hi: self._lc_set(k, lo + v * (hi - lo)), "0")
             row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._lc_set(k, x, sync=True))); row.range = (lo, hi)
@@ -287,7 +288,7 @@ class StudioMore:
             mx, mn = x.max(-1), x.min(-1); d = mx - mn; v = mx; s = np.where(mx > 1e-6, d / np.maximum(mx, 1e-6), 0)
             r, g, b = x[..., 0], x[..., 1], x[..., 2]; dd = np.maximum(d, 1e-6)
             h = np.where(mx == r, ((g - b) / dd) % 6, np.where(mx == g, (b - r) / dd + 2, (r - g) / dd + 4)) / 6; h = np.where(d < 1e-6, 0, h)
-            h = (h + hue) % 1.0; s = np.clip(s * (1 + sat) if sat < 0 else s + (1 - s) * sat, 0, 1)
+            h = (h + hue) % 1.0; s = np.clip(s * (1 + sat) if sat < 0 else 1 - (1 - s) ** (1 + 3 * sat), 0, 1)   # (more: greys stay grey, as in Photoshop)
             i = np.floor(h * 6); f = h * 6 - i; p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f)); i = i.astype(int) % 6
             x = np.stack([np.choose(i, [v, q, p, p, t, v]), np.choose(i, [t, v, v, q, p, p]), np.choose(i, [p, p, t, v, v, q])], -1)
         if con: x = (x - 0.5) * (1 + con) + 0.5 if con < 0 else (x - 0.5) / max(0.02, 1 - con) + 0.5
