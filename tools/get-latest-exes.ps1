@@ -37,7 +37,7 @@ foreach ($a in $Apps) {
         }
         Note "$($exe): downloading $($rel.name) ($([math]::Round($asset.size / 1MB)) MB)..."
         Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing -Headers @{ "User-Agent" = "InstantEasel-updater" }
-        if ((Get-Item $zip).Length -ne $asset.size) { throw "the download was incomplete" }
+        if ((Get-Item -Force $zip).Length -ne $asset.size) { throw "the download was incomplete" }
         if (Test-Path $new) { Remove-Item -Recurse -Force $new }
         [IO.Compression.ZipFile]::ExtractToDirectory($zip, $new)
         if (-not (Test-Path (Join-Path $new $exe)) -or -not (Test-Path (Join-Path $new "_internal"))) { throw "the download didn't hold the app" }
