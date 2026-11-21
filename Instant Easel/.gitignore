@@ -34,3 +34,9 @@ EXE Build/chats/
 .json/*.bak
 .json/*.tmp
 .json/*.damaged
+
+# made on your PC: the cut-out AI models (downloaded once) and your stickers: never uploaded
+my-models/cutout/
+EXE Build/my-models/
+stickers/
+EXE Build/stickers/

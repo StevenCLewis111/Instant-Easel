@@ -1,6 +1,8 @@
 numpy
 scipy
 Pillow
+# the drawing studio's cut-out AI (Select Subject, Object Selection...): runs the models on this PC
+onnxruntime
 # the Image Scraper
 requests
 selenium

@@ -1,8 +1,8 @@
 """
 studio_cutout.py: tools for cutting things out of a picture.
 
-  Smart Select (tile)   drag a box round something: the thing itself is selected, not its background (colour models of what's
-                        in the middle of the box and what's round its edge, tidied up). Shift adds to the selection, Alt takes away.
+  Object Selection      (tile, studio_ai.py) the AI picks out the thing in a box or under a click; without the AI, _smart_select:
+                        colour models of what's in the middle of the box and what's round its edge, tidied up. Shift adds, Alt takes away.
   Magic Eraser (tile)   click a colour area: it's erased from the layer (Tolerance and Fill from, in Options > Fill).
   Magic Wand            Shift-click adds to the selection, Alt-click takes away; Options > Cut Out > Contiguous: joined-up only, or
                         that colour everywhere.
@@ -118,8 +118,8 @@ class StudioCutout:
         self._draw()
 
     # ------------------------------------------------------------------ Remove background
-    def remove_background(self):
-        """erase what's round the edges of the layer you're on (the background of a photo or a drawing), joined to the edges"""
+    def _remove_background_colour(self):
+        """(without the AI) erase what's round the edges of the layer you're on (the background of a photo or a drawing), joined to the edges"""
         from scipy import ndimage as ndi
         L = self.cur.img; al = L.alpha
         if al.max() < 0.05: T.banner(self.app, "THIS LAYER IS EMPTY — pick the layer with the picture on it"); return
@@ -160,6 +160,8 @@ class StudioCutout:
         if k is None: T.banner(self.app, "NOTHING SELECTED — select something first (Smart Select, Magic Wand, Lasso...)"); return
         src = self.cur; w, h = self.size_wh; L = Layer(w, h, f"{src.name} {'cut' if cut else 'copy'}")
         L.img.a = src.img.a.copy(); L.img.alpha = src.shown() * k; L.group = self._group_of(src)
+        if getattr(self, "decontam", None) is not None and self.decontam.get() and ((k > 0.02) & (k < 0.98)).any():
+            import ai_cutout as AI; L.img.a = AI.foreground(src.img.a, L.img.alpha).astype(np.float32)   # Decontaminate colors: no old background at the edges
         if cut:
             self._begin_edit(); src.img.alpha = src.img.alpha * (1 - k); self._dirty = None; self._commit_edit()
         self.layers.insert(self.li + 1, L); self.li += 1; self.sel_group = None; self.sel = None
@@ -169,7 +171,9 @@ class StudioCutout:
 
     def _cutout_options(self, parent, frame):
         self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "CUT OUT", font=T.f(10, "underline")).pack()
-        rows = [(("Remove background", self.remove_background, "Erase the background round the edges of this layer (photos too). Ctrl+Z puts it back"),),
+        self._ai_init()
+        rows = [(("Select subject", self.select_subject, "Select subject"), ("Refine edge", self.refine_selection, "Refine edge")),
+                (("Remove background", self.remove_background, "Remove background"),),
                 (("Cut to layer", lambda: self.sel_to_layer(True), "What's selected moves onto a new layer of its own"),
                  ("Copy to layer", lambda: self.sel_to_layer(False), "What's selected is copied onto a new layer")),
                 (("Make sticker", self.make_sticker, "What's selected on this layer (or all of it) becomes a sticker, kept in the Color view"),),
@@ -183,6 +187,14 @@ class StudioCutout:
         row = self._slider_row(parent, "By:", self.gopts["grow"] / 50, lambda v: self._set_g("grow", v * 50), f"{int(self.gopts['grow'])}px")
         row.entry.bind("<Return>", lambda e: self._typed(row, lambda x: self._set_g("grow", x, sync=True))); row.top, row.unit = 50, "px"; self.g_rows["grow"] = row
         self._tip(row.slider, "How many pixels Grow and Shrink change the selection by")
+        for key, label, lo, hi, unit, tip in (("edge_radius", "Edge:", 1, 40, "px", "Edge radius"), ("edge_smooth", "Smooth:", 0, 100, "%", "Smooth"),
+                                              ("edge_contrast", "Contrast:", 0, 100, "%", "Contrast"), ("edge_shift", "Shift:", -100, 100, "%", "Shift edge")):
+            span = hi - lo
+            row = self._slider_row(parent, label, (self.gopts[key] - lo) / span, lambda v, k=key, lo=lo, span=span: self._set_g(k, lo + v * span), f"{int(self.gopts[key])}{unit}")
+            row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._set_g(k, x, sync=True)))
+            row.top, row.unit, row.lo = span, unit, lo; self._tip(row.slider, tip); self.g_rows[key] = row
+        for var, text, tip in ((self.refine_hair, "Refine hair & fur", "Refine hair & fur"), (self.decontam, "Decontaminate colors", "Decontaminate colors")):
+            f = frame(parent, fill="x", pady=2); T.Text(f, text, font=T.f(9)).pack(side="left"); self._tip(T.Toggle(f, var), tip).pack(side="right")
         self.sticker_border = tk.BooleanVar(value=True)
         f = frame(parent, fill="x", pady=2); T.Text(f, "Sticker border", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(f, self.sticker_border), "New stickers get a white border round them, like a real sticker").pack(side="right")

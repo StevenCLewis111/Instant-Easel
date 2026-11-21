@@ -17,6 +17,7 @@ from studio_more import StudioMore
 from studio_groups import StudioGroups, Group
 from studio_cutout import StudioCutout
 from studio_menu import StudioMenu
+from studio_ai import StudioAI
 
 import paths; HERE = paths.APP                                    # (fonts/)
 MODES = list(brushes.BLEND_MODES)                                              # layer blend modes (the same list brushes use)
@@ -88,7 +89,7 @@ def blend_layer(bg, layer, sl=(slice(None), slice(None)), clip=None):
     c = L if layer.mode == "normal" else brushes.blend_rgb(bg, L, layer.mode)
     return bg * (1 - a) + c * a
 
-class DrawStudio(StudioMenu, StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame):
+class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self); self._groups_init()
@@ -1257,13 +1258,14 @@ class DrawStudio(StudioMenu, StudioCutout, StudioGroups, StudioMore, StudioExtra
         if t == "pick" and getattr(self, "tool", "pick") != "pick": self._before_pick = self.tool   # Pick hands back to this tool once a colour is taken
         self.tool = t
         if hasattr(self, "_auto_sections"): self.after_idle(self._auto_sections)   # its settings' section turns on (Window menu)
+        if t in ("smart", "quick_sel") and hasattr(self, "_sam_warm"): self.after(300, self._sam_warm)   # (read the picture now: quick first click)
         if getattr(self, "_pv_tool", None) and t != self._pv_tool[5:] and hasattr(self, "preview"): self._preview()   # left that tool: the brush's picture again
         if t in ("crop", "text") and self._turned(): self.set_view(rot=0, flip=False)     # crop / text work on an upright view
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
         cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "magic_eraser": "X_cursor"}.get(t, "crosshair")
+                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "quick_sel": "pencil", "magic_eraser": "X_cursor"}.get(t, "crosshair")
         for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
             try: cv.configure(cursor=cur)
             except tk.TclError: cv.configure(cursor="crosshair")

@@ -74,9 +74,9 @@ class StudioMore:
         b = T.Button(parent, text, cmd); b.configure(padx=7, pady=4, font=T.f(9)); return b
 
     def _set_g(self, key, val, sync=False):
-        row = self.g_rows[key]; top = getattr(row, "top", 100); unit = getattr(row, "unit", "%")
-        val = min(float(top), max(0.0, float(val))); self.gopts[key] = val
-        self._sync_slider(row, val / top); row.var.set(f"{int(round(val))}{unit}")
+        row = self.g_rows[key]; top = getattr(row, "top", 100); unit = getattr(row, "unit", "%"); lo = getattr(row, "lo", 0)   # (lo: a range that starts below 0)
+        val = min(float(lo + top), max(float(lo), float(val))); self.gopts[key] = val
+        self._sync_slider(row, (val - lo) / top); row.var.set(f"{int(round(val))}{unit}")
 
     # ------------------------------------------------------------------ canvas size
     def _resize(self, how):

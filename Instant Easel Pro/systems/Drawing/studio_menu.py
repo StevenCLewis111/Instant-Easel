@@ -5,6 +5,7 @@ Window shows or hides each section of the side panels (remembered), so the panel
 Every section starts with a divider line (DrawStudio._rule), so a section is that line and what comes after it up to the next one.
 """
 import tkinter as tk
+import numpy as np
 import theme as T
 import prefs
 
@@ -17,7 +18,7 @@ DEFAULT_OFF = [("Color", "STICKERS"), ("Color", "MY COLORS"), ("Options", "TEXT"
 _SEL = [("Options", "CUT OUT"), ("Options", "FILL")]
 TOOL_SECTIONS = {"text": [("Options", "TEXT")], "fill": [("Options", "FILL")], "pattern_fill": [("Options", "FILL")],
                  "gradient": [("Options", "FILL")], "gradient_radial": [("Options", "FILL")], "magic_eraser": [("Options", "FILL")],
-                 "wand": _SEL, "smart": _SEL, "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
+                 "wand": _SEL, "smart": _SEL, "quick_sel": _SEL, "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
 
 
 class StudioMenu:
@@ -43,12 +44,13 @@ class StudioMenu:
         """the items: (label, shortcut, action), ("check", label, is_on, action), "-" (a line), ("head", text)"""
         sel = lambda: getattr(self, "sel", None) is not None
         if name == "File":
-            return [("New picture", "", lambda: self.new(*self.size_wh)), ("Open…", "Ctrl+O", self.open), ("Save…", "Ctrl+S", self.save), "-",
-                    ("Import stickers…", "", self.import_stickers)]
+            return [("New picture", "", lambda: self.new(*self.size_wh)), ("Open…", "Ctrl+O", self.open), ("Place image…", "Ctrl+Shift+O", self.place_image),
+                    ("Save…", "Ctrl+S", self.save), "-", ("Import stickers…", "", self.import_stickers)]
         if name == "Edit":
             return [("Undo", "Ctrl+Z", self.undo), ("Redo", "Ctrl+Y", self.redo), "-",
                     ("Cut", "Ctrl+X", lambda: sel() and (self._sel_copy(), self._sel_delete())), ("Copy", "Ctrl+C", lambda: sel() and self._sel_copy()),
-                    ("Paste", "Ctrl+V", self._sel_paste), ("Delete selected", "Del", lambda: sel() and self._sel_delete()), "-",
+                    ("Paste", "Ctrl+V", self.paste_any), ("Paste from another program", "Ctrl+Shift+V", self.paste_picture),
+                    ("Delete selected", "Del", lambda: sel() and self._sel_delete()), "-",
                     ("Free Transform", "Ctrl+T", self._xf_start), "-", ("Keyboard shortcuts…", "", self._open_shortcuts)]
         if name == "Image":
             k = lambda a: self._key_label_of(a)
@@ -63,8 +65,8 @@ class StudioMenu:
                     ("Group layers", "", self.group_layers), ("Ungroup", "", self.ungroup), "-",
                     ("check", "Lock transparency", self.lock_alpha.get, lambda: self.lock_alpha.set(not self.lock_alpha.get()))]
         if name == "Select":
-            return [("Select all", "Ctrl+A", self._sel_all), ("Deselect", "Ctrl+D", lambda: sel() and (self._sel_commit(), setattr(self, "sel", None), self._x_overlay())),
-                    ("Invert", "Ctrl+Shift+I", self.sel_invert), ("Grow / shrink…", "", lambda: self._goto_section("Options", "CUT OUT")), "-",
+            return [("Subject", "", self.select_subject), ("Select all", "Ctrl+A", self._sel_all), ("Deselect", "Ctrl+D", lambda: sel() and (self._sel_commit(), setattr(self, "sel", None), self._x_overlay())),
+                    ("Invert", "Ctrl+Shift+I", self.sel_invert), ("Refine edge", "", self.refine_selection), ("Grow / shrink…", "", lambda: self._goto_section("Options", "CUT OUT")), "-",
                     ("Remove background", "Ctrl+I", self.remove_background), ("Cut to layer", "", lambda: self.sel_to_layer(True)),
                     ("Copy to layer", "", lambda: self.sel_to_layer(False)), ("Make sticker", "", self.make_sticker)]
         if name == "View":
@@ -158,6 +160,52 @@ class StudioMenu:
             except Exception as ex: prefs.log_note("a menu item", repr(ex))
         self.after_idle(go)
 
+    # ------------------------------------------------------------------ putting other pictures in
+    def place_image(self, path=None, im=None, name=None):
+        """File > Place image: a picture onto a new layer of its own (named after it), shrunk to fit if it's bigger than the canvas,
+        in the middle, with Free Transform on so you can move, resize and turn it (Enter keeps it), like Photoshop's Place"""
+        from PIL import Image, ImageOps
+        import os
+        if im is None:
+            from tkinter import filedialog
+            path = path or filedialog.askopenfilename(parent=self, title="Place image", initialdir=prefs.save_folder(),
+                                                      filetypes=[("Pictures", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff *.avif"), ("All files", "*.*")])
+            if not path: return
+            try: im = Image.open(path); im.load()
+            except Exception: prefs.log_note("placing a picture", path); T.banner(self.app, "COULDN'T OPEN THAT PICTURE"); return
+            name = name or os.path.splitext(os.path.basename(path))[0]
+        try: im = ImageOps.exif_transpose(im)
+        except Exception: pass
+        im = im.convert("RGBA"); w, h = self.size_wh; s = min(1.0, 0.9 * w / im.width, 0.9 * h / im.height)
+        if s < 1: im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))), Image.LANCZOS)
+        if getattr(self, "_xf", None): self._xf_end(True)
+        if getattr(self, "sel", None) is not None: self._sel_commit(); self.sel = None
+        self.add_layer(); L = self.cur; L.name = (name or "Picture")[:40]
+        arr = np.asarray(im, np.float32); ih, iw = arr.shape[:2]; x0, y0 = (w - iw) // 2, (h - ih) // 2
+        L.img.a[y0:y0 + ih, x0:x0 + iw] = arr[..., :3]; L.img.alpha[y0:y0 + ih, x0:x0 + iw] = arr[..., 3] / 255.0
+        self._recomp(); self._layers_ui(); self._draw(); self.changed = True
+        self.after_idle(self._xf_start)
+        T.banner(self.app, "PLACED ON ITS OWN LAYER — drag to move it, corners to resize, outside to turn; Enter keeps it", "success")
+
+    def paste_picture(self):
+        """a picture copied in another program (a browser, a screenshot...) onto a new layer, like Place image"""
+        try:
+            from PIL import ImageGrab
+            got = ImageGrab.grabclipboard()
+        except Exception: got = None
+        if isinstance(got, list):                                                    # copied picture files: the first one that opens
+            for p in got:
+                try: return self.place_image(path=p)
+                except Exception: continue
+            got = None
+        if got is None: T.banner(self.app, "NO PICTURE TO PASTE — copy a picture in another program first"); return
+        self.place_image(im=got, name="Pasted")
+
+    def paste_any(self):
+        """Ctrl+V: what you copied here (Copy / Cut), or else a picture copied in another program"""
+        if getattr(self, "_clip", None) is not None: self._sel_paste()
+        else: self.paste_picture()
+
     # ------------------------------------------------------------------ canvas only (Tab)
     def canvas_only(self):
         """Tab: everything but the picture goes (menu, toolbar, both side panels, the page around the studio); Tab or Esc brings it back"""
@@ -187,6 +235,7 @@ class StudioMenu:
         (Palettes and History are each one group: the group goes.) Also the menu's keys: Ctrl+O, Ctrl+S, Tab"""
         cv = self.cv
         cv.bind("<Control-o>", lambda e: (self.open(), "break")[1]); cv.bind("<Control-s>", lambda e: (self.save(), "break")[1])
+        cv.bind("<Control-O>", lambda e: (self.place_image(), "break")[1]); cv.bind("<Control-V>", lambda e: (self.paste_picture(), "break")[1])
         cv.bind("<Tab>", lambda e: (self.canvas_only(), "break")[1])
         cv.bind("<Escape>", lambda e: (self.canvas_only(), "break")[1] if getattr(self, "_conly", None) else None, add="+")
         bt = cv.bindtags(); cv.bind_class("ConlyEsc", "<Escape>", lambda e: (self.canvas_only(), "break")[1] if getattr(self, "_conly", None) else None)
