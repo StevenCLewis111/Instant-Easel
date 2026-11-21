@@ -98,7 +98,7 @@ class StudioMore:
                 return out
         self._resize_doc(fn, W, H)
         for L in self.layers: L.img.alpha = np.clip(L.img.alpha, 0, 1)
-        self._recomp(); self._draw(); self.set_size(self.size); self.changed = True
+        self._recomp(); self._draw(); self.set_size_level(self.size_lvl); self.changed = True
         T.banner(self.app, f"RESIZED — {W} x {H} (Ctrl+Z undoes it)", "success")
 
     def _sync_canvas_size(self):

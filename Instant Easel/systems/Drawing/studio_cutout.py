@@ -298,7 +298,7 @@ class StudioCutout:
     def _use_sticker(self, eng, name, f):
         import os
         from PIL import Image
-        self.set_brush(eng, name); self._fill_stickers()
+        self.set_brush(eng, name); self._fill_stickers(); self.set_opacity(1.0); self._sync_slider(self.op_row, 1.0)   # a sticker goes down solid
         try: w, h = Image.open(os.path.join(self._sticker_dir(), f)).size; self.set_size(min(max(w, h), self._size_max()))   # its own size to start with
         except Exception: pass
 

@@ -154,6 +154,7 @@ brush("splatter", tip_round, hard=0.9, spacing=0.35, scatter=1.6, jitter_size=0.
 # Krita-style engines
 brush("bristle", tip_bristles, n=22, aspect=0.45, angle_follow=True, spacing=0.04, color_jitter=0.08, size_press=0.4)
 brush("spray", tip_round, hard=0.9, spacing=0.2, scatter=1.0, jitter_size=0.8, flow=0.8, special="spray", size_press=0.0, opac_press=0.6)
+MOVING_ONLY = ("particle", "sketch", "hatching", "curve", "grid", "shape", "grass", "swirl", "flourish", "vine")   # drawn along the path: nothing from a bare click
 brush("particle", tip_round, special="particle")
 brush("sketch", tip_round, special="sketch")
 brush("hatching", tip_round, special="hatching")
@@ -342,7 +343,7 @@ class Canvas:
         painting): direction is smoothed across the pieces, spacing carries on, and a tapering brush only thins at the start"""
         b = B[name]; pts = [(p[0], p[1], p[2] if len(p) > 2 else 1.0) for p in pts]
         sp = b["special"]
-        if sp in ("particle", "sketch", "hatching", "curve", "grid", "shape", "grass", "swirl", "flourish", "vine"):
+        if sp in MOVING_ONLY:
             return getattr(self, "_" + sp)(pts, color, size, opacity)
         own = self._wash is None and sp not in ("smudge", "blur", "sharpen", "deform", "clone")
         if own: self.begin_stroke()

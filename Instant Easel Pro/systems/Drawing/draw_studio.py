@@ -91,7 +91,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self); self._groups_init()
-        self.color = (196, 92, 44); self.color2 = (255, 255, 255); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.opacity = 0.5   # brushes start half see-through
+        self.color = (196, 92, 44); self.color2 = (255, 255, 255); self.history = []; self.tool = "brush"; self.brush = "round"; self.size = 24; self.size_lvl = 50; self.opacity = 1.0   # brushes start solid (Opacity makes them see-through); size 50 of 1-100
         self._x_init()                                                              # select / crop / text state (studio_extras)
         self.mirror = tk.BooleanVar(value=False); self.undo_stack, self.redo_stack = [], []; self.zoom = None; self.pan = [0, 0]
         self.mirror_y = tk.BooleanVar(value=False); self.use_pressure = tk.BooleanVar(value=False)                      # Brush Options switches
@@ -225,8 +225,8 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
     def _key_action(self, a):
         """what each changeable key does"""
         if a in ("brush", "eraser", "pick", "fill", "line", "text", "sel_rect", "sel_lasso", "crop", "move"): self.set_tool(a)
-        elif a == "smaller": self.set_size(self.size / 1.2)
-        elif a == "bigger": self.set_size(self.size * 1.2)
+        elif a == "smaller": self.set_size_level(self.size_lvl - 3)
+        elif a == "bigger": self.set_size_level(self.size_lvl + 3)
         elif a == "swap": self.swap_colors()
         elif a == "bw": self.default_colors()
         elif a == "turn_left": self.set_view(delta=-15)
@@ -430,9 +430,9 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         self._pv = ImageTk.PhotoImage(Image.new("RGB", (200, 46), (244, 238, 226)))            # a picture from the start, so width/height are pixels (not 200 letters wide)
         self.preview = tk.Label(pinned, bg="#f4eee2", image=self._pv, width=200, height=46); self.preview.pack(pady=4); self._pw = 200
         pinned.bind("<Configure>", lambda e: self._fit_preview(pinned), add="+"); self._preview()
-        self.size_row = self._slider_row(pinned, "Size:", self._s2v(24), lambda v: self.set_size(self._v2s(v), from_slider=True), "24")
-        self.size_row.entry.bind("<Return>", lambda e: self._typed(self.size_row, lambda x: self.set_size(x)))
-        self.op_row = self._slider_row(pinned, "Opacity:", 0.5, self.set_opacity, "50%")
+        self.size_row = self._slider_row(pinned, "Size:", 49 / 99, lambda v: self.set_size_level(1 + 99 * v, from_slider=True), "50")   # 1-100: 1 pixel to the whole canvas
+        self.size_row.entry.bind("<Return>", lambda e: self._typed(self.size_row, lambda x: self.set_size_level(x)))
+        self.op_row = self._slider_row(pinned, "Opacity:", 1.0, self.set_opacity, "100%")
         self.op_row.entry.bind("<Return>", lambda e: self._typed(self.op_row, lambda x: (self.set_opacity(x / 100), self._sync_slider(self.op_row, self.opacity))))
         self.size_s, self.op_s = self.size_row.slider, self.op_row.slider
         # ---- Options view
@@ -1020,7 +1020,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         self.groups = {}; self.sel_group = None
         self._comp = np.empty((h, w, 3), np.uint8); self._recomp(); self.changed = False
         self._layers_ui(); self.refresh()
-        if hasattr(self, "size_s"): self.set_size(self.size)                         # the size slider's range follows the canvas size
+        if hasattr(self, "size_s"): self.set_size_level(self.size_lvl)               # the same 1-100 size, in this canvas's pixels
         self._sync_canvas_size()
 
     def load_image(self, im):
@@ -1256,6 +1256,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         if hasattr(self, "tool"): self._x_leaving(t)                             # finish a selection / crop / text first
         if t == "pick" and getattr(self, "tool", "pick") != "pick": self._before_pick = self.tool   # Pick hands back to this tool once a colour is taken
         self.tool = t
+        if getattr(self, "_pv_tool", None) and t != self._pv_tool[5:] and hasattr(self, "preview"): self._preview()   # left that tool: the brush's picture again
         if t in ("crop", "text") and self._turned(): self.set_view(rot=0, flip=False)     # crop / text work on an upright view
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
@@ -1356,7 +1357,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         except tk.TclError: pass
 
     def set_brush(self, n, label=None):
-        self.brush = n; self.brush_lbl.configure(text=label or n); self.set_tool("brush")
+        self.brush = n; self._pv_tool = None; self.brush_lbl.configure(text=label or n); self.set_tool("brush")
         if hasattr(self, "opt_rows"): self._load_brush_opts(n)
         for k, lb in self.tiles.items(): lb.configure(highlightbackground=T.PALETTE["border"] if lb._engine == n else lb._off)
         self._preview()
@@ -1368,7 +1369,10 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
             if pic is not None: self._art_by_engine[it["engine"]] = pic
             if it["engine"].endswith(" pattern"): self._last_pattern = it["engine"][:-len(" pattern")]      # Pattern Fill uses it
             self.set_brush(it["engine"], it["name"])
-        elif it.get("studio_tool"): self.set_tool(it["studio_tool"]); self.brush_lbl.configure(text=it["name"])
+        elif it.get("studio_tool"):
+            self.set_tool(it["studio_tool"]); self.brush_lbl.configure(text=it["name"])
+            pic = UA.tile_image(it["name"], section) or UA.preview(it["name"], section)       # its picture shows above Size, like a brush's
+            if pic is not None: self._art_by_engine["tool:" + it["studio_tool"]] = pic; self._pv_tool = "tool:" + it["studio_tool"]; self._preview()
         else: T.banner(self.app, f"COMING SOON — {it['name']} isn't built yet")
 
     def _right_view(self, name):
@@ -1580,11 +1584,16 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
     def _size_max(self):
         """the biggest brush: the whole mark still fits inside the canvas (its shorter side)"""
         return max(16, min(getattr(self, "size_wh", (300, 300))))
-    def _s2v(self, s): return math.log(max(1, s)) / math.log(self._size_max())
-    def _v2s(self, v): return max(1, int(round(self._size_max() ** v)))
-    def set_size(self, s, from_slider=False):
-        self.size = int(max(1, min(self._size_max(), s))); self.size_row.var.set(str(self.size)); self._tip_redraw()   # 1 pixel to the whole canvas
-        if not from_slider: self.size_s.value = self._s2v(self.size); self.size_s._draw()
+    # Size is shown 1-100: 1 is a 1-pixel brush, 100 the biggest that fits the canvas, in even steps (each step the same
+    # share bigger), so small sizes have as much room on the slider as big ones. self.size is the brush in pixels.
+    def _lvl2px(self, lv): return max(1, int(round(self._size_max() ** ((min(100, max(1, lv)) - 1) / 99))))
+    def _px2lvl(self, px): return min(100, max(1, 1 + 99 * math.log(max(1, px)) / math.log(self._size_max())))
+    def set_size_level(self, lv, from_slider=False):
+        lv = min(100, max(1, int(round(lv)))); self.set_size(self._lvl2px(lv), from_slider, lv)
+    def set_size(self, s, from_slider=False, lvl=None):
+        self.size = int(max(1, min(self._size_max(), s))); self._tip_redraw()       # in pixels: 1 pixel to the whole canvas
+        self.size_lvl = lvl if lvl is not None else int(round(self._px2lvl(self.size))); self.size_row.var.set(str(self.size_lvl))
+        if not from_slider: self.size_s.value = (self.size_lvl - 1) / 99; self.size_s._draw()
         self._preview()
     def set_opacity(self, v): self.opacity = max(0.02, min(1.0, v)); self.op_row.var.set(f"{int(round(self.opacity * 100))}%"); self._preview(); self._tip_redraw()
 
@@ -1644,6 +1653,13 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
                 a = 2 * math.pi * k / n; ca, sa = math.cos(a), math.sin(a)
                 for P in base: out.append([(cx + (x - cx) * ca - (y - cy) * sa, cy + (x - cx) * sa + (y - cy) * ca, p) for x, y, p in P])
         return out
+
+    def _is_click(self):
+        pts = self.points; return bool(pts) and max(math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) for q in pts) < 2
+    def _click_only(self):
+        """a click (no drag) with a brush that only paints as it moves (the special brushes): it needs a short stroke made for it"""
+        if not self._is_click(): return False
+        b = brushes.B.get(self.brush); return self.brush in WHOLE_STROKE or bool(b and b.get("special") in brushes.MOVING_ONLY)
 
     def _radial_n(self):
         v = self.radial.get() if hasattr(self, "radial") else "Off"; return int(v) if v.isdigit() else 1
@@ -1787,7 +1803,18 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         if t in ("line", "rect", "oval"):
             if self._edit is None: self._begin_edit()
             self._paint(self._shape_pts(t, self.start, p))
-        elif t == "brush" and self.brush in WHOLE_STROKE and len(self.points) > 1: self._paint(self.points); self._dirty = None   # whole-stroke brushes: check everywhere
+        elif t == "brush" and self.points and (self.brush in WHOLE_STROKE or self._click_only()):
+            pts = self.points                                                    # whole-stroke brushes: check everywhere
+            if self._click_only():                                               # just a click: a short stroke there, so every brush leaves its mark
+                x, y, pr = pts[0][0], pts[0][1], (pts[0][2] if len(pts[0]) > 2 else 1.0); r = max(4, self.size * 0.75)
+                pts = [(x - r + 2 * r * k / 11, y + math.sin(k / 11 * math.pi * 2) * r * 0.15, pr) for k in range(12)]
+            self._paint(pts); self._dirty = None
+        elif t == "brush" and self.points and self._is_click() and brushes.B.get(self.brush, {}).get("tex_mode") == "pattern" and self.size < 64:
+            if self._edit is None: self._begin_edit()                            # a pattern click: at least one whole repeat, so it can't land in a gap
+            sz, st = self.size, getattr(self, "_stroke_state", None); self.size = 64; self._stroke_state = {}   # (a fresh stroke: no spacing carried on)
+            try: self._paint([self.points[0]])
+            finally: self.size, self._stroke_state = sz, st
+            self._dirty = None
         elif t in GRAD_TOOLS:
             if self._edit is None: self._begin_edit()
             self.cv.delete("shape"); self._gradient(self.start, p, radial=t == "gradient_radial")
@@ -1945,7 +1972,9 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
     def _preview_now(self):
         self._pv_job = None
         if not hasattr(self, "preview"): return
-        pic = getattr(self, "_art_by_engine", {}).get(self.brush)
+        key = getattr(self, "_pv_tool", None)
+        if key is not None and self.tool != key[5:]: key = self._pv_tool = None          # back on a brush: its own picture
+        pic = getattr(self, "_art_by_engine", {}).get(key or self.brush)
         if pic is not None:                                                          # the brush's new picture (painted tile or strip)
             if pic.mode == "RGBA": im = pic.resize((self._pw, max(20, round(self._pw * UA.TILE_SIZE[1] / UA.TILE_SIZE[0]))), Image.LANCZOS)
             else:
