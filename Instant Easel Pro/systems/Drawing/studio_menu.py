@@ -29,9 +29,9 @@ class StudioMenu:
         self._mlabels = []; self._mopen = None
         for i, name in enumerate(("File", "Edit", "Image", "Layer", "Select", "View", "Window", "Help")):
             lb = tk.Label(bar, text=name, bg=self["bg"], fg=MENU_TEXT, cursor="hand2", bd=0)
-            lb.pack(side="left"); self._mlabels.append(lb)
-            lb.bind("<Enter>", lambda e, l=lb: l.configure(fg=T.PALETTE["title"]))
-            lb.bind("<Leave>", lambda e, i=i, l=lb: self._mopen is None or self._mopen[0] != i and l.configure(fg=MENU_TEXT))
+            lb.pack(side="left", expand=True); self._mlabels.append(lb)                # (an equal share of the width each: spread across the bar)
+            lb.bind("<Enter>", lambda e, l=lb: l.configure(fg=T.PALETTE["title"]) if self.winfo_containing(*self.winfo_pointerxy()) is l else None)   # (really under the mouse: closing a menu sends a stray one)
+            lb.bind("<Leave>", lambda e, i=i, l=lb: l.configure(fg=MENU_TEXT) if (self._mopen is None or self._mopen[0] != i) else None)   # (white again, unless its menu is open)
             lb.bind("<Button-1>", lambda e, i=i: (self._menu_close() if self._mopen and self._mopen[0] == i else self._menu_open(i), "break")[1])
         def style():
             bar.configure(bg=self["bg"])

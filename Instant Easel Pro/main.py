@@ -1354,9 +1354,6 @@ class Splash:
         s.geometry(self.geo); s.deiconify(); s.attributes("-topmost", True); s.update_idletasks()
         s.geometry(self.geo)                                                          # again once it's showing (Windows can ignore it before)
         self.t0 = time.monotonic(); self.step(0.02, "LOADING…")
-        try:                                                                          # the picture shown while the .exe unpacked: this takes over
-            import pyi_splash; pyi_splash.close()
-        except Exception: pass
     def step(self, frac, text=None):
         try:
             self.bar.delete("all"); self.bar.create_rectangle(0, 0, 300 * max(0.0, min(1.0, frac)), 10, fill=T.PALETTE["border"], width=0)

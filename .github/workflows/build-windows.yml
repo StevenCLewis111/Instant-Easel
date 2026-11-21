@@ -1,5 +1,5 @@
 name: Build InstantEaselPro.exe (Windows)
-# Builds Instant Easel Pro into one Windows program on a GitHub Windows machine, then publishes it as a
+# Builds Instant Easel Pro into a Windows app folder on a GitHub Windows machine, then publishes it as a
 # prerelease on the Releases page (and as a download on the run's page). The .exe isn't kept in the repo (too big);
 # pulling with GitHub Desktop fetches it into EXE Build (tools/get-latest-exes.ps1, after Set up automatic exe updates.bat).
 # Runs on every push that changes Instant Easel Pro, or by hand: Actions tab > this workflow > Run workflow.
@@ -30,12 +30,14 @@ jobs:
           key: cutout-models-isnet-general-sam-vitb-quant-v1
       - name: Fetch the cut-out AI's models (built into the .exe; checked by SHA-256)
         run: python -c "import sys; sys.path.insert(0, 'systems/Drawing'); import ai_cutout as A; A.set_model_dir('my-models/cutout'); A.ensure('subject'); A.ensure('sam'); print('models ready')"
-      - run: python -m PyInstaller --noconfirm --distpath "EXE Build" PaintEngine.spec
+      - run: python -m PyInstaller --noconfirm --distpath dist PaintEngine.spec
+      - name: Zip the app folder (InstantEaselPro.exe + _internal) for the Releases page
+        run: 7z a -tzip -mx=5 "InstantEaselPro-windows.zip" ".\dist\InstantEaselPro\*"
       - uses: actions/upload-artifact@v4
         with:
           name: InstantEaselPro-windows
-          path: Instant Easel Pro/EXE Build/InstantEaselPro.exe
-      - name: Publish the new InstantEaselPro.exe as a prerelease (the Releases page)
+          path: Instant Easel Pro/InstantEaselPro-windows.zip
+      - name: Publish the new InstantEaselPro build as a prerelease (the Releases page)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,11 +45,11 @@ jobs:
           # one prerelease per app, replaced by each new build (Releases take files up to 2 GB; the branch only up to 100 MB)
           TAG="pro-latest"
           gh release delete "$TAG" --cleanup-tag --yes 2>/dev/null || true
-          gh release create "$TAG" "EXE Build/InstantEaselPro.exe" --prerelease --target "$GITHUB_SHA" \
+          gh release create "$TAG" "InstantEaselPro-windows.zip" --prerelease --target "$GITHUB_SHA" \
             --title "Instant Easel Pro — test build ${GITHUB_SHA::7}" \
             --notes "Test build of Instant Easel Pro for Windows, made automatically from commit ${GITHUB_SHA::7} on $(date -u +'%Y-%m-%d %H:%M UTC').
 
-          Download **InstantEaselPro.exe** below and run it (no install needed). Windows may say it protected your PC because the program isn't signed yet: click *More info* > *Run anyway*.
+          Download **InstantEaselPro-windows.zip** below, unzip it anywhere and run **InstantEaselPro.exe** (no install needed; keep the _internal folder next to it). Windows may say it protected your PC because the program isn't signed yet: click *More info* > *Run anyway*.
 
           The cut-out AI (Select Subject, Object Selection, Quick Selection, Remove Background) is built in: nothing else to download.
 
