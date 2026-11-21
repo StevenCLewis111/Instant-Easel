@@ -707,6 +707,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         self._tip(T.Toggle(lk, self.lock_alpha), "Paint only where this layer already has paint (great for shading inside a shape)").pack(side="right")
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
         self._navigator(LV, frame, self._apx(IW) - 4)                                 # NAVIGATOR (studio_more)
+        self._magic_options(LV, frame)                                               # MAGIC: every AI tool (studio_ai)
         self._cutout_options(LV, frame)                                              # CUT OUT (studio_cutout)
         self._more_options(LV, frame)                                                # GUIDES, FILL, CANVAS, SAVING (studio_more)
         self._timelapse(LV, frame)
@@ -1258,13 +1259,14 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         self.tool = t
         if hasattr(self, "_auto_sections"): self.after_idle(self._auto_sections)   # its settings' section turns on (Window menu)
         if t in ("smart", "quick_sel") and hasattr(self, "_sam_warm"): self.after(300, self._sam_warm)   # (read the picture now: quick first click)
+        if t == "magic_remove" and hasattr(self, "_mr_warm"): self.after(200, self._mr_warm)   # (its model loads now: quick first stroke)
         if getattr(self, "_pv_tool", None) and t != self._pv_tool[5:] and hasattr(self, "preview"): self._preview()   # left that tool: the brush's picture again
         if t in ("crop", "text") and self._turned(): self.set_view(rot=0, flip=False)     # crop / text work on an upright view
         for k, b in self.tool_btns.items():
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
         cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "quick_sel": "pencil", "magic_eraser": "X_cursor"}.get(t, "crosshair")
+                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "quick_sel": "pencil", "magic_eraser": "X_cursor", "magic_remove": "circle"}.get(t, "crosshair")
         for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
             try: cv.configure(cursor=cur)
             except tk.TclError: cv.configure(cursor="crosshair")
@@ -1759,6 +1761,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
             return
         if t in POLY_TOOLS: self._poly_click(p); return
         if t == "magic_eraser": self._magic_erase(p); return                       # Magic Eraser: the colour area clicked is erased
+        if t == "magic_remove": return self._mr_down(e, p)                           # Magic Remove: paint over it (studio_ai)
         if t in ("fill", "pattern_fill"):
             self._begin_edit(); self._fill(p, pattern=t == "pattern_fill"); r = self._commit_edit()
             if r: self._recomp(r); self._draw()
@@ -1781,6 +1784,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         if self.tool == "move":
             if getattr(self, "_pan0", None) is not None: self._pan_move(e)
             return
+        if self.tool == "magic_remove": return self._mr_drag(self.to_img(e))
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_drag(e, self.to_img(e))
         if self._edit is None and self.tool not in ("line", "rect", "oval") + GRAD_TOOLS: return     # press happened somewhere else
         p = self.to_img(e); t = self.tool
@@ -1830,6 +1834,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
     def up(self, e):
         if hasattr(self, "guide") and self.guide.get() != "Off" and self.guide_move.get(): self._guide_drag = None; return
         if self.tool == "move": self._pan0 = None; return
+        if self.tool == "magic_remove": return self._mr_up(e, self.to_img(e))
         if self.tool == "text" or self.tool in SEL_TOOLS or self.tool == "crop": return self.x_up(e, self.to_img(e))
         if self._tick_job is not None: self.after_cancel(self._tick_job); self._tick_job = None
         if self._live() and len(getattr(self, "_raw", [])) >= 2:                   # the last bit, right to where you let go (smoothing lags behind)

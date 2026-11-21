@@ -5,6 +5,9 @@ studio_ai.py: the AI cut-out tools (Photoshop-style), run on this PC by ai_cutou
   Object Selection      (tile) drag a box round a thing, or click it: just that thing. Shift adds, Alt takes away
   Quick Selection       (tile) paint over a thing: the selection snaps to its edges; more strokes add, Alt-strokes take away
   Remove Background     the subject kept, the rest hidden with a layer mask (nothing is lost: paint on the mask to fix it)
+  Magic Remove          (tool) paint over a person, a wire, a spot, anything: it's filled in from what's round it (LaMa), like
+                        Photoshop's Remove tool; Remove selected does the same to whatever is selected (Content-Aware Fill)
+  Blur Background       the subject stays sharp, the rest of the layer is blurred (Options > Magic: how much)
   Refine Edge           Options > Cut Out: Edge radius, Smooth, Contrast, Shift edge, Refine hair & fur; Decontaminate colors
                         (no background colour left round the edges of what you cut out). AI selections are refined as they're
                         made; the Refine edge button does it again (to any selection) with the sliders as they are now.
@@ -12,7 +15,7 @@ studio_ai.py: the AI cut-out tools (Photoshop-style), run on this PC by ai_cutou
 The models download once, the first time one is needed (you're asked first). Without them (offline, or you said no), the
 colour-based tools in studio_cutout.py do the job instead. The slow work runs in the background: the studio stays usable.
 """
-import threading, queue, hashlib
+import threading, queue, hashlib, math
 import numpy as np
 import tkinter as tk
 import theme as T
@@ -20,6 +23,7 @@ import prefs
 import ai_cutout as AI
 
 QUICK_TOOL = "quick_sel"
+REMOVE_TOOL = "magic_remove"
 
 
 class StudioAI:
@@ -79,20 +83,21 @@ class StudioAI:
             if fallback: fallback()
             return
         mb = AI.download_size(kind) / 1e6
-        what = {"subject": "Select Subject and Remove Background", "sam": "Object Selection and Quick Selection"}[kind]
+        what = {"subject": "Select Subject, Remove Background and Blur Background", "sam": "Object Selection and Quick Selection",
+                "remove": "Magic Remove"}[kind]
         ans = T.popup(self, "A ONE-TIME DOWNLOAD", f"{what} use an AI model that runs on this PC (nothing is sent anywhere).\n\n"
                       f"It's {mb:.0f} MB, downloaded once. Download it now?", buttons=(("Download", "normal"), ("Not now", "normal")))
         if ans != "Download":
             self.__dict__.setdefault("_ai_said_no", set()).add(kind)
-            T.banner(self.app, "OK — the colour-based tools will do it instead (Window > Cut Out)")
+            T.banner(self.app, "OK — the colour-based tools will do it instead (Window > Cut Out)" if kind != "remove" else "OK — not now (the Clone brush can cover things by hand)")
             if fallback: fallback()
             return
         state = {"last": -1}
         def prog(d, t):
             pc = int(d * 100 / max(1, t))
             if pc != state["last"] and pc % 2 == 0:
-                state["last"] = pc; self._aiq.put(lambda pc=pc: T.banner(self.app, f"DOWNLOADING THE CUT-OUT AI — {pc}%", "success", seconds=30))
-        self._ai_bg(lambda: AI.ensure(kind, prog), lambda r: (T.banner(self.app, "CUT-OUT AI READY", "success"), then()))
+                state["last"] = pc; self._aiq.put(lambda pc=pc: T.banner(self.app, f"DOWNLOADING THE AI — {pc}%", "success", seconds=30))
+        self._ai_bg(lambda: AI.ensure(kind, prog), lambda r: (T.banner(self.app, "AI READY", "success"), then()))
 
     def _ai_rgb(self):
         """what the AI looks at: the picture as you see it (all layers)"""
@@ -195,6 +200,117 @@ class StudioAI:
                 T.banner(self.app, "BACKGROUND HIDDEN WITH A MASK — paint on the mask to fix it; Delete mask brings it all back", "success")
             self._ai_bg(work, done, "REMOVING THE BACKGROUND…")
         self._ai_ready("subject", go, fallback=self._remove_background_colour)
+
+    # ------------------------------------------------------------------ Magic Remove (paint over it: gone)
+    def _mr_warm(self):
+        """the Magic Remove tool was picked: load its model now (in the background), so the first stroke is quick"""
+        self._ai_init()
+        if AI.runtime_ok() and AI.have("remove") and "lama" not in AI._sessions and not getattr(self, "_mr_loading", False):
+            self._mr_loading = True
+            def load():
+                try: AI._session("lama")
+                except Exception as ex: prefs.log_note("loading Magic Remove", repr(ex))
+                self._mr_loading = False
+            threading.Thread(target=load, daemon=True, name="MagicRemoveLoad").start()
+
+    def _mr_width(self): return max(2.0, float(self.size))                        # the stroke: the brush size (in picture pixels)
+
+    def _mr_down(self, e, p):
+        if self._ai_busy: T.banner(self.app, "STILL WORKING ON THE LAST ONE — one moment"); return
+        self._mr_pts = [(p[0], p[1])]; self._mr_show()
+
+    def _mr_drag(self, p):
+        pts = getattr(self, "_mr_pts", None)
+        if pts is None: return
+        if math.hypot(p[0] - pts[-1][0], p[1] - pts[-1][1]) * (self.zoom or 1) >= 2: pts.append((p[0], p[1])); self._mr_show()
+
+    def _mr_show(self):
+        """the stroke shows in see-through red as you paint, at its real width"""
+        self.cv.delete("xov"); pts = self._mr_pts; wd = max(3, int(self._mr_width() * (self.zoom or 1)))
+        sc = [c for q in pts for c in self._x_scr(*q)]
+        if len(sc) == 2: x, y = sc; r = wd / 2; self.cv.create_oval(x - r, y - r, x + r, y + r, fill="#ff3c5a", outline="", stipple="gray50", tags="xov")
+        else: self.cv.create_line(*sc, fill="#ff3c5a", width=wd, capstyle="round", joinstyle="round", stipple="gray50", tags="xov")
+
+    def _mr_up(self, e, p):
+        pts = getattr(self, "_mr_pts", None); self._mr_pts = None
+        if not pts: return
+        from PIL import Image, ImageDraw
+        w, h = self.size_wh; m = Image.new("L", (w, h), 0); d = ImageDraw.Draw(m); wd = self._mr_width()
+        if len(pts) > 1: d.line(pts, fill=255, width=int(round(wd)), joint="curve")
+        for x, y in (pts[0], pts[-1]) if len(pts) > 1 else pts: d.ellipse((x - wd / 2, y - wd / 2, x + wd / 2, y + wd / 2), fill=255)
+        self.magic_remove(np.asarray(m) > 127, keep_overlay=True)
+
+    def remove_selected(self):
+        """Magic Remove on whatever is selected (Photoshop: Content-Aware Fill / Delete and Fill Selection)"""
+        m = self._sel_full() if self.sel is not None else None
+        if m is None: T.banner(self.app, "SELECT IT FIRST — or pick Magic Remove and paint over it"); return
+        hole = m > 0.5; self._sel_commit(); self.sel = None; self._x_overlay(); self.magic_remove(hole)
+
+    def magic_remove(self, hole, keep_overlay=False):
+        """fill the hole from its surroundings, on the layer you're on (one Undo step). On an empty or see-through layer it
+        works from the picture as you see it, and the fill goes onto that layer (like Photoshop's Sample All Layers)"""
+        if not hole.any(): self.cv.delete("xov"); return
+        L = self.cur
+        if L.cv is not L.img: self.cv.delete("xov"); T.banner(self.app, "YOU'RE ON THE LAYER'S MASK — click the layer's picture first"); return
+        ys, xs = np.where(hole)
+        y0, y1, x0, x1 = max(0, ys.min() - 20), ys.max() + 21, max(0, xs.min() - 20), xs.max() + 21
+        own = float(L.img.alpha[y0:y1, x0:x1].mean()) > 0.6                          # the layer has the picture on it here
+        src = np.asarray(L.img.a, np.float32) if own else np.asarray(self._comp[..., :3], np.float32)
+        def go():
+            if not keep_overlay: self.cv.delete("xov")
+            def work(): return AI.inpaint(src, hole)
+            def done(res):
+                self.cv.delete("xov")
+                if res is None: return
+                self._begin_edit()
+                k = hole.astype(np.float32); soft = np.clip(res, 0, 255).astype(np.float32)
+                L.img.a[...] = np.where(hole[..., None], soft, L.img.a) if own else soft * k[..., None] + L.img.a * (1 - k[..., None])
+                if not own: L.img.alpha[...] = np.maximum(L.img.alpha, k)
+                self._dirty = None; r = self._commit_edit(); self._recomp(r) if r else self._recomp(); self._draw(); self.changed = True
+                T.banner(self.app, "REMOVED — Ctrl+Z puts it back; paint over anything left to tidy it", "success")
+            self._ai_bg(work, done, "REMOVING…")
+        def no():
+            self.cv.delete("xov")
+        self._ai_ready("remove", go, fallback=no)
+
+    # ------------------------------------------------------------------ Options > MAGIC: every AI tool in one place
+    def _magic_options(self, parent, frame):
+        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "MAGIC", font=T.f(10, "underline")).pack()
+        self._ai_init()
+        rows = [(("Object select", lambda: self.set_tool("smart"), "Object Selection: drag a box round a thing, or click it"),
+                 ("Quick select", lambda: self.set_tool("quick_sel"), "Quick Selection: paint over a thing")),
+                (("Select subject", self.select_subject, "Select subject"), ("Refine edge", self.refine_selection, "Refine edge")),
+                (("Magic remove", lambda: self.set_tool(REMOVE_TOOL), "Magic Remove: paint over anything and it's filled in from what's round it"),
+                 ("Remove selected", self.remove_selected, "Fill what's selected from what's round it")),
+                (("Remove background", self.remove_background, "Remove background"),), (("Blur background", self.blur_background, "Blur background"),)]
+        for row in rows:
+            f = frame(parent, fill="x", pady=(2, 1))
+            for i, (text, cmd, tip) in enumerate(row):
+                self._tip(self._small_btn(f, text, cmd), tip).pack(side="left" if i == 0 else "right", expand=len(row) == 1)
+        self.gopts.setdefault("bg_blur", 12.0)
+        row = self._slider_row(parent, "Blur:", (self.gopts["bg_blur"] - 2) / 38, lambda v: self._set_g("bg_blur", 2 + v * 38), f"{int(self.gopts['bg_blur'])}px")
+        row.entry.bind("<Return>", lambda e: self._typed(row, lambda x: self._set_g("bg_blur", x, sync=True))); row.top, row.unit, row.lo = 38, "px", 2
+        self._tip(row.slider, "How much Blur background blurs"); self.g_rows["bg_blur"] = row
+
+    # ------------------------------------------------------------------ Blur Background
+    def blur_background(self):
+        """the subject stays sharp, the rest of this layer is blurred (Options > Magic > Blur: how much). One Undo step"""
+        L = self.cur
+        if L.img.alpha.max() < 0.05: T.banner(self.app, "THIS LAYER IS EMPTY — pick the layer with the picture on it"); return
+        if L.cv is not L.img: T.banner(self.app, "YOU'RE ON THE LAYER'S MASK — click the layer's picture first"); return
+        rgb = np.asarray(L.img.a, np.float32); amount = float(self.gopts.get("bg_blur", 12.0)); key = self._pic_key()
+        def go():
+            def work():
+                k, m = self._subj_cache
+                if k != key: m = AI.subject(rgb); self._subj_cache = (key, m)
+                return AI.blur_background(rgb, self._refined(rgb, m), amount)
+            def done(res):
+                if res is None: return
+                self._begin_edit(); L.img.a[...] = np.clip(res, 0, 255).astype(np.float32); self._dirty = None
+                r = self._commit_edit(); self._recomp(r) if r else self._recomp(); self._draw(); self.changed = True
+                T.banner(self.app, "BACKGROUND BLURRED — Ctrl+Z puts it back", "success")
+            self._ai_bg(work, done, "BLURRING THE BACKGROUND…")
+        self._ai_ready("subject", go, fallback=lambda: T.banner(self.app, "BLUR BACKGROUND NEEDS THE AI"))
 
     # ------------------------------------------------------------------ Refine Edge (any selection)
     def refine_selection(self):

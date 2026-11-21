@@ -7,6 +7,9 @@ ai_cutout.py: the AI behind the cut-out tools, run on your own PC (onnxruntime; 
   refine(rgb, m, ...)     Refine Edge: an edge-aware matte (guided filter) for hair and fur, then Smooth / Feather /
                           Contrast / Shift Edge, like Photoshop's Select and Mask
   foreground(rgb, a)      Decontaminate Colors: the subject's own colours at its soft edges, without the old background's fringe
+  inpaint(rgb, hole)      Magic Remove: what's painted over is filled in from what's round it (LaMa, Samsung AI, Apache 2.0),
+                          like Photoshop's Remove tool / Content-Aware Fill. Loaded when the tool is first picked, not at start-up
+  blur_background(...)    Blur Background: the subject stays sharp, everything else is blurred (like a wide-open lens)
 
 The models are built into the app (the Windows build packs them inside the .exe: my-models/cutout/) and loaded while the
 splash screen shows (preload()). Run from the source code without them, they're downloaded once, the first time a tool needs
@@ -21,8 +24,12 @@ MODELS = {
     "subject": ("isnet-general-use.onnx", 178648008, "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a"),
     "sam_enc": ("vit_b-encoder-quant.onnx", 99827815, "cf99a3b79eea0ac4f7c9b06cdce5b2763ff41a3f631213c748d497cba233df6a"),
     "sam_dec": ("vit_b-decoder-quant.onnx", 8742591, "40b02c2f694bb87b8360bb04ad8aaa84eab9673f4092b4911e0513890812b42e"),
+    # big-lama exported to ONNX by Carve (Apache 2.0); this GitHub copy is byte-for-byte the same file (same SHA-256)
+    "lama": ("lama_fp32.onnx", 208044816, "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
+             "https://github.com/neureps/carousel-fit-models/releases/download/lama-v1/lama-fp32-1faef5301d78.onnx"),
 }
-NEEDS = {"subject": ["subject"], "sam": ["sam_enc", "sam_dec"]}
+NEEDS = {"subject": ["subject"], "sam": ["sam_enc", "sam_dec"], "remove": ["lama"]}
+LAZY = ("remove",)                                                             # (big: loaded when its tool is picked, not at start-up)
 _dir = None
 
 
@@ -66,8 +73,9 @@ def ensure(kind, progress=None, cancel=None):
     todo = [k for k in NEEDS[kind] if not (os.path.exists(_path(k)) and os.path.getsize(_path(k)) == MODELS[k][1])]
     total = sum(MODELS[k][1] for k in todo); done = 0
     for k in todo:
-        name, size, sha = MODELS[k]; dst = _path(k); part = dst + ".part"; h = hashlib.sha256()
-        with urllib.request.urlopen(_REL + name, timeout=60) as r, open(part, "wb") as out:
+        name, size, sha = MODELS[k][:3]; dst = _path(k); part = dst + ".part"; h = hashlib.sha256()
+        url = MODELS[k][3] if len(MODELS[k]) > 3 else _REL + name
+        with urllib.request.urlopen(url, timeout=60) as r, open(part, "wb") as out:
             while True:
                 if cancel and cancel(): raise RuntimeError("cancelled")
                 b = r.read(1 << 20)
@@ -88,7 +96,7 @@ def preload():
     done = []
     if not runtime_ok(): return done
     for kind, keys in NEEDS.items():
-        if have(kind):
+        if kind not in LAZY and have(kind):
             for k in keys: _session(k); done.append(k)
     return done
 
@@ -251,3 +259,43 @@ def foreground(rgb, a, r=24):
     F, B = I.copy(), I.copy()
     F, B = once(F, B, r); F, B = once(F, B, max(1, r // 8))
     out = np.where(a > 0.99, I, F); return (out * 255).astype(np.float32)
+
+
+# ------------------------------------------------------------------ Magic Remove
+def inpaint(rgb, hole, cancel=None):
+    """fill the hole (H x W bool / 0-1) from its surroundings: rgb is H x W x 3, 0-255; returns the whole picture, changed
+    only inside the hole (softly at its edge). The model works at 512 x 512, so it's given the area round the hole (the hole
+    plus about its own size again on every side): small things come back sharp, big ones as sharp as the model allows"""
+    hole = np.asarray(hole) > 0.5
+    if not hole.any(): return rgb
+    H, W = hole.shape; ys, xs = np.where(hole); y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    side = max(y1 - y0, x1 - x0); pad = max(32, int(side * 0.9)); side = side + 2 * pad
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2; half = side // 2
+    X0, Y0 = max(0, cx - half), max(0, cy - half); X1, Y1 = min(W, X0 + side), min(H, Y0 + side); X0, Y0 = max(0, X1 - side), max(0, Y1 - side)
+    crop = rgb[Y0:Y1, X0:X1]; ch = hole[Y0:Y1, X0:X1]; h, w = ch.shape
+    from scipy import ndimage as nd
+    grow = max(2, int(round(max(h, w) / 512 * 3)))                               # (a little past the edge: no halo of the old thing)
+    ch2 = nd.binary_dilation(ch, iterations=grow)
+    x = _resize(crop, 512, 512).transpose(2, 0, 1)[None] / 255.0
+    m = (_resize(ch2.astype(np.float32), 512, 512) > 0.01).astype(np.float32)[None, None]
+    if cancel and cancel(): raise RuntimeError("cancelled")
+    out = _session("lama").run(None, {"image": x.astype(np.float32), "mask": m})[0][0].transpose(1, 2, 0)
+    if out.max() <= 2: out = out * 255
+    out = _resize(out, w, h)
+    k = np.clip(nd.gaussian_filter(ch2.astype(np.float32), max(1, grow / 2)) * 1.6, 0, 1)[..., None]
+    k = np.maximum(k, ch[..., None])                                             # (all of the hole itself is replaced)
+    res = np.array(rgb, np.float32, copy=True); res[Y0:Y1, X0:X1] = crop * (1 - k) + out * k
+    return res
+
+
+# ------------------------------------------------------------------ Blur Background
+def blur_background(rgb, matte, amount=12):
+    """the subject (matte 0-1) stays sharp, the rest is blurred by amount (pixels, for a 1000-pixel picture). The subject's
+    colours are kept out of the blur, so no glow of it spreads onto the background"""
+    from scipy import ndimage as nd
+    H, W = matte.shape; r = max(1.0, amount * max(H, W) / 1000.0)
+    a = np.clip(matte, 0, 1)[..., None]; bgk = 1 - a
+    num = np.stack([nd.gaussian_filter(rgb[..., c] * bgk[..., 0], r) for c in range(3)], -1)
+    den = nd.gaussian_filter(bgk[..., 0], r)[..., None]
+    blurred = np.where(den > 1e-3, num / np.maximum(den, 1e-3), rgb)
+    return rgb * a + blurred * (1 - a)

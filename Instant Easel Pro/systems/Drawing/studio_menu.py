@@ -16,9 +16,10 @@ DEFAULT_OFF = [("Color", "STICKERS"), ("Color", "MY COLORS"), ("Options", "TEXT"
                ("Options", "CUT OUT"), ("Options", "GUIDES"), ("Options", "SAVING"), ("Options", "TIMELAPSE"), ("Adjustments", "MY BRUSHES")]
 # a tool whose settings live in a section turns it on while you use it (and off again after, unless you turned it on yourself)
 _SEL = [("Options", "CUT OUT"), ("Options", "FILL")]
+_MAGIC = [("Options", "MAGIC"), ("Options", "CUT OUT")]
 TOOL_SECTIONS = {"text": [("Options", "TEXT")], "fill": [("Options", "FILL")], "pattern_fill": [("Options", "FILL")],
                  "gradient": [("Options", "FILL")], "gradient_radial": [("Options", "FILL")], "magic_eraser": [("Options", "FILL")],
-                 "wand": _SEL, "smart": _SEL, "quick_sel": _SEL, "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
+                 "wand": _SEL, "smart": _MAGIC, "quick_sel": _MAGIC, "magic_remove": [("Options", "MAGIC")], "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
 
 
 class StudioMenu:
@@ -27,7 +28,7 @@ class StudioMenu:
         bar = self._mbar = tk.Frame(self, bg=self["bg"]); bar.pack(fill="x", pady=(0, 2))
         line = self._mline = T.Line(self, vertical=False); line.pack(fill="x", pady=(0, 6))
         self._mlabels = []; self._mopen = None
-        for i, name in enumerate(("File", "Edit", "Image", "Layer", "Select", "View", "Window", "Help")):
+        for i, name in enumerate(("File", "Edit", "Image", "Layer", "Select", "Magic", "View", "Window", "Help")):
             lb = tk.Label(bar, text=name, bg=self["bg"], fg=MENU_TEXT, cursor="hand2", bd=0)
             lb.pack(side="left", expand=True); self._mlabels.append(lb)                # (an equal share of the width each: spread across the bar)
             lb.bind("<Enter>", lambda e, i=i, l=lb: (l.configure(fg=T.PALETTE["title"]), self.after(90, lambda: self._menu_hover(i)))
@@ -66,10 +67,16 @@ class StudioMenu:
                     ("Group layers", "", self.group_layers), ("Ungroup", "", self.ungroup), "-",
                     ("check", "Lock transparency", self.lock_alpha.get, lambda: self.lock_alpha.set(not self.lock_alpha.get()))]
         if name == "Select":
-            return [("Subject", "", self.select_subject), ("Select all", "Ctrl+A", self._sel_all), ("Deselect", "Ctrl+D", lambda: sel() and (self._sel_commit(), setattr(self, "sel", None), self._x_overlay())),
-                    ("Invert", "Ctrl+Shift+I", self.sel_invert), ("Refine edge", "", self.refine_selection), ("Grow / shrink…", "", lambda: self._goto_section("Options", "CUT OUT")), "-",
-                    ("Remove background", "Ctrl+I", self.remove_background), ("Cut to layer", "", lambda: self.sel_to_layer(True)),
+            return [("Select all", "Ctrl+A", self._sel_all), ("Deselect", "Ctrl+D", lambda: sel() and (self._sel_commit(), setattr(self, "sel", None), self._x_overlay())),
+                    ("Invert", "Ctrl+Shift+I", self.sel_invert), ("Grow / shrink…", "", lambda: self._goto_section("Options", "CUT OUT")), "-",
+                    ("Cut to layer", "", lambda: self.sel_to_layer(True)),
                     ("Copy to layer", "", lambda: self.sel_to_layer(False)), ("Make sticker", "", self.make_sticker)]
+        if name == "Magic":                                                      # every AI tool (also Options > Magic)
+            return [("head", "SELECT"), ("Object select", "", lambda: self.set_tool("smart")), ("Quick select", "", lambda: self.set_tool("quick_sel")),
+                    ("Select subject", "", self.select_subject), ("Refine edge", "", self.refine_selection), "-",
+                    ("head", "REMOVE"), ("Magic remove", "", lambda: self.set_tool("magic_remove")), ("Remove selected", "", self.remove_selected),
+                    ("Remove background", "Ctrl+I", self.remove_background), "-",
+                    ("head", "EFFECTS"), ("Blur background", "", self.blur_background)]
         if name == "View":
             return [("check", "Brushes panel", lambda: bool(self.L.winfo_manager()), lambda: self.toggle_panel(self.L)),
                     ("check", "Color / Options panel", lambda: bool(self._R.winfo_manager()), lambda: self.toggle_panel(self._R)),

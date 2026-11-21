@@ -172,9 +172,7 @@ class StudioCutout:
     def _cutout_options(self, parent, frame):
         self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "CUT OUT", font=T.f(10, "underline")).pack()
         self._ai_init()
-        rows = [(("Select subject", self.select_subject, "Select subject"), ("Refine edge", self.refine_selection, "Refine edge")),
-                (("Remove background", self.remove_background, "Remove background"),),
-                (("Cut to layer", lambda: self.sel_to_layer(True), "What's selected moves onto a new layer of its own"),
+        rows = [(("Cut to layer", lambda: self.sel_to_layer(True), "What's selected moves onto a new layer of its own"),
                  ("Copy to layer", lambda: self.sel_to_layer(False), "What's selected is copied onto a new layer")),
                 (("Make sticker", self.make_sticker, "What's selected on this layer (or all of it) becomes a sticker, kept in the Color view"),),
                 (("Invert", self.sel_invert, "Select everything that isn't selected (Ctrl+Shift+I)"),),

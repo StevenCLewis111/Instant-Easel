@@ -96,6 +96,7 @@ SECTIONS = [
         _b("Object Selection", "tool:smart select", kind="tool", tool="smart", look=dict(fx="shape", shape="rect")),
         _b("Quick Selection", "tool:quick selection", kind="tool", tool="quick_sel", look=dict(fx="shape", shape="rect")),
         _b("Magic Eraser", "tool:magic eraser", kind="tool", tool="magic_eraser", look=dict(fx="icon", icon="Eraser")),
+        _b("Magic Remove", "tool:magic remove", "remove tool", "content aware", kind="tool", tool="magic_remove", look=dict(fx="icon", icon="Magic Wand")),
     ]),
     ("Misc Tools", "tiles", [
         _b("Polygon", "tool:polygon", kind="tool", tool="polygon", look=dict(fx="shape", shape="polygon")),

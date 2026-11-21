@@ -24,12 +24,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt pyinstaller
-      - uses: actions/cache@v4                              # the cut-out AI's models (~285 MB): fetched once, kept between builds
+      - uses: actions/cache@v4                              # the AI models (~490 MB: cut-out + Magic Remove): fetched once, kept between builds
         with:
           path: Instant Easel Pro/my-models/cutout
-          key: cutout-models-isnet-general-sam-vitb-quant-v1
+          key: cutout-models-isnet-general-sam-vitb-quant-lama-v2
       - name: Fetch the cut-out AI's models (built into the .exe; checked by SHA-256)
-        run: python -c "import sys; sys.path.insert(0, 'systems/Drawing'); import ai_cutout as A; A.set_model_dir('my-models/cutout'); A.ensure('subject'); A.ensure('sam'); print('models ready')"
+        run: python -c "import sys; sys.path.insert(0, 'systems/Drawing'); import ai_cutout as A; A.set_model_dir('my-models/cutout'); A.ensure('subject'); A.ensure('sam'); A.ensure('remove'); print('models ready')"
       - run: python -m PyInstaller --noconfirm --distpath dist PaintEngine.spec
       - name: Zip the app folder (InstantEaselPro.exe + _internal) for the Releases page
         run: 7z a -tzip -mx=5 "InstantEaselPro-windows.zip" ".\dist\InstantEaselPro\*"
