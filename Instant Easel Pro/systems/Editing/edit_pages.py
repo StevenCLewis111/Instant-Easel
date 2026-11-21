@@ -243,8 +243,8 @@ class EditBase(tk.Frame):
         buttons += [("↶ Undo", self.hub.hist_undo, "normal"), ("↷ Redo", self.hub.hist_redo, "normal"), ("Before / after", self.toggle, "normal"),
                     ("Reset all", self.hub.reset, "danger"), ("Apply", self.apply_now, "normal"), ("Save", self.save, "normal")]
         for text, cmd, kind in buttons:
-            art = {"↶ Undo": "undo", "↷ Redo": "redo", "Reset all": "reset", "Apply": "apply"}.get(text)          # your painted buttons
-            tips = {"undo": "Undo (Ctrl+Z)", "redo": "Redo (Ctrl+Y)", "reset": "Reset all", "apply": "Apply"}
+            art = {"↶ Undo": "undo", "↷ Redo": "redo", "Reset all": "reset", "Apply": "apply", "Before / after": "before_after"}.get(text)          # your painted buttons
+            tips = {"undo": "Undo (Ctrl+Z)", "redo": "Redo (Ctrl+Y)", "reset": "Reset all", "apply": "Apply", "before_after": "Before / after"}
             if art and UA.toolbar(art) is not None: self._art_button(bar, art, tips[art], cmd).pack(side="left", padx=(0, 8)); continue
             b = T.Button(bar, text, cmd, kind=kind)
             (skin.file_button(b) if text in ("Open image", "Save") else b).pack(side="left", padx=(0, 8))
