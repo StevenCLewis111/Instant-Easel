@@ -30,7 +30,8 @@ class StudioMenu:
         for i, name in enumerate(("File", "Edit", "Image", "Layer", "Select", "View", "Window", "Help")):
             lb = tk.Label(bar, text=name, bg=self["bg"], fg=MENU_TEXT, cursor="hand2", bd=0)
             lb.pack(side="left", expand=True); self._mlabels.append(lb)                # (an equal share of the width each: spread across the bar)
-            lb.bind("<Enter>", lambda e, l=lb: l.configure(fg=T.PALETTE["title"]) if self.winfo_containing(*self.winfo_pointerxy()) is l else None)   # (really under the mouse: closing a menu sends a stray one)
+            lb.bind("<Enter>", lambda e, i=i, l=lb: (l.configure(fg=T.PALETTE["title"]), self.after(90, lambda: self._menu_hover(i)))
+                    if self.winfo_containing(*self.winfo_pointerxy()) is l else None)   # hover opens its menu (really under the mouse: closing one sends a stray Enter)
             lb.bind("<Leave>", lambda e, i=i, l=lb: l.configure(fg=MENU_TEXT) if (self._mopen is None or self._mopen[0] != i) else None)   # (white again, unless its menu is open)
             lb.bind("<Button-1>", lambda e, i=i: (self._menu_close() if self._mopen and self._mopen[0] == i else self._menu_open(i), "break")[1])
         def style():
@@ -124,10 +125,30 @@ class StudioMenu:
         top.update_idletasks()
         top.geometry(f"+{lb.winfo_rootx()}+{lb.winfo_rooty() + lb.winfo_height()}"); top.deiconify()
         lb.configure(fg=T.PALETTE["title"]); self._mopen = (i, top)
-        top.bind("<Escape>", lambda e: self._menu_close()); top.bind("<Button-1>", self._menu_click); top.bind("<Motion>", self._menu_motion)
-        top.focus_set()
-        try: top.grab_set()                                                         # a click anywhere else closes it
-        except tk.TclError: pass
+        self._mout = 0; self.after(80, self._menu_watch)                              # it closes once the mouse is off the name and the menu
+
+    def _menu_hover(self, i):
+        """the mouse rested on a menu name: open it (if it's still there)"""
+        lb = self._mlabels[i]
+        if self.winfo_containing(*self.winfo_pointerxy()) is lb and not (self._mopen and self._mopen[0] == i): self._menu_open(i)
+
+    @staticmethod
+    def _inside(w, x, y, grow=0):
+        try: return w.winfo_rootx() - grow <= x < w.winfo_rootx() + w.winfo_width() + grow and w.winfo_rooty() - grow <= y < w.winfo_rooty() + w.winfo_height() + grow
+        except tk.TclError: return False
+
+    def _menu_watch(self):
+        """while a menu is open: another name under the mouse opens that one; off the name and its menu for a moment, it closes"""
+        if not self._mopen: return
+        i, top = self._mopen; x, y = self.winfo_pointerxy(); lb = self._mlabels[i]
+        j = next((k for k, l in enumerate(self._mlabels) if self._inside(l, x, y)), None)
+        if j is not None and j != i: self._menu_open(j); return
+        bridge = lb.winfo_rootx() <= x < lb.winfo_rootx() + max(lb.winfo_width(), 1) and lb.winfo_rooty() <= y <= top.winfo_rooty() + 2   # the gap between them
+        if self._inside(lb, x, y) or self._inside(top, x, y, 2) or bridge: self._mout = 0
+        else:
+            self._mout += 1
+            if self._mout >= 3: self._menu_close(); return                      # (about a quarter of a second off it: gone)
+        self.after(80, self._menu_watch)
 
     def _menu_hit(self, e):
         w = self.winfo_containing(e.x_root, e.y_root)
@@ -149,7 +170,7 @@ class StudioMenu:
     def _menu_close(self):
         if not self._mopen: return
         i, top = self._mopen; self._mopen = None
-        try: top.grab_release(); top.destroy()
+        try: top.destroy()
         except tk.TclError: pass
         self._mlabels[i].configure(fg=MENU_TEXT)
 
