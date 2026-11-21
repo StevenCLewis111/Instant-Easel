@@ -1,5 +1,6 @@
 name: Build InstantEasel.exe — drawing app (Windows)
-# Builds the standalone drawing app (Instant Easel) into one Windows program on a GitHub Windows machine, then saves it to
+# Builds the standalone drawing app (Instant Easel) into one Windows program on a GitHub Windows machine, then publishes it as a
+# prerelease on the Releases page and (while it's under GitHub's 100 MB limit) saves it to
 # "Instant Easel/EXE Build/InstantEasel.exe" on the same branch (and as a download on the run's page).
 # Runs on every push that changes Instant Easel, or by hand: Actions tab > this workflow > Run workflow.
 on:
@@ -28,11 +29,28 @@ jobs:
         with:
           name: InstantEasel-drawing-windows
           path: Instant Easel/EXE Build/InstantEasel.exe
+      - name: Publish the new InstantEasel.exe as a prerelease (the Releases page)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # one prerelease per app, replaced by each new build (Releases take files up to 2 GB; the branch only up to 100 MB)
+          TAG="drawing-app-latest"
+          gh release delete "$TAG" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$TAG" "EXE Build/InstantEasel.exe" --prerelease --target "$GITHUB_SHA" \
+            --title "Instant Easel (drawing app) — test build ${GITHUB_SHA::7}" \
+            --notes "Test build of Instant Easel (drawing app) for Windows, made automatically from commit ${GITHUB_SHA::7} on $(date -u +'%Y-%m-%d %H:%M UTC').
+
+          Download **InstantEasel.exe** below and run it (no install needed). Windows may say it protected your PC because the program isn't signed yet: click *More info* > *Run anyway*.
+
+          The cut-out AI (Select Subject, Object Selection, Remove Background) downloads its models once, the first time you use it, after asking."
       - name: Save the new InstantEasel.exe to the branch
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          size=$(stat -c %s "EXE Build/InstantEasel.exe")
+          if [ "$size" -gt 104000000 ]; then echo "InstantEasel.exe is $((size / 1000000)) MB: too big for the branch (GitHub's 100 MB limit) - it's on the Releases page"; exit 0; fi
           git add -f "EXE Build/InstantEasel.exe"
           if git diff --cached --quiet; then echo "exe unchanged"; exit 0; fi
           git commit -m "Build InstantEasel.exe (drawing app, Windows) from ${GITHUB_SHA::7}"
