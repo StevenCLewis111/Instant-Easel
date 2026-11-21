@@ -37,7 +37,7 @@ def _area(kind, name):
 # ---- toolbar: the Draw studio's top row. File buttons have their words painted on; the rest are square icons
 TOOLBAR = {
     "new": "buttons/new", "open": "buttons/open", "picture": "buttons/last", "save": "buttons/save", "send": "buttons/send",
-    "undo": "toolbar/undo", "redo": "toolbar/redo", "reset": "toolbar/reset", "apply": "toolbar/apply", "before_after": "toolbar/before_after", "zoom in": "toolbar/zoom_in", "zoom out": "toolbar/zoom_out",
+    "undo": "toolbar/undo", "redo": "toolbar/redo", "reset": "toolbar/reset", "apply": "toolbar/apply", "before_after": "toolbar/before_after", "compare": "toolbar/compare", "zoom in": "toolbar/zoom_in", "zoom out": "toolbar/zoom_out",
     "brush": "toolbar/brush", "eraser": "toolbar/eraser", "eyedropper": "toolbar/color", "paint bucket": "toolbar/bucket", "text": "toolbar/text",
     "restore": "toolbar/win_restore", "maximize": "toolbar/win_max",       # the studio-size button: single square at normal size, double square expanded
     "fit": "toolbar/fit", "line": "toolbar/shape_line", "rect": "toolbar/shape_rect", "oval": "toolbar/shape_oval",

@@ -397,7 +397,9 @@ class HistoryPage(EditBase):
     def __init__(self, master, app):
         super().__init__(master, app, "History"); self.compare = False
         c = self.controls
-        r = _frame(c); r.pack(anchor="w", pady=(0, 6)); T.Button(r, "Compare side by side", self.toggle_compare).pack(side="left")
+        r = _frame(c); r.pack(anchor="w", pady=(0, 6))
+        (self._art_button(r, "compare", "Compare side by side", self.toggle_compare, h=48) if UA.toolbar("compare") is not None
+         else T.Button(r, "Compare side by side", self.toggle_compare)).pack(side="left")
         r = _frame(c); r.pack(anchor="w", pady=(0, 8)); skin.file_button(T.Button(r, "Save as new", self.save)).pack(side="left")
         T.Text(c, "STEPS  (click one to go back to it)", font=T.f(10)).pack(anchor="w", pady=(6, 2))
         box = T.ScrollBox(c, bg="panel2"); box.pack(fill="y", expand=True, anchor="w")
