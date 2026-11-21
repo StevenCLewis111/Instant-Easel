@@ -393,14 +393,13 @@ class FiltersPage(EditBase):
 
 
 class HistoryPage(EditBase):
-    """every step of this edit by name (click to jump), undo / redo, side-by-side compare, reset, save"""
+    """every step of this edit by name (click to jump), undo / redo, side-by-side compare, reset (Save is on the bar above)"""
     def __init__(self, master, app):
         super().__init__(master, app, "History"); self.compare = False
         c = self.controls
         r = _frame(c); r.pack(anchor="w", pady=(0, 6))
         (self._art_button(r, "compare", "Compare side by side", self.toggle_compare, h=48) if UA.toolbar("compare") is not None
          else T.Button(r, "Compare side by side", self.toggle_compare)).pack(side="left")
-        r = _frame(c); r.pack(anchor="w", pady=(0, 8)); skin.file_button(T.Button(r, "Save as new", self.save)).pack(side="left")
         T.Text(c, "STEPS  (click one to go back to it)", font=T.f(10)).pack(anchor="w", pady=(6, 2))
         box = T.ScrollBox(c, bg="panel2"); box.pack(fill="y", expand=True, anchor="w")
         self.lcv = tk.Canvas(box.body, width=262, height=420, bg=T.PALETTE["panel2"], highlightthickness=0); box.attach(self.lcv)

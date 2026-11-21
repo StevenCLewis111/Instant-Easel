@@ -99,7 +99,7 @@ MENUS = [
         notes="Remove background, expand and upscale can be built into the engine. Fix faces needs a face-restoration AI model run offline as an add-on."),
    dict(name="History", status="built", order=0, desc="Undo, redo, every step by name, compare, reset, save as new / overwrite.",
         options=["Undo / Redo buttons on every Editing screen; Ctrl+Z / Ctrl+Y", "Every step listed by name (e.g. 'Exposure +20', 'Filter: sepia', 'Crop'); click to jump back",
-                 "One slider drag = one step", "Compare original and current side by side", "Reset to original (undoable)", "Save as new; Overwrite original (with confirmation)"]),
+                 "One slider drag = one step", "Compare before and after side by side", "Reset all (undoable)", "Save (on the bar above)"]),
  ]),
  ("Drawing", "Draw and paint by hand (the whole page is the drawing studio)", [
    dict(name="Draw", status="built", order=0, desc="A full drawing studio: paint by hand on a blank page, the last created image, or any picture.",

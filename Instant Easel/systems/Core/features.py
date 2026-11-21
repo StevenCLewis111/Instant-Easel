@@ -25,7 +25,7 @@ MENUS = [
                  "Straighten -45° to +45° with automatic crop of the empty corners", "Flip horizontal/vertical", "Resize 25%-200%", "Runs before Light/Color/Effects; Save applies everything at full size"]),
    dict(name="History", status="built", order=0, desc="Undo, redo, every step by name, compare, reset, save as new / overwrite.",
         options=["Undo / Redo buttons on every Editing screen; Ctrl+Z / Ctrl+Y", "Every step listed by name (e.g. 'Exposure +20', 'Filter: sepia', 'Crop'); click to jump back",
-                 "One slider drag = one step", "Compare original and current side by side", "Reset to original (undoable)", "Save as new; Overwrite original (with confirmation)"]),
+                 "One slider drag = one step", "Compare before and after side by side", "Reset all (undoable)", "Save (on the bar above)"]),
  ]),
  ("Settings", "The app itself", [
    dict(name="Theme", status="built", order=0, desc="Border colour, background colour, panel opacity, one-colour themes.", options=[]),
