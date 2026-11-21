@@ -223,9 +223,7 @@ def _hover_note(w, text):
     def show(e=None):
         if tip.get("w") is not None: return
         try:
-            t = tk.Toplevel(w); t.overrideredirect(True); t.attributes("-topmost", True)
-            tk.Label(t, text=text, bg=T.PALETTE["panel2"], fg="white", font=T.f(9), padx=6, pady=2, bd=1, relief="solid").pack()
-            t.geometry(f"+{w.winfo_rootx()}+{w.winfo_rooty() + w.winfo_height() + 2}"); tip["w"] = t
+            tip["w"] = T.tip_window(w, text)                                     # just the button's name (theme.tip_window)
         except tk.TclError: pass
     def hide(e=None):
         t = tip.pop("w", None)

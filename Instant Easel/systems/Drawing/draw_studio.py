@@ -16,6 +16,7 @@ from studio_extras import StudioExtras, SEL_TOOLS
 from studio_more import StudioMore
 from studio_groups import StudioGroups, Group
 from studio_cutout import StudioCutout
+from studio_menu import StudioMenu
 
 import paths; HERE = paths.APP                                    # (fonts/)
 MODES = list(brushes.BLEND_MODES)                                              # layer blend modes (the same list brushes use)
@@ -87,7 +88,7 @@ def blend_layer(bg, layer, sl=(slice(None), slice(None)), clip=None):
     c = L if layer.mode == "normal" else brushes.blend_rgb(bg, L, layer.mode)
     return bg * (1 - a) + c * a
 
-class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame):
+class DrawStudio(StudioMenu, StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame):
     WHOLE = True                                                               # the Draw tab is this one page (no side menu)
     def __init__(self, master, app, size=(1600, 1100)):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"])); STUDIOS.append(self); self._groups_init()
@@ -106,7 +107,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         self._tick_job = None; self._pending = []; self._last_pt = None; self._patches = []; self._edit = None; self._dirty = None
         self._pv_job = None; self._layer_job = None; self._ui_job = None; self._wheel_cache = (None, None); self._in_layers_ui = False
         self.changed = False                                         # anything drawn since the last autosave (crash recovery)
-        self._toolbar(); body = tk.Frame(self, bg=self["bg"]); body.pack(fill="both", expand=True); T.on_change(lambda: body.configure(bg=self["bg"]))
+        self._menubar(); self._toolbar(); body = tk.Frame(self, bg=self["bg"]); body.pack(fill="both", expand=True); T.on_change(lambda: body.configure(bg=self["bg"]))
         self._left(body); self._right(body)
         self.cv = self._cv_small = self._make_canvas(body); self.cv.pack(side="left", fill="both", expand=True, padx=6)
 
@@ -340,9 +341,7 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         def show():
             st["job"] = None
             if st["win"] is not None: return
-            t = tk.Toplevel(w); t.overrideredirect(True); t.attributes("-topmost", True)
-            tk.Label(t, text=st["text"], font=T.f(9), fg="white", bg=T.PALETTE["panel2"], padx=6, pady=2, highlightthickness=1, highlightbackground=T.PALETTE["border"]).pack()
-            t.geometry(f"+{w.winfo_rootx()}+{w.winfo_rooty() + w.winfo_height() + 4}"); st["win"] = t
+            st["win"] = T.tip_window(w, st["text"])                              # just the button's name (theme.tip_window)
         def hide(e=None):
             if st["job"]: w.after_cancel(st["job"]); st["job"] = None
             if st["win"] is not None: st["win"].destroy(); st["win"] = None
@@ -579,7 +578,8 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
     def _apx(self, v): return max(1, int(round(v * T.Z)))
     def _rule(self, parent, pady=(10, 0)):
         """the border line above a section's title, dividing it from the one before (follows the theme colour and zoom)"""
-        l = T.Line(parent, vertical=False); l.pack(fill="x", pady=pady); return l
+        l = T.Line(parent, vertical=False); l.pack(fill="x", pady=pady); l._is_rule = True
+        self.__dict__.setdefault("_rules", []).append(l); return l                   # (the Window menu finds the sections by these)
     def _art_label(self, parent, cursor="hand2"):
         return tk.Label(parent, bd=0, highlightthickness=0, padx=0, pady=0, bg=parent["bg"], cursor=cursor)
     def _panel_button(self, parent, piece, command, tip, size=34):
@@ -781,14 +781,14 @@ class DrawStudio(StudioCutout, StudioGroups, StudioMore, StudioExtras, tk.Frame)
         # palettes: the header opens / closes them. On their own they close when the panel is short (so the colour ring keeps its
         # room) and open again when there's space (big mode); clicking the header decides from then on
         self._pal_open, self._pal_auto = True, True
-        pal_group = frame(fill="x")                                                   # the palettes header and its colours, one group
+        pal_group = frame(fill="x"); pal_group._sec_name = "PALETTES"                                                   # the palettes header and its colours, one group
         self._rule(pal_group, (4, 4)); ph_ = self._art(self._art_label(pal_group), header("PALETTES", 24, arrow=lambda: "-" if self._pal_open else "+")); ph_.pack(pady=(0, 1))
         self._pal_box = frame(pal_group, fill="x"); self._pal_hdr = ph_
         for pair in (("Warm", "Cool"), ("Pastel", "Earth")): swatches(self._pal_box, PALETTES[pair[0]] + PALETTES[pair[1]], 20)
         ph_.bind("<Button-1>", lambda e: (setattr(self, "_pal_auto", False), self._set_palettes(not self._pal_open)))
         self._tip(ph_, "Show / hide the palettes")
         # ---- history: the recent colours, shown / hidden with the HISTORY button
-        hist_group = frame(fill="x")                                                  # the HISTORY button and the recent colours, one group
+        hist_group = frame(fill="x"); hist_group._sec_name = "HISTORY"                                                  # the HISTORY button and the recent colours, one group
         self.hist_row = frame(hist_group, fill="x", pady=(2, 0))
         def hist_img(b):
             W, H = self._apx(IW), self._apx(34); hv = b._hover

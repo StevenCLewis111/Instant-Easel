@@ -732,3 +732,36 @@ def popup(master, title, message, buttons=(("OK", "normal"),)):
     try: win.wait_visibility(); win.grab_set()
     except tk.TclError: pass
     master.wait_window(win); return res["v"]
+
+
+# ---- hover names: a small box with a button's name, in the panel's colour (a little see-through), its border, white words
+MENU_WORDS = "#ffffff"                   # the menus' and the hover names' words (gold under the mouse). (Deep blue #0a1a8c was too
+                                         # dark to read on the dark panels.)
+
+def tip_name(text, w=None):
+    """just the button's name: its own words if it shows any, otherwise the note without shortcut keys or explanations
+    ('Undo (Ctrl+Z)' -> 'Undo', 'Move: drag the picture…' -> 'Move'; a short '(rectangle)' that's part of the name stays)"""
+    import re
+    own = ""
+    if w is not None:
+        try: own = str(w.cget("text")).strip()
+        except Exception: own = ""
+    t = (own or str(text or "")).strip().rstrip(":")
+    for sep in (": ", " — ", " - ", ". ", "\n"):
+        if sep in t: t = t.split(sep)[0]
+    def keep(m):
+        inner = m.group(1)
+        if re.search(r"ctrl|shift|alt|esc|wheel|mouse|^\S$|^[\[\]\\/,.;'`=+-]$|^f\d+$", inner, re.I) or len(inner.split()) > 2: return ""
+        return m.group(0)
+    t = re.sub(r"\s*\(([^)]*)\)", keep, t)
+    return re.sub(r"\s{2,}", " ", t).strip() or str(text or "").strip()
+
+def tip_window(w, text):
+    """the box itself, just under w"""
+    t = tk.Toplevel(w); t.overrideredirect(True)
+    try: t.attributes("-topmost", True); t.attributes("-alpha", 0.9)
+    except tk.TclError: pass
+    t.configure(bg=PALETTE["panel"], highlightthickness=max(2, int(2 * Z)), highlightbackground=PALETTE["border"], highlightcolor=PALETTE["border"])
+    tk.Label(t, text=tip_name(text, w), font=f(9), fg=MENU_WORDS, bg=PALETTE["panel"], padx=int(7 * Z), pady=int(2 * Z)).pack()
+    t.geometry(f"+{w.winfo_rootx()}+{w.winfo_rooty() + w.winfo_height() + 4}")
+    return t
