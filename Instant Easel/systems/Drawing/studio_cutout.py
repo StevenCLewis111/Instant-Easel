@@ -226,7 +226,7 @@ class StudioCutout:
         while os.path.exists(os.path.join(self._sticker_dir(), name.replace(" ", "_") + ".png")): n += 1; name = f"Sticker {n}"
         try: im.save(os.path.join(self._sticker_dir(), name.replace(" ", "_") + ".png"))
         except Exception: prefs.log_note("saving a sticker"); T.banner(self.app, "COULDN'T SAVE THE STICKER"); return None
-        self._fill_stickers()
+        self._fill_stickers(); self._section_on(("Color", "STICKERS"))          # (Stickers turns on for good once you have one)
         if not quiet: T.banner(self.app, f"STICKER MADE — '{name}' is under Stickers in the Color view", "success")
         return name
 
@@ -263,6 +263,7 @@ class StudioCutout:
             except Exception: prefs.log_note("importing stickers", fp); bad += 1
         if done or bad:
             self._fill_stickers()
+            if done: self._section_on(("Color", "STICKERS"))
             T.banner(self.app, f"{done} STICKER{'S' if done != 1 else ''} ADDED" + (f" — {bad} couldn't be read" if bad else ""), "success" if done else "error")
         return done
 

@@ -10,6 +10,14 @@ import prefs
 
 MENU_TEXT = T.MENU_WORDS     # white words; gold under the mouse
 NO_HIDE = ("BRUSH OPTIONS",)   # always there
+# off until you turn them on (Window), so a new picture starts with a tidy studio; the rest start on
+DEFAULT_OFF = [("Color", "STICKERS"), ("Color", "MY COLORS"), ("Options", "TEXT"), ("Options", "NAVIGATOR"), ("Options", "LAYER COLOR"),
+               ("Options", "CUT OUT"), ("Options", "GUIDES"), ("Options", "SAVING"), ("Options", "TIMELAPSE"), ("Adjustments", "MY BRUSHES")]
+# a tool whose settings live in a section turns it on while you use it (and off again after, unless you turned it on yourself)
+_SEL = [("Options", "CUT OUT"), ("Options", "FILL")]
+TOOL_SECTIONS = {"text": [("Options", "TEXT")], "fill": [("Options", "FILL")], "pattern_fill": [("Options", "FILL")],
+                 "gradient": [("Options", "FILL")], "gradient_radial": [("Options", "FILL")], "magic_eraser": [("Options", "FILL")],
+                 "wand": _SEL, "smart": _SEL, "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
 
 
 class StudioMenu:
@@ -217,10 +225,11 @@ class StudioMenu:
                 v = view_of(run[0]); name = title_in(run[1:])
                 if v is None or name is None or name in NO_HIDE or (v, name) in self._secs: continue
                 self._secs[(v, name)] = (par, run); self._sections.append((v, name))
-        self._hidden_secs = set(); self._sec_info = {}
-        for k in prefs.get("draw_hidden_sections") or []:
+        self._hidden_secs = set(); self._sec_info = {}; self._auto_on = set()
+        saved = prefs.get("draw_hidden_sections")                                   # (nothing saved yet: the defaults)
+        for k in (DEFAULT_OFF if saved is None else saved):
             if tuple(k) in self._secs: self._hide_section(tuple(k))
-        self._refit_views()
+        self._refit_views(); self._auto_sections()
 
     def _hide_section(self, key):
         par, run = self._secs[key]
@@ -241,13 +250,33 @@ class StudioMenu:
             except tk.TclError: pass
         self._hidden_secs.discard(key)
 
-    def _save_hidden(self): prefs.set("draw_hidden_sections", [list(k) for k in sorted(self._hidden_secs)])
+    def _save_hidden(self):
+        """(a section a tool turned on for now still counts as off)"""
+        prefs.set("draw_hidden_sections", [list(k) for k in sorted(self._hidden_secs | getattr(self, "_auto_on", set()))])
 
     def _toggle_section(self, view, name):
-        key = (view, name)
+        key = (view, name); self._auto_on.discard(key)                              # you've chosen: it stays as you set it
         if key in self._hidden_secs: self._show_section(key)
         else: self._hide_section(key)
         self._save_hidden(); self._refit_views()
+
+    def _auto_sections(self):
+        """the tool in use turns on the sections its settings are in; the ones it turned on go off again when you leave it"""
+        if not hasattr(self, "_secs"): return
+        want = set(TOOL_SECTIONS.get(getattr(self, "tool", ""), []))
+        if getattr(self, "sel", None) is not None: want |= set(_SEL)                # something selected: the Cut Out tools
+        changed = False
+        for k in list(self._auto_on):
+            if k not in want and k in self._secs: self._hide_section(k); self._auto_on.discard(k); changed = True
+        for k in want:
+            if k in self._hidden_secs and k in self._secs: self._show_section(k); self._auto_on.add(k); changed = True
+        if changed: self._refit_views()
+
+    def _section_on(self, key):
+        """turn a section on for good (e.g. Stickers, once you've made or imported one)"""
+        if not hasattr(self, "_secs") or key not in self._secs: return
+        self._auto_on.discard(key)
+        if key in self._hidden_secs: self._show_section(key); self._save_hidden(); self._refit_views()
 
     def _show_all_sections(self):
         for k in list(self._hidden_secs): self._show_section(k)
@@ -262,7 +291,7 @@ class StudioMenu:
 
     def _goto_section(self, view, name):
         """open that side and scroll so the section is at the top (showing it first if Window had it hidden)"""
-        key = (view, name)
+        key = (view, name); self._auto_on.discard(key)
         if key in getattr(self, "_hidden_secs", ()): self._show_section(key); self._save_hidden()
         if view == "Adjustments": self._left_view("Adjustments")
         else: self._right_view(view)

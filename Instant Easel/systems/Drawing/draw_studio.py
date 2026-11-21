@@ -1256,6 +1256,7 @@ class DrawStudio(StudioMenu, StudioCutout, StudioGroups, StudioMore, StudioExtra
         if hasattr(self, "tool"): self._x_leaving(t)                             # finish a selection / crop / text first
         if t == "pick" and getattr(self, "tool", "pick") != "pick": self._before_pick = self.tool   # Pick hands back to this tool once a colour is taken
         self.tool = t
+        if hasattr(self, "_auto_sections"): self.after_idle(self._auto_sections)   # its settings' section turns on (Window menu)
         if getattr(self, "_pv_tool", None) and t != self._pv_tool[5:] and hasattr(self, "preview"): self._preview()   # left that tool: the brush's picture again
         if t in ("crop", "text") and self._turned(): self.set_view(rot=0, flip=False)     # crop / text work on an upright view
         for k, b in self.tool_btns.items():
