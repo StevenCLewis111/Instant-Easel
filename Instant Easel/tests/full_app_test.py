@@ -33,11 +33,17 @@ def run():
         for k in range(10): ds._wheel_pick(E(x=95 + k, y=95)); app.update()
         ds.set_size(80); ds.zoom_by(1.5); ds._pan_start(E(x=10, y=10)); ds._pan_move(E(x=40, y=30)); app.update(); time.sleep(0.2); app.update()
         assert ds.flatten().size == tuple(ds.size_wh)
-    step("standalone: only Drawing + Settings, no AI or Editing buttons", lambda: (
-        None if list(app.pages) == ["Drawing", "Settings"] and not any(k in ("picture", "send") for _, _, k in getattr(ds, "_tb", [])) else 1 / 0))
+    step("standalone: Drawing, Editing, Settings, no AI buttons", lambda: (
+        None if list(app.pages) == ["Drawing", "Editing", "Settings"] and not any(k in ("picture", "send") for _, _, k in getattr(ds, "_tb", [])) else 1 / 0))
     step("Draw: every tool, mirror, undo/redo, layers, colour, zoom, pan", draw_all)
     step("Theme sliders", lambda: [app.pages["Settings"].pages["Theme"].change("bg", v / 20) or app.update() for v in range(20)])
-    for tab in ("Drawing", "Settings"):
+    def editing_round_trip():
+        """Editing shows the Drawing picture; an edit goes into it on the way back (one Undo step)"""
+        app.goto("Editing", "Light"); app.update(); H = app.edit_hub; n = len(ds.undo_stack); before = ds._comp.copy()
+        H.params["exposure"] = 40; H.notify(); app.update(); app.goto("Drawing"); app.update()
+        assert len(ds.undo_stack) == n + 1 and ds._comp.mean() > before.mean(); ds.undo(); assert (ds._comp == before).all()
+    step("Editing <-> Drawing: same picture, edit applied, undoable", editing_round_trip)
+    for tab in ("Drawing", "Editing", "Settings"):
         sec = app.pages[tab]
         for name in sec.pages: step(f"{tab} > {name}", lambda s=sec, n=name, t=tab: (app.show(t), s.select(n), app.update()))
     step("window: maximized -> full screen -> fixed -> maximized", lambda: (app._to_maximized(), app.update(), app._to_fullscreen(), app.update(), app._to_fixed(), app.update(), app.apply_window_mode(), app.update()))

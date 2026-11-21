@@ -5,7 +5,7 @@ SYSTEMS = [d for d, _, files in os.walk('systems') if any(f.endswith('.py') for 
 a = Analysis(['main.py'], pathex=['.'] + SYSTEMS,
              datas=[('images/UI', 'images/UI'), ('fonts', 'fonts')],
              hiddenimports=['PIL._tkinter_finder', 'paths', 'prefs', 'features', 'theme', 'skin', 'ui_art', 'art_panel', 'crash', 'shortcut',
-                            'brushes', 'brush_catalog', 'brush_art', 'paint_window', 'rename_custom', 'draw_studio', 'studio_extras', 'studio_more', 'studio_groups', 'studio_cutout', 'studio_menu', 'studio_ai', 'ai_cutout', 'onnxruntime', 'settings_pages'],
+                            'brushes', 'brush_catalog', 'brush_art', 'paint_window', 'rename_custom', 'draw_studio', 'studio_extras', 'studio_more', 'studio_groups', 'studio_cutout', 'studio_menu', 'studio_ai', 'ai_cutout', 'onnxruntime', 'settings_pages', 'edit', 'edit_pages'],
              excludes=['matplotlib', 'pandas', 'torch', 'transformers',
                        # parts of SciPy and the AI runtime the app never uses (only scipy.ndimage, which needs linalg + special): a smaller download
                        'scipy.optimize', 'scipy.stats', 'scipy.sparse', 'scipy.spatial', 'scipy.io', 'scipy.signal', 'scipy.fft', 'scipy.fftpack',

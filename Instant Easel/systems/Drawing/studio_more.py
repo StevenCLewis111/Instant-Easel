@@ -261,63 +261,6 @@ class StudioMore:
         x, y = (e.x - self._nav_ox) / self._nav_k, (e.y - 1) / self._nav_k; W, H = self.cv.winfo_width(), self.cv.winfo_height()
         X, Y = self._to_scr(x, y); self.pan = [self.pan[0] + W / 2 - X, self.pan[1] + H / 2 - Y]; self._view_fit = False; self.refresh()
 
-    # ------------------------------------------------------------------ LAYER COLOR (Options): hue / saturation / brightness / contrast
-    def _layer_color(self, parent, frame):
-        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "LAYER COLOR", font=T.f(10, "underline")).pack()
-        self.lc = dict(hue=0.0, sat=0.0, bright=0.0, contrast=0.0); self.lc_rows = {}; self._lc_orig = None; self._lc_job = None
-        for key, label, tip in (("hue", "Hue:", "Turn every colour on this layer round the colour wheel"), ("sat", "Saturation:", "More or less colourful"),
-                                ("bright", "Lightness:", "Toward white or black (+100 is white, -100 black), like Hue/Saturation's Lightness"), ("contrast", "Contrast:", "More or less difference between light and dark")):
-            lo, hi = (-180, 180) if key == "hue" else (-100, 100)
-            row = self._slider_row(parent, label, 0.5, lambda v, k=key, lo=lo, hi=hi: self._lc_set(k, lo + v * (hi - lo)), "0")
-            row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._lc_set(k, x, sync=True))); row.range = (lo, hi)
-            self._tip(row.slider, tip); self.lc_rows[key] = row
-        r = frame(parent, fill="x", pady=(3, 2))
-        self._tip(self._small_btn(r, "Apply", self._lc_apply), "Keep the change (Ctrl+Z undoes it)").pack(side="left")
-        self._tip(self._small_btn(r, "Reset", self._lc_reset), "Back to how the layer was").pack(side="right")
-
-    def _lc_set(self, key, val, sync=False):
-        lo, hi = self.lc_rows[key].range; val = min(hi, max(lo, float(val))); self.lc[key] = val; row = self.lc_rows[key]
-        self._sync_slider(row, (val - lo) / (hi - lo)); row.var.set(f"{int(round(val))}")
-        if self._lc_orig is None or self._lc_orig[0] is not self.cur: self._lc_orig = (self.cur, self.cur.img.a.copy(), self.cur.img.alpha.copy())
-        if self._lc_job is None: self._lc_job = self.after(60, self._lc_preview)
-
-    def _lc_values(self, a):
-        """the layer's colours with the four settings applied (a: h x w x 3, 0..255)"""
-        x = a / 255.0; hue, sat, br, con = self.lc["hue"] / 360, self.lc["sat"] / 100, self.lc["bright"] / 100, self.lc["contrast"] / 100
-        if hue or sat:
-            mx, mn = x.max(-1), x.min(-1); d = mx - mn; v = mx; s = np.where(mx > 1e-6, d / np.maximum(mx, 1e-6), 0)
-            r, g, b = x[..., 0], x[..., 1], x[..., 2]; dd = np.maximum(d, 1e-6)
-            h = np.where(mx == r, ((g - b) / dd) % 6, np.where(mx == g, (b - r) / dd + 2, (r - g) / dd + 4)) / 6; h = np.where(d < 1e-6, 0, h)
-            h = (h + hue) % 1.0; s = np.clip(s * (1 + sat) if sat < 0 else 1 - (1 - s) ** (1 + 3 * sat), 0, 1)   # (more: greys stay grey, as in Photoshop)
-            i = np.floor(h * 6); f = h * 6 - i; p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f)); i = i.astype(int) % 6
-            x = np.stack([np.choose(i, [v, q, p, p, t, v]), np.choose(i, [t, v, v, q, p, p]), np.choose(i, [p, p, t, v, v, q])], -1)
-        if con: x = (x - 0.5) * (1 + con) + 0.5 if con < 0 else (x - 0.5) / max(0.02, 1 - con) + 0.5
-        if br: x = x + br * (1 - x) if br > 0 else x * (1 + br)
-        return np.clip(x * 255, 0, 255).astype(np.float32)
-
-    def _lc_preview(self):
-        self._lc_job = None
-        if self._lc_orig is None: return
-        L, a0, al0 = self._lc_orig
-        if L is not self.cur or L not in self.layers: self._lc_orig = None; return
-        L.img.a = self._lc_values(a0); self._recomp(); self._draw()
-
-    def _lc_apply(self):
-        if self._lc_orig is None: return
-        if self._lc_job is not None: self.after_cancel(self._lc_job); self._lc_job = None
-        L, a0, al0 = self._lc_orig; self._lc_orig = None
-        if L not in self.layers: return
-        L.img.a = self._lc_values(a0); self._edit = (self.layers.index(L), a0, al0); self._dirty = None; self._edit_mask = False
-        r = self._commit_edit(); self._recomp(); self._draw()
-        for k in self.lc: self.lc[k] = 0.0; self._sync_slider(self.lc_rows[k], 0.5); self.lc_rows[k].var.set("0")
-
-    def _lc_reset(self):
-        if self._lc_job is not None: self.after_cancel(self._lc_job); self._lc_job = None
-        if self._lc_orig is not None:
-            L, a0, al0 = self._lc_orig; self._lc_orig = None
-            if L in self.layers: L.img.a = a0; self._recomp(); self._draw()
-        for k in self.lc: self.lc[k] = 0.0; self._sync_slider(self.lc_rows[k], 0.5); self.lc_rows[k].var.set("0")
-
     # ------------------------------------------------------------------ TIMELAPSE (Options): a frame after every change, saved as an animation
     def _timelapse(self, parent, frame):
         self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "TIMELAPSE", font=T.f(10, "underline")).pack()

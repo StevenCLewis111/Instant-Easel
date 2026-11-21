@@ -706,8 +706,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         lk = frame(fill="x", pady=(0, 3)); T.Text(lk, "Lock transparency", font=T.f(9)).pack(side="left")
         self._tip(T.Toggle(lk, self.lock_alpha), "Paint only where this layer already has paint (great for shading inside a shape)").pack(side="right")
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
-        self._navigator(LV, frame, self._apx(IW) - 4)                                 # NAVIGATOR, LAYER COLOR (studio_more)
-        self._layer_color(LV, frame)
+        self._navigator(LV, frame, self._apx(IW) - 4)                                 # NAVIGATOR (studio_more)
         self._cutout_options(LV, frame)                                              # CUT OUT (studio_cutout)
         self._more_options(LV, frame)                                                # GUIDES, FILL, CANVAS, SAVING (studio_more)
         self._timelapse(LV, frame)
@@ -1747,7 +1746,6 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         self._recomp(rect); self._patch(rect)
 
     def down(self, e):
-        if getattr(self, "_lc_orig", None) is not None: self._lc_apply()             # a layer colour change being previewed is kept first
         if self.tool == "move": self._pan_start(e); return                         # Move: the press grabs the picture, dragging moves it
         if hasattr(self, "guide") and self.guide.get() != "Off" and self.guide_move.get(): self._guide_grab(e); return   # Move guides: drag their dots
         p = self.to_img(e); self.start = p; t = self.tool
@@ -2302,6 +2300,6 @@ def _traced(name, fn):
     w.__name__, w.__doc__ = fn.__name__, fn.__doc__; return w
 for _n in ("set_tool", "set_brush", "save", "save_ora", "open", "open_ora", "load_image", "new", "undo", "redo", "add_layer", "dup_layer", "del_layer",
            "merge_down", "move_layer", "group_layers", "ungroup", "merge_group", "delete_group", "move_group", "_resize", "_crop_apply", "_xf_start",
-           "_xf_end", "_mask_toggle", "_mask_apply", "_mask_delete", "_lc_apply", "_tl_save", "_save_preset", "_use_preset", "_set_clip",
+           "_xf_end", "_mask_toggle", "_mask_apply", "_mask_delete", "_tl_save", "_save_preset", "_use_preset", "_set_clip",
            "swap_colors", "_poly_finish", "_gradient", "_fill", "_wand", "_sel_paste", "_sel_delete", "_txt_commit", "_resize_doc", "restore"):
     if hasattr(DrawStudio, _n): setattr(DrawStudio, _n, _traced(_n, getattr(DrawStudio, _n)))

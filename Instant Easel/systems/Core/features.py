@@ -11,6 +11,22 @@ MENUS = [
                  "Color: hue ring + saturation/brightness square, hex code, swatches, palettes, history, eyedropper",
                  "Canvas: zoom with the wheel, pan with the right mouse button; the view keeps its place when the window changes"]),
  ]),
+ ("Editing", "Change an image (any picture, or one it made)", [
+   dict(name="Light", status="built", order=1, desc="Lightroom-style light adjustments.",
+        options=["Exposure", "Brightness", "Contrast", "Highlights", "Shadows", "Whites", "Blacks"]),
+   dict(name="Color", status="built", order=1, desc="Color adjustments.",
+        options=["Temperature (warm/cool)", "Tint (green/magenta)", "Hue", "Saturation", "Vibrance"]),
+   dict(name="Effects", status="built", order=1, desc="Finishing effects.",
+        options=["Sharpness", "Clarity", "Vignette", "Grain", "Soft glow"]),
+   dict(name="Filters", status="built", order=1, desc="One-click looks.",
+        options=["Grayscale", "Sepia", "Warm film", "Cool film", "Faded", "High contrast", "Your saved looks"]),
+   dict(name="Transform", status="built", order=2, desc="Shape and orientation.",
+        options=["Crop: drag a box on the picture; ratio presets Free, 1:1, 2:3, 3:2, 4:5, 16:9, 9:16 (box keeps the shape); rule-of-thirds guides", "Rotate 90° left/right",
+                 "Straighten -45° to +45° with automatic crop of the empty corners", "Flip horizontal/vertical", "Resize 25%-200%", "Runs before Light/Color/Effects; Save applies everything at full size"]),
+   dict(name="History", status="built", order=0, desc="Undo, redo, every step by name, compare, reset, save as new / overwrite.",
+        options=["Undo / Redo buttons on every Editing screen; Ctrl+Z / Ctrl+Y", "Every step listed by name (e.g. 'Exposure +20', 'Filter: sepia', 'Crop'); click to jump back",
+                 "One slider drag = one step", "Compare original and current side by side", "Reset to original (undoable)", "Save as new; Overwrite original (with confirmation)"]),
+ ]),
  ("Settings", "The app itself", [
    dict(name="Theme", status="built", order=0, desc="Border colour, background colour, panel opacity, one-colour themes.", options=[]),
    dict(name="General", status="built", order=0, desc="Saving pictures, quitting, desktop shortcut.", options=[]),
@@ -21,5 +37,5 @@ MENUS = [
  ]),
 ]
 
-TAB_ORDER = ["Drawing", "Settings"]   # the tabs, left to right
+TAB_ORDER = ["Drawing", "Editing", "Settings"]   # the tabs, left to right
 OLD_TAB_NAMES = {"Draw": "Drawing"}

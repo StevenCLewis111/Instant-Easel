@@ -17,7 +17,7 @@ for _d, _dirs, _files in os.walk(os.path.join(BASE, "systems")):
 import paths
 from PIL import Image, ImageTk
 import theme as T
-import paint_window, features, edit as E, draw_studio, prefs, settings_pages as SP
+import paint_window, features, edit as E, edit_pages as EP, draw_studio, prefs, settings_pages as SP
 import crash, skin, ui_art as UA, learning_areas as LA, image_pages as IP, workspace_page as WP
 
 APP_NAME = "Instant Easel Pro"
@@ -199,7 +199,6 @@ class InstantEasel(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.quit_app); self.bind("<F11>", lambda e: self.set_fullscreen(self._mode != "fullscreen"))
         self.bind("<Escape>", lambda e: self._mode == "fullscreen" and self._to_maximized())           # Esc: full screen -> maximized (title bar back)
         self.bind("<Map>", self._on_map, add="+"); self.bind("<Unmap>", self._on_unmap, add="+"); self.bind("<Configure>", self._on_root_configure, add="+")
-        self.bind("<Control-z>", lambda e: self._key_undo()); self.bind("<Control-y>", lambda e: self._key_undo(redo=True))
         try:
             # every size, so the title bar, taskbar, Alt+Tab and pop-up windows each pick a crisp one (True: every window of the app uses it)
             self._icons = [ImageTk.PhotoImage(Image.open(icon_file(f"icon-{n}.png"))) for n in (256, 128, 64, 48, 32, 16)]
@@ -254,10 +253,9 @@ class InstantEasel(tk.Tk):
         self.after_idle(lambda: self.body.bind("<Configure>", lambda e: T.defer(self, "mascots", 60, self._size_mascots), add="+"))   # the line under the header moved: stand on it again
 
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), **WP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
-                 "Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage, "About": AboutPage,
+                 **EP.page_classes(), "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
                  "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Updates": SP.UpdatesPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
-        self.edit = dict(original=None, proxy=None, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM), listeners=[])   # shared by the Edit tools
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
         for i, (m, _, tools) in enumerate(self.menus):
@@ -414,11 +412,14 @@ class InstantEasel(tk.Tk):
     def show(self, name, remember=True):
         if getattr(self, "_shown_tab", None) == name and self.pages[name].winfo_manager(): return
         T.tab_changed(self)                                                      # messages don't follow you to another tab
+        hub = getattr(self, "edit_hub", None)                                    # Editing works on the Drawing picture: leaving it puts the edit in
+        if hub is not None and getattr(self, "_shown_tab", None) == "Editing" and name != "Editing": hub.leave()
         with T.frozen(self):                                                     # the old tab stays on screen until the new one is complete
             zoom_ready(self.pages[name]); self.pages[name].pack(fill="both", expand=True)
             for n, p in self.pages.items():
                 if n != name: p.pack_forget()
             self._shown_tab = name
+        if hub is not None and name == "Editing": hub.enter()
         if remember: prefs.set("last_tab", name)
 
     # ---------------- start-up: hidden until ready, every page laid out once, then shown in one go
@@ -474,57 +475,6 @@ class InstantEasel(tk.Tk):
         T.flush(self); self._warm_ms = int((time.perf_counter() - t0) * 1000)
 
     # ---------------- window: fixed layout, scroll bars, full screen, safeguards
-    # ---------------- Editing history: undo / redo / jump to any step
-    def _snap(self):
-        import copy; ed = self.edit; return copy.deepcopy(dict(params=ed["params"], filt=ed["filt"], geom=ed["geom"]))
-    def hist_start(self, label):
-        self.hist = [(label, self._snap())]; self.hpos = 0; self._hist_job = None; self._hist_changed()
-    def hist_touch(self):
-        """a change happened: record it once things settle (one slider drag = one step)"""
-        if not hasattr(self, "hist") or self.edit["original"] is None: return
-        if self._hist_job: self.after_cancel(self._hist_job)
-        self._hist_job = self.after(600, lambda: self.hist_commit())
-    def hist_commit(self, label=None):
-        if not hasattr(self, "hist"): return
-        self._hist_job = None; snap = self._snap(); prev = self.hist[self.hpos][1]
-        if snap == prev and label is None: return
-        label = label or self._describe(prev, snap)
-        self.hist = self.hist[:self.hpos + 1] + [(label, snap)]; self.hist = self.hist[-200:]; self.hpos = len(self.hist) - 1; self._hist_changed()
-    def _describe(self, a, b):
-        """name a step by what changed: 'Exposure +20', 'Filter: sepia', 'Crop', 'Rotate 90°'..."""
-        parts = [f"{k.capitalize()} {v:+d}" if v else f"{k.capitalize()} reset" for k, v in b["params"].items() if v != a["params"].get(k)]
-        if b["filt"] != a["filt"]: parts.append(f"Filter: {b['filt']}")
-        g0, g1 = a["geom"], b["geom"]
-        if g1["rot90"] != g0["rot90"]: parts.append("Rotate 90°")
-        if g1["flip_h"] != g0["flip_h"]: parts.append("Flip ↔")
-        if g1["flip_v"] != g0["flip_v"]: parts.append("Flip ↕")
-        if g1["straighten"] != g0["straighten"]: parts.append(f"Straighten {g1['straighten']:+.1f}°")
-        if g1["crop"] != g0["crop"]: parts.append("Crop" if g1["crop"] else "Clear crop")
-        if g1["scale"] != g0["scale"]: parts.append(f"Resize {int(g1['scale'] * 100)}%")
-        return ", ".join(parts[:3]) + ("…" if len(parts) > 3 else "") or "Change"
-    def hist_jump(self, i):
-        if not hasattr(self, "hist") or not (0 <= i < len(self.hist)): return
-        if self._hist_job: self.after_cancel(self._hist_job); self._hist_job = None
-        import copy; self.hpos = i; s = copy.deepcopy(self.hist[i][1]); self.edit.update(params=s["params"], filt=s["filt"], geom=s["geom"])
-        for fn in self.edit["listeners"]: fn()
-        self._hist_changed()
-    def hist_undo(self):
-        if hasattr(self, "hist"):
-            if self._hist_job: self.hist_commit()                                    # finish a change in progress first
-            self.hist_jump(self.hpos - 1)
-    def hist_redo(self):
-        if hasattr(self, "hist"): self.hist_jump(self.hpos + 1)
-
-    def _hist_changed(self):
-        h = self.pages.get("Editing") and self.pages["Editing"].pages.get("History") if hasattr(self, "pages") else None
-        if h: h.show_list()
-    def _key_undo(self, redo=False):
-        """Ctrl+Z / Ctrl+Y in Editing (the Draw studio has its own undo)"""
-        if getattr(self.tabs, "active", "") != "Editing": return
-        sec = self.pages["Editing"]
-        (self.hist_redo if redo else self.hist_undo)()
-
-
     # ---------------- window modes, the same as Retro TV:
     #   fixed window   the exact windowed size (fixed_window_size), centred, not drag-resizable; title bar has  -  []  X
     #   []  maximize   native maximize: title bar stays, fills the work area (taskbar still showing)
@@ -786,15 +736,10 @@ class InstantEasel(tk.Tk):
         crash.beat(); self.after(500, self._beat)
 
     def _autosave(self):
-        """every minute: the drawing and the Editing settings go to the recovery folder (only when they've changed)"""
+        """every minute: the drawing (which Editing works on too) goes to the recovery folder (only when it has changed)"""
         try:
             folder = crash.recovery_dir(); ds = self.pages["Drawing"].pages.get("Draw")
             if ds is not None: ds.autosave(folder)
-            ed = self.edit
-            if ed.get("original") is not None and ed.get("path"):
-                state = dict(path=ed["path"], params=ed["params"], filt=ed["filt"], geom={k: (list(v) if isinstance(v, tuple) else v) for k, v in ed["geom"].items()})
-                with open(os.path.join(folder, "editing.json.tmp"), "w") as f: json.dump(state, f)
-                os.replace(os.path.join(folder, "editing.json.tmp"), os.path.join(folder, "editing.json"))
         except Exception: prefs.log_error(*sys.exc_info())
         finally: self.after(60000, self._autosave)
 
@@ -804,20 +749,13 @@ class InstantEasel(tk.Tk):
         if info.get("safe_mode"):
             T.banner(self, "STARTED IN SAFE MODE — it failed to start twice, so the window, start page and splash settings were reset")
         if not info.get("crashed"): return
-        folder = crash.recovery_dir(); has_draw = draw_studio.DrawStudio.has_recovery(folder); ed_file = os.path.join(folder, "editing.json")
-        if not has_draw and not os.path.exists(ed_file): return
-        what = " and ".join(x for x in (("your drawing" if has_draw else ""), ("your editing" if os.path.exists(ed_file) else "")) if x)
+        folder = crash.recovery_dir(); has_draw = draw_studio.DrawStudio.has_recovery(folder)
+        if not has_draw: return
+        what = "your drawing"
         if T.popup(self, "INSTANT EASEL PRO CLOSED UNEXPECTEDLY", f"It saved {what} a minute or less before it closed.\nRestore it?",
                    (("Restore", "normal"), ("Discard", "danger"))) != "Restore":
             shutil.rmtree(folder, ignore_errors=True); return
         try:
-            if os.path.exists(ed_file):
-                with open(ed_file) as f: st = json.load(f)
-                if os.path.exists(st["path"]):
-                    light = self.pages["Editing"].pages.get("Light"); light.set_image(Image.open(st["path"]), path=st["path"])
-                    g = st["geom"]; g["crop"] = tuple(g["crop"]) if g.get("crop") else None
-                    self.edit.update(params=st["params"], filt=st["filt"], geom=g); light.notify(record=False); self.hist_commit("Restored after a crash")
-                    self.show("Editing"); self.tabs.active = "Editing"; self.tabs._style(); self.pages["Editing"].select("Light")
             if has_draw:
                 ds = self.pages["Drawing"].pages["Draw"]; self.goto("Drawing"); self.update_idletasks(); ds.restore(folder)
             T.banner(self, f"RESTORED — {what}", "success")
@@ -937,237 +875,6 @@ class PlannedPage(tk.Frame):
 
 
 # ---------------------------------------------------------------- Edit: shared image, settings and preview
-class EditBase(Page):
-    """top bar (open / last created / reset / save) + the tool's controls + a live preview; state shared across Edit tools"""
-    def __init__(self, master, app, title):
-        super().__init__(master, app); self.app.edit["listeners"].append(self.refresh); self._job = None; self.show_orig = False
-        self._busy = False; self._again = False
-        bar = themed_frame(self); bar.pack(fill="x", pady=(0, 8))
-        for text, cmd, kind in (("Open image", self.open, "normal"), ("Edit last created", self.last, "normal"), ("↶ Undo", self.app.hist_undo, "normal"),
-                                ("↷ Redo", self.app.hist_redo, "normal"), ("Before / after", self.toggle, "normal"), ("Reset all", self.reset, "danger"), ("Save", self.save, "normal")):
-            skin.file_button(T.Button(bar, text, cmd, kind=kind)).pack(side="left", padx=(0, 8))     # Open image / Save: the painted file buttons
-        body = themed_frame(self); body.pack(fill="both", expand=True)
-        self.controls = themed_frame(body); self.controls.pack(side="left", fill="y", padx=(0, 14))
-        T.Title(self.controls, title).pack(anchor="w", pady=(0, 8))
-        self.view = tk.Label(body, bg=T.PALETTE["field"], text="OPEN AN IMAGE, OR EDIT THE LAST CREATED ONE", fg=T.PALETTE["muted"], font=T.f(11), width=1, height=1)
-        self.view.pack(side="left", fill="both", expand=True); self.view.bind("<Configure>", lambda e: self.refresh()); T.on_change(lambda: self.view.configure(bg=T.PALETTE["field"]))
-
-    # ---- shared state
-    def set_image(self, im, path=None):
-        im = im.convert("RGB"); p = im.copy(); p.thumbnail((prefs.size("edit_preview"),) * 2)
-        self.app.edit.update(original=im, proxy=p, path=path, params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM))
-        self.app.hist_start("Opened " + (os.path.basename(path) if path else "image")); self.notify(record=False)
-    def notify(self, record=True):
-        for fn in self.app.edit["listeners"]: fn()
-        if record: self.app.hist_touch()
-    def open(self):
-        p = filedialog.askopenfilename(parent=self.app, initialdir=prefs.save_folder(), filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.avif *.gif *.tif *.tiff"), ("All files", "*.*")])
-        if p: self.set_image(Image.open(p), path=p)
-    def last(self):
-        c = self.app.pages["AI Images"].pages; im = None
-        for n in ("Image to Image", "Text to Image"):
-            r = getattr(c.get(n), "result", None)
-            if r is not None: im = r; break
-        if im is None: return T.banner(self.app, "NOTHING YET — create an image first")
-        self.set_image(im)
-    def toggle(self): self.show_orig = not self.show_orig; self.refresh()
-    def reset(self): self.app.edit.update(params=dict(E.DEFAULTS), filt="none", geom=dict(E.GEOM)); self.notify(record=False); self.app.hist_commit("Reset to original")
-    def save(self):
-        if self.app.edit["original"] is None: return
-        p = filedialog.asksaveasfilename(parent=self.app, initialdir=prefs.save_folder(), initialfile=prefs.next_name(), defaultextension=prefs.ext(), filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("WebP", "*.webp")])
-        if p:
-            ed = self.app.edit; prefs.save_image(E.apply(E.transform(ed["original"], ed["geom"]), ed["params"], ed["filt"]), p)
-            T.banner(self.app, f"SAVED — {os.path.basename(p)} (full size)", "success")
-
-    # ---- preview (debounced so sliders stay smooth)
-    def refresh(self):
-        """redraw the preview soon. Throttled (keeps updating while a slider is dragged), not debounced (which waited until you stopped)"""
-        if self._job is None: self._job = self.after(30, self._draw)
-    def _draw(self):
-        """the adjustments are worked out on a background thread so sliders never stutter; only the newest settings are shown"""
-        self._job = None; px = self.app.edit["proxy"]
-        if px is None or not self.winfo_ismapped(): return
-        if self._busy: self._again = True; return                                # one render at a time; the latest settings go next
-        ed = self.app.edit; geom, params, filt, orig = dict(ed["geom"]), dict(ed["params"]), ed["filt"], self.show_orig
-        w, h = max(200, self.view.winfo_width() - 8), max(200, self.view.winfo_height() - 8); self._busy = True
-        def work():
-            try:
-                im = px if orig else E.apply(E.transform(px, geom), params, filt); t = im.copy(); t.thumbnail((w, h)); res = (t, None)
-            except Exception as ex: res = (None, ex)
-            self.app.q.put(lambda: self._rendered(*res))
-        threading.Thread(target=work, daemon=True, name="EditPreview").start()
-    def _rendered(self, t, err):
-        self._busy = False
-        if err is not None: prefs.log_error(type(err), err, err.__traceback__)
-        elif t is not None and self.winfo_exists():
-            self.ph = ImageTk.PhotoImage(t); self.view.configure(image=self.ph, text=""); self.after_hook()
-        if self._again: self._again = False; self.refresh()
-    def after_hook(self): pass
-
-class AdjustPage(EditBase):
-    GROUP = "Light"
-    def __init__(self, master, app):
-        super().__init__(master, app, self.GROUP); self.labels = {}; self.sliders = {}
-        for k in E.GROUPS[self.GROUP]:
-            r = themed_frame(self.controls); r.pack(fill="x", pady=(6, 0))
-            T.Text(r, k.upper()).pack(side="left"); self.labels[k] = T.Text(r, "0", muted=True); self.labels[k].pack(side="right")
-            s = T.PlainSlider(self.controls, value=0.5, width=300, command=lambda v, k=k: self.change(k, v)); s.pack(anchor="w")
-            s.bind("<Double-Button-1>", lambda e, k=k: self.change(k, 0.5, reset=True)); self.sliders[k] = s
-        T.Text(self.controls, "Double-click a slider to reset it.", muted=True).pack(anchor="w", pady=10)
-    def change(self, k, v, reset=False):
-        val = int(round((v - 0.5) * 200)); self.app.edit["params"][k] = val
-        if reset: self.sliders[k].value = 0.5; self.sliders[k]._draw()
-        self.labels[k].configure(text=f"{val:+d}" if val else "0"); self.notify()
-    def after_hook(self):
-        for k, s in self.sliders.items():
-            v = self.app.edit["params"][k]; want = v / 200 + 0.5
-            if abs(s.value - want) > 1e-6: s.value = want; s._draw(); self.labels[k].configure(text=f"{v:+d}" if v else "0")
-
-class LightPage(AdjustPage): GROUP = "Light"
-class ColorPage(AdjustPage): GROUP = "Color"
-class EffectsPage(AdjustPage): GROUP = "Effects"
-
-class FiltersPage(EditBase):
-    def __init__(self, master, app):
-        super().__init__(master, app, "Filters"); self.tiles = {}
-        grid = themed_frame(self.controls); grid.pack(anchor="w")
-        for i, f in enumerate(E.FILTERS):
-            cell = themed_frame(grid); cell.grid(row=i // 2, column=i % 2, padx=6, pady=6)
-            lb = tk.Label(cell, bg=T.PALETTE["field"], width=16, height=5, text=f.upper(), fg=T.PALETTE["muted"], font=T.f(8), highlightthickness=3, cursor="hand2")
-            lb.pack(); lb.bind("<Button-1>", lambda e, f=f: self.pick(f)); T.Text(cell, f.upper(), font=T.f(8)).pack(); self.tiles[f] = lb
-    def pick(self, f): self.app.edit["filt"] = f; self.notify()
-    def after_hook(self):
-        px = self.app.edit["proxy"]; small = px.copy(); small.thumbnail((130, 90)); self._thumbs = []
-        for f, lb in self.tiles.items():
-            ph = ImageTk.PhotoImage(E.look(small, f)); self._thumbs.append(ph)
-            lb.configure(image=ph, text="", width=small.width, height=small.height,
-                         highlightbackground=T.PALETTE["border"] if f == self.app.edit["filt"] else T.PALETTE["panel2"])
-
-class HistoryPage(EditBase):
-    """every step by name (click to jump), undo/redo, side-by-side compare, reset, save as new / overwrite original"""
-    def __init__(self, master, app):
-        super().__init__(master, app, "History"); self.compare = False
-        c = self.controls
-        r = themed_frame(c); r.pack(anchor="w", pady=(0, 6))
-        T.Button(r, "Compare side by side", self.toggle_compare).pack(side="left")
-        r = themed_frame(c); r.pack(anchor="w", pady=(0, 8))
-        skin.file_button(T.Button(r, "Save as new", self.save)).pack(side="left"); T.Button(r, "Overwrite original", self.overwrite, kind="danger").pack(side="left", padx=6)
-        T.Text(c, "STEPS  (click one to go back to it)", font=T.f(10)).pack(anchor="w", pady=(6, 2))
-        box = T.ScrollBox(c, bg="panel2"); box.pack(fill="both", expand=True)            # list, divider and scroll bar, boxed in
-        self.lcv = tk.Canvas(box.body, width=262, height=420, bg=T.PALETTE["panel2"], highlightthickness=0); box.attach(self.lcv)
-        self.lcv.pack(side="left", fill="both", expand=True)
-        self.list = tk.Frame(self.lcv, bg=T.PALETTE["panel2"]); self.lcv.create_window((0, 0), window=self.list, anchor="nw")
-        self.list.bind("<Configure>", lambda e: T.fit_scrollregion(self.lcv)); T.on_change(lambda: (self.lcv.configure(bg=T.PALETTE["panel2"]), self.list.configure(bg=T.PALETTE["panel2"])))
-        self.show_list()
-    def show_list(self):
-        for w in self.list.winfo_children(): w.destroy()
-        hist = getattr(self.app, "hist", None)
-        if not hist: T.Text(self.list, "No steps yet. Open an image and edit it.", muted=True).pack(anchor="w", padx=6, pady=6); return
-        for i, (label, _) in enumerate(hist):
-            cur = i == self.app.hpos; future = i > self.app.hpos
-            b = tk.Label(self.list, text=f"{i:>3}  {label}", anchor="w", width=34, font=T.f(9), cursor="hand2", padx=6, pady=3,
-                         bg=T.PALETTE["button"] if cur else T.PALETTE["panel2"], fg=T.PALETTE["muted"] if future else "white",
-                         highlightthickness=2, highlightbackground=T.PALETTE["border"] if cur else T.PALETTE["panel2"])
-            b.pack(fill="x", pady=1); b.bind("<Button-1>", lambda e, i=i: self.app.hist_jump(i))
-        self.lcv.update_idletasks(); self.lcv.yview_moveto(1.0 if self.app.hpos == len(hist) - 1 else max(0, self.app.hpos / max(1, len(hist))))
-    def toggle_compare(self): self.compare = not self.compare; self.refresh()
-    def _draw(self):
-        if not self.compare: return super()._draw()
-        self._job = None; ed = self.app.edit; px = ed["proxy"]
-        if px is None or not self.winfo_ismapped(): return
-        cur = E.apply(E.transform(px, ed["geom"]), ed["params"], ed["filt"]); w, h = max(200, self.view.winfo_width() - 8), max(200, self.view.winfo_height() - 8)
-        a, b = px.copy(), cur.copy(); a.thumbnail((w // 2 - 6, h - 30)); b.thumbnail((w // 2 - 6, h - 30))
-        sheet = Image.new("RGB", (w, h), tuple(int(T.PALETTE["field"][i:i + 2], 16) for i in (1, 3, 5)))
-        sheet.paste(a, ((w // 2 - a.width) // 2, 28)); sheet.paste(b, (w // 2 + (w // 2 - b.width) // 2, 28))
-        from PIL import ImageDraw; d = ImageDraw.Draw(sheet); d.text((w // 4 - 30, 6), "ORIGINAL", fill=(200, 200, 210)); d.text((3 * w // 4 - 24, 6), "CURRENT", fill=(200, 200, 210))
-        self.ph = ImageTk.PhotoImage(sheet); self.view.configure(image=self.ph, text="")
-    def overwrite(self):
-        ed = self.app.edit; p = ed.get("path")
-        if ed["original"] is None: return
-        if not p: return T.banner(self.app, "NO ORIGINAL FILE — this picture didn't come from a file; use Save as new")
-        if T.popup(self.app, "OVERWRITE THE ORIGINAL?", f"{os.path.basename(p)} will be replaced with the edited version.\nThis can't be undone.",
-                   (("Overwrite", "danger"), ("Cancel", "normal"))) == "Overwrite":
-            prefs.save_image(E.apply(E.transform(ed["original"], ed["geom"]), ed["params"], ed["filt"]), p); T.banner(self.app, f"SAVED — {os.path.basename(p)}", "success")
-
-class TransformPage(EditBase):
-    """crop (drag a box, ratio presets), rotate, straighten, flip, resize; the preview shows the crop box over the whole picture"""
-    RATIOS = ["Free", "1:1", "2:3", "3:2", "4:5", "16:9", "9:16"]; SCALES = ["100%", "200%", "75%", "50%", "25%"]
-    def __init__(self, master, app):
-        super().__init__(master, app, "Transform")
-        body = self.view.master; self.view.pack_forget()
-        self.cv = tk.Canvas(body, bg=T.PALETTE["field"], highlightthickness=0, cursor="crosshair"); self.cv.pack(side="left", fill="both", expand=True)
-        self.cv.bind("<Configure>", lambda e: self.refresh()); self.cv.bind("<ButtonPress-1>", self._press); self.cv.bind("<B1-Motion>", self._drag)
-        T.on_change(lambda: self.cv.configure(bg=T.PALETTE["field"]))
-        c = self.controls
-        T.Text(c, "ROTATE & FLIP").pack(anchor="w", pady=(4, 4))
-        r = themed_frame(c); r.pack(anchor="w")
-        T.Button(r, "⟲ 90°", lambda: self.geom(rot90=self.g["rot90"] + 1)).pack(side="left"); T.Button(r, "⟳ 90°", lambda: self.geom(rot90=self.g["rot90"] - 1)).pack(side="left", padx=6)
-        r = themed_frame(c); r.pack(anchor="w", pady=6)
-        T.Button(r, "Flip ↔", lambda: self.geom(flip_h=not self.g["flip_h"])).pack(side="left"); T.Button(r, "Flip ↕", lambda: self.geom(flip_v=not self.g["flip_v"])).pack(side="left", padx=6)
-        rr = themed_frame(c); rr.pack(fill="x", pady=(10, 0)); T.Text(rr, "STRAIGHTEN").pack(side="left"); self.st_lbl = T.Text(rr, "0.0°", muted=True); self.st_lbl.pack(side="right")
-        self.st = T.PlainSlider(c, value=0.5, width=300, command=self._straighten); self.st.pack(anchor="w")
-        self.st.bind("<Double-Button-1>", lambda e: (setattr(self.st, "value", 0.5), self.st._draw(), self._straighten(0.5)))
-        T.Text(c, "CROP  (drag on the picture)").pack(anchor="w", pady=(12, 4))
-        self.ratio = tk.StringVar(value="Free"); T.Choice(c, "ratio", self.RATIOS, self.ratio).pack(anchor="w")
-        self.ratio.trace_add("write", lambda *a: self._apply_ratio())
-        T.Button(c, "Clear crop", lambda: self.geom(crop=None)).pack(anchor="w", pady=6)
-        T.Text(c, "RESIZE").pack(anchor="w", pady=(8, 4))
-        self.scale = tk.StringVar(value="100%"); T.Choice(c, "size", self.SCALES, self.scale).pack(anchor="w")
-        self.scale.trace_add("write", lambda *a: self.geom(scale=int(self.scale.get()[:-1]) / 100))
-        self.size_lbl = T.Text(c, "", muted=True); self.size_lbl.pack(anchor="w", pady=10)
-        self._box = None
-
-    @property
-    def g(self): return self.app.edit["geom"]
-    def geom(self, **kw): self.g.update(kw); self.notify()
-    def _straighten(self, v):
-        deg = round((v - 0.5) * 90, 1); self.st_lbl.configure(text=f"{deg:+.1f}°" if deg else "0.0°"); self.geom(straighten=deg)
-    def _base(self):
-        """the picture after rotate/flip/straighten (before crop and resize)"""
-        return E.transform(self.app.edit["proxy"], dict(self.g, crop=None, scale=1.0))
-    def _apply_ratio(self):
-        if self.app.edit["proxy"] is None: return
-        r = self.ratio.get(); b = self._base()
-        self.geom(crop=None if r == "Free" else E.crop_for_ratio(b.width, b.height, r))
-    def _draw(self):
-        self._job = None; px = self.app.edit["proxy"]
-        if px is None or not self.winfo_ismapped(): return
-        ed = self.app.edit; base = self._base(); shown = base if self.show_orig else E.apply(base, ed["params"], ed["filt"])
-        w, h = max(200, self.cv.winfo_width() - 16), max(200, self.cv.winfo_height() - 16); t = shown.copy(); t.thumbnail((w, h))
-        self._k = t.width / base.width; self._off = ((self.cv.winfo_width() - t.width) / 2, (self.cv.winfo_height() - t.height) / 2); self._tw, self._th = t.width, t.height
-        self.cv.delete("all"); self.ph = ImageTk.PhotoImage(t); self.cv.create_image(self._off[0], self._off[1], image=self.ph, anchor="nw")
-        c = self.g["crop"]
-        if c:
-            x0, y0 = self._off[0] + min(c[0], c[2]) * t.width, self._off[1] + min(c[1], c[3]) * t.height
-            x1, y1 = self._off[0] + max(c[0], c[2]) * t.width, self._off[1] + max(c[1], c[3]) * t.height
-            for box in ((self._off[0], self._off[1], self._off[0] + t.width, y0), (self._off[0], y1, self._off[0] + t.width, self._off[1] + t.height),
-                        (self._off[0], y0, x0, y1), (x1, y0, self._off[0] + t.width, y1)):
-                self.cv.create_rectangle(*box, fill="black", stipple="gray50", width=0)                 # darken outside the crop
-            self.cv.create_rectangle(x0, y0, x1, y1, outline=T.PALETTE["border"], width=2)
-            for i in (1, 2):                                                                             # rule-of-thirds guides
-                self.cv.create_line(x0 + (x1 - x0) * i / 3, y0, x0 + (x1 - x0) * i / 3, y1, fill="#ffffff", stipple="gray50")
-                self.cv.create_line(x0, y0 + (y1 - y0) * i / 3, x1, y0 + (y1 - y0) * i / 3, fill="#ffffff", stipple="gray50")
-        out = E.transform(ed["original"], ed["geom"]).size if ed["original"] is not None else (0, 0)
-        self.size_lbl.configure(text=f"OUTPUT: {out[0]} x {out[1]} px")
-    def _xy(self, e):
-        return (min(1, max(0, (e.x - self._off[0]) / max(1, self._tw))), min(1, max(0, (e.y - self._off[1]) / max(1, self._th))))
-    def _press(self, e):
-        if self.app.edit["proxy"] is None: return
-        self._start = self._xy(e)
-    def _drag(self, e):
-        if self.app.edit["proxy"] is None or not hasattr(self, "_start"): return
-        (sx, sy), (x, y) = self._start, self._xy(e); r = self.ratio.get()
-        if r != "Free":                                                                                  # keep the chosen shape
-            a, b = (float(v) for v in r.split(":")); base_r = self._tw / max(1, self._th); want = (a / b) / base_r
-            dx, dy = x - sx, y - sy; h_ = max(abs(dy), abs(dx) / want); dx, dy = (1 if dx >= 0 else -1) * h_ * want, (1 if dy >= 0 else -1) * h_
-            x, y = min(1, max(0, sx + dx)), min(1, max(0, sy + dy))
-        self.geom(crop=(sx, sy, x, y))
-
-# ---------------------------------------------------------------- Generate
-
-
-# ---------------------------------------------------------------- Image to Image
-
 # ---------------------------------------------------------------- teach a word (themed dialog)
 
 # ---------------------------------------------------------------- Train

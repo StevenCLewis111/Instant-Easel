@@ -13,7 +13,7 @@ for _d, _dirs, _files in os.walk(os.path.join(BASE, "systems")):
 import paths
 from PIL import Image, ImageTk
 import theme as T
-import features, draw_studio, prefs, settings_pages as SP
+import features, draw_studio, prefs, settings_pages as SP, edit_pages as EP
 import crash, skin, ui_art as UA
 
 APP_NAME = "Instant Easel"
@@ -240,7 +240,7 @@ class InstantEasel(tk.Tk):
         self.after_idle(lambda: self.body.bind("<Configure>", lambda e: T.defer(self, "mascots", 60, self._size_mascots), add="+"))   # the line under the header moved: stand on it again
 
         built = {"Draw": draw_studio.DrawStudio, "Theme": ThemePage, "About": AboutPage, "General": SP.GeneralPage, "Display": SP.DisplayPage,
-                 "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage, **EP.page_classes()}
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
         for i, (m, _, tools) in enumerate(features.MENUS):
@@ -380,11 +380,14 @@ class InstantEasel(tk.Tk):
     def show(self, name, remember=True):
         if getattr(self, "_shown_tab", None) == name and self.pages[name].winfo_manager(): return
         T.tab_changed(self)                                                      # messages don't follow you to another tab
+        hub = getattr(self, "edit_hub", None)                                    # Editing works on the Drawing picture: leaving it puts the edit in
+        if hub is not None and getattr(self, "_shown_tab", None) == "Editing" and name != "Editing": hub.leave()
         with T.frozen(self):                                                     # the old tab stays on screen until the new one is complete
             zoom_ready(self.pages[name]); self.pages[name].pack(fill="both", expand=True)
             for n, p in self.pages.items():
                 if n != name: p.pack_forget()
             self._shown_tab = name
+        if hub is not None and name == "Editing": hub.enter()
         if remember: prefs.set("last_tab", name)
 
     # ---------------- start-up: hidden until ready, every page laid out once, then shown in one go

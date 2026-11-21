@@ -12,7 +12,7 @@ import prefs
 MENU_TEXT = T.MENU_WORDS     # white words; gold under the mouse
 NO_HIDE = ("BRUSH OPTIONS",)   # always there
 # off until you turn them on (Window), so a new picture starts with a tidy studio; the rest start on
-DEFAULT_OFF = [("Color", "STICKERS"), ("Color", "MY COLORS"), ("Options", "TEXT"), ("Options", "NAVIGATOR"), ("Options", "LAYER COLOR"),
+DEFAULT_OFF = [("Color", "STICKERS"), ("Color", "MY COLORS"), ("Options", "TEXT"), ("Options", "NAVIGATOR"),
                ("Options", "CUT OUT"), ("Options", "GUIDES"), ("Options", "SAVING"), ("Options", "TIMELAPSE"), ("Adjustments", "MY BRUSHES")]
 # a tool whose settings live in a section turns it on while you use it (and off again after, unless you turned it on yourself)
 _SEL = [("Options", "CUT OUT"), ("Options", "FILL")]
@@ -58,7 +58,7 @@ class StudioMenu:
                     ("Turn view left", k("turn_left"), lambda: self._key_action("turn_left")), ("Turn view right", k("turn_right"), lambda: self._key_action("turn_right")),
                     ("Straighten view", k("straighten"), lambda: self._key_action("straighten")), ("Mirror view", k("mirror_view"), lambda: self._key_action("mirror_view")), "-",
                     ("Zoom in", "Wheel", lambda: self.zoom_by(1.25)), ("Zoom out", "Wheel", lambda: self.zoom_by(1 / 1.25)), ("Fit to window", "", self.fit), "-",
-                    ("Layer color…", "", lambda: self._goto_section("Options", "LAYER COLOR"))]
+                    ("Light, color & filters… (Editing)", "", lambda: self.app.goto("Editing", "Light"))]
         if name == "Layer":
             return [("New layer", "", self.add_layer), ("Duplicate layer", "", self.dup_layer), ("Delete layer", "", self.del_layer), "-",
                     ("Merge down", "", self.merge_down), ("Move up", "", lambda: self.move_layer(1)), ("Move down", "", lambda: self.move_layer(-1)), "-",

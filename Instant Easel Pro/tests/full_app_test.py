@@ -22,16 +22,20 @@ def step(name, fn):
 def run():
     ed = app.pages["Editing"]
     img = Image.fromarray((np.random.rand(500, 700, 3) * 255).astype(np.uint8))
-    step("open image in Editing", lambda: (app.show("Editing"), ed.select("Light"), ed.pages["Light"].set_image(img)))
+    step("open image in Editing (it's the Drawing picture)", lambda: (app.pages["Drawing"].pages["Draw"].load_image(img), app.goto("Editing", "Light"), app.update()))
     def sliders():
         lp = ed.pages["Light"]
         for v in np.linspace(0.5, 0.9, 25): lp.change("exposure", v); app.update(); time.sleep(0.005)
         t0 = time.time()
-        while lp._busy and time.time() - t0 < 5: app.update(); time.sleep(0.01)
+        while (lp._busy or not hasattr(lp, "ph")) and time.time() - t0 < 5: app.update(); time.sleep(0.01)
         assert lp.ph is not None
     step("drag Exposure 25 steps (background render)", sliders)
     for page in ("Color", "Effects", "Filters", "Transform", "History"): step(f"Editing > {page}", lambda p=page: (ed.select(p), app.update(), time.sleep(0.3), app.update()))
-    step("undo / redo edits", lambda: (app.hist_undo(), app.hist_redo()))
+    step("undo / redo edits", lambda: (app.edit_hub.hist_undo(), app.edit_hub.hist_redo()))
+    def back_to_drawing():
+        D = app.pages["Drawing"].pages["Draw"]; n = len(D.undo_stack); app.goto("Drawing"); app.update()
+        assert len(D.undo_stack) == n + 1, "the edit should go into the picture as one Undo step"
+    step("back to Drawing: the edit is in the picture", back_to_drawing)
     ds = app.pages["Drawing"].pages["Draw"]
     def draw_all():
         app.show("Drawing"); app.update(); ds.fit(); app.update(); cx, cy = ds.cv.winfo_width() // 2, ds.cv.winfo_height() // 2
