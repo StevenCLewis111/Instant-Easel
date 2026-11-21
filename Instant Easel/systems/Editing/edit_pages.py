@@ -120,6 +120,8 @@ class Hub:
             if mk is not None: N.add_mask(); N.maskcv.alpha = mk if same else _tf_arr(mk, g)
             N.visible, N.opacity, N.mode, N.clip = L.visible, L.opacity, L.mode, L.clip
             if hasattr(L, "group"): N.group = L.group
+            if getattr(L, "fx", None):                                               # its layer style, at the preview's size
+                k = w / max(1, px["full"][0]); N.fx = {e: {kk: (vv * k if kk in ("size", "distance") else vv) for kk, vv in d.items()} for e, d in L.fx.items()}
             tmp.append(N)
         doc = object.__new__(DS.DrawStudio); doc.layers = tmp; doc.groups = px["groups"]          # (Drawing's blending, on these)
         out = DS.DrawStudio._composite(doc, bg.copy(), (slice(None), slice(None)))
@@ -191,7 +193,9 @@ class Hub:
 
     def _describe(self, a, b):
         """name a step by what changed: 'Exposure +20', 'Filter: sepia', 'Crop', 'Rotate 90°'..."""
-        parts = [f"{k.capitalize()} {v:+d}" if v else f"{k.capitalize()} reset" for k, v in b["params"].items() if v != a["params"].get(k)]
+        parts = [(k.capitalize() if k in ("curves", "levels") else f"{k.capitalize()} {v:+d}" if v else f"{k.capitalize()} reset")
+                 for k, v in b["params"].items() if v != a["params"].get(k)]
+        parts += [f"{k.capitalize()} reset" for k in ("curves", "levels") if k in a["params"] and k not in b["params"]]
         if b["filt"] != a["filt"]: parts.append(f"Filter: {b['filt']}")
         g0, g1 = a["geom"], b["geom"]
         if g1["rot90"] != g0["rot90"]: parts.append("Rotate 90°")
@@ -368,6 +372,147 @@ class ColorPage(AdjustPage): GROUP = "Color"
 class EffectsPage(AdjustPage): GROUP = "Effects"
 
 
+class _Graph(tk.Canvas):
+    """a square graph for Curves / Levels: the picture's histogram behind, a grid"""
+    def __init__(self, master, size=280):
+        super().__init__(master, width=size, height=size, bg=T.PALETTE["field"], highlightthickness=2, highlightbackground=T.PALETTE["border"]); self.S = size
+        T.on_change(lambda: self.configure(bg=T.PALETTE["field"], highlightbackground=T.PALETTE["border"]))
+    def xy(self, v, o): return v / 255 * (self.S - 1), (1 - o / 255) * (self.S - 1)
+    def val(self, X, Y): return min(255, max(0, X / (self.S - 1) * 255)), min(255, max(0, (1 - Y / (self.S - 1)) * 255))
+    def base(self, hist, col="#6b7894"):
+        self.delete("all"); S = self.S
+        for i in (1, 2, 3): self.create_line(S * i / 4, 0, S * i / 4, S, fill="#3a4258"); self.create_line(0, S * i / 4, S, S * i / 4, fill="#3a4258")
+        if hist is not None:
+            h = hist / max(1e-6, np.percentile(hist, 99.5)); pts = [0, S]
+            for i, v in enumerate(h): pts += [i / 255 * (S - 1), S - min(1, v) * S * 0.9]
+            pts += [S, S]; self.create_polygon(*pts, fill=col, outline="", stipple="gray50")
+
+
+def _histogram(hub, channel=None):
+    """the picture's histogram (luminance, or one channel), from the small preview copy"""
+    try:
+        a = np.asarray(hub.render(orig=True), np.float32)
+        v = (a @ np.array([0.299, 0.587, 0.114], np.float32)) if channel is None else a[..., channel]
+        return np.histogram(v, bins=256, range=(0, 256))[0].astype(np.float32)
+    except Exception: return None
+
+
+class CurvesPage(EditBase):
+    """Curves: click the line to add a point, drag points, drag one off the graph (or right-click it) to remove it"""
+    CH = [("RGB", "rgb", "#e8e8f0", None), ("Red", "r", "#ff5a5a", 0), ("Green", "g", "#5adc6e", 1), ("Blue", "b", "#5a9cff", 2)]
+    def __init__(self, master, app):
+        super().__init__(master, app, "Curves"); c = self.controls; self._hist = {}; self._hkey = None
+        self.chan = tk.StringVar(master=self, value="RGB"); T.Choice(c, "channel", [n for n, *_ in self.CH], self.chan).pack(anchor="w", pady=(0, 8))
+        self.chan.trace_add("write", lambda *a: self.after_hook())
+        self.g = _Graph(c); self.g.pack(anchor="w")
+        self.g.bind("<ButtonPress-1>", self._press); self.g.bind("<B1-Motion>", self._drag); self.g.bind("<ButtonRelease-1>", self._release)
+        self.g.bind("<Button-3>", self._remove_at); self.g.bind("<Double-Button-1>", lambda e: self._set(list(map(list, E.CURVE0))))
+        self.readout = T.Text(c, "", muted=True); self.readout.pack(anchor="w", pady=(4, 8))
+        for row in ((("Brighten", [[0, 0], [110, 150], [255, 255]]), ("Darken", [[0, 0], [150, 110], [255, 255]])),
+                    (("More contrast", [[0, 0], [64, 44], [192, 212], [255, 255]]), ("Fade", [[0, 30], [255, 235]]))):
+            r = _frame(c); r.pack(anchor="w", pady=(0, 4))
+            for name, pts in row: T.Button(r, name, lambda p=pts: self._set([list(q) for q in p])).pack(side="left", padx=(0, 6))
+        T.Text(c, "Click the line to add a point.\nDrag a point off the graph, or right-click\nit, to remove it. Double-click: straight again.", muted=True).pack(anchor="w", pady=8)
+        self._grab = None
+
+    def _key(self): return {n: k for n, k, *_ in self.CH}[self.chan.get()]
+    def _pts(self): return [list(p) for p in self.hub.params.get("curves", {}).get(self._key(), E.CURVE0)]
+    def _set(self, pts, record=True):
+        cur = dict(self.hub.params.get("curves", {})); k = self._key()
+        if sorted(map(tuple, pts)) == [tuple(p) for p in E.CURVE0]: cur.pop(k, None)
+        else: cur[k] = sorted(pts)
+        if cur: self.hub.params["curves"] = cur
+        else: self.hub.params.pop("curves", None)
+        self.after_hook(); self.hub.notify(record=record)
+
+    def _near(self, e):
+        for i, (x, y) in enumerate(self._pts()):
+            X, Y = self.g.xy(x, y)
+            if abs(X - e.x) < 9 and abs(Y - e.y) < 9: return i
+        return None
+    def _press(self, e):
+        i = self._near(e); pts = self._pts()
+        if i is None:
+            x, _ = self.g.val(e.x, e.y); lut = E.curve_lut(pts); pts.append([x, float(lut[int(x)] * 255)]); pts.sort(); i = [p[0] for p in pts].index(x)
+            self._set(pts, record=False)
+        self._grab = (i, pts[i][0] in (0, 255) and i in (0, len(pts) - 1))
+    def _drag(self, e):
+        if self._grab is None: return
+        i, end = self._grab; pts = self._pts()
+        if i >= len(pts): return
+        x, y = self.g.val(e.x, e.y)
+        if end: x = pts[i][0]                                                       # (the end points move up and down only)
+        else:
+            lo = pts[i - 1][0] + 1 if i > 0 else 0; hi = pts[i + 1][0] - 1 if i < len(pts) - 1 else 255; x = min(hi, max(lo, x))
+        off = not end and (e.x < -20 or e.x > self.g.S + 20 or e.y < -20 or e.y > self.g.S + 20)
+        pts[i] = [x, y]; self.readout.configure(text=f"IN {int(x)}  OUT {int(y)}")
+        if off: pts.pop(i); self._grab = None
+        self._set(pts, record=False)
+    def _release(self, e):
+        if self._grab is not None: self.hub.notify()
+        self._grab = None
+    def _remove_at(self, e):
+        i = self._near(e); pts = self._pts()
+        if i is not None and 0 < i < len(pts) - 1: pts.pop(i); self._set(pts)
+
+    def after_hook(self):
+        name, k, col, ch = next(t for t in self.CH if t[0] == self.chan.get())
+        if self._hkey != self.hub._key: self._hist = {}; self._hkey = self.hub._key
+        if name not in self._hist: self._hist[name] = _histogram(self.hub, ch)
+        self.g.base(self._hist[name]); pts = self._pts(); lut = E.curve_lut(pts)
+        for other in self.CH[1:]:                                                     # the other colour curves, faintly
+            if other[1] != k and other[1] in self.hub.params.get("curves", {}):
+                ol = E.curve_lut(self.hub.params["curves"][other[1]]); self.g.create_line(*[c for i in range(0, 256, 4) for c in self.g.xy(i, ol[i] * 255)], fill=other[2], dash=(3, 3))
+        self.g.create_line(0, self.g.S, self.g.S, 0, fill="#555c70", dash=(2, 4))
+        self.g.create_line(*[c for i in range(0, 256, 2) for c in self.g.xy(i, lut[i] * 255)], *self.g.xy(255, lut[255] * 255), fill=col, width=2)
+        for x, y in pts: X, Y = self.g.xy(x, y); self.g.create_rectangle(X - 4, Y - 4, X + 4, Y + 4, fill=col, outline="black")
+
+
+class LevelsPage(EditBase):
+    """Levels: the picture's histogram with its black, midtone and white points; output black / white; Auto"""
+    def __init__(self, master, app):
+        super().__init__(master, app, "Levels"); c = self.controls; self._hist = None; self._hkey = None
+        self.g = _Graph(c, 280); self.g.configure(height=150); self.g.pack(anchor="w", pady=(0, 6))
+        self.rows = {}
+        for key, label, lo, hi in (("b", "INPUT BLACK", 0, 253), ("g", "MIDTONES", 0.1, 3.0), ("w", "INPUT WHITE", 2, 255), ("ob", "OUTPUT BLACK", 0, 255), ("ow", "OUTPUT WHITE", 0, 255)):
+            r = _frame(c); r.pack(fill="x", pady=(6, 0)); T.Text(r, label).pack(side="left"); lab = T.Text(r, "", muted=True); lab.pack(side="right")
+            s_ = T.PlainSlider(c, value=0.5, width=300, command=lambda v, k=key, lo=lo, hi=hi: self._move(k, lo + v * (hi - lo))); s_.pack(anchor="w")
+            self.rows[key] = (s_, lab, lo, hi)
+        r = _frame(c); r.pack(anchor="w", pady=10)
+        T.Button(r, "Auto", self.auto).pack(side="left"); T.Button(r, "Reset levels", lambda: self._store(list(E.LEVELS0))).pack(side="left", padx=6)
+        T.Text(c, "Drag Input Black / White in to where the\npicture's darkest and lightest parts start;\nMidtones brightens or darkens the middle.", muted=True).pack(anchor="w")
+
+    def _lv(self): return list(self.hub.params.get("levels", E.LEVELS0))
+    def _store(self, lv, record=True):
+        if lv == E.LEVELS0: self.hub.params.pop("levels", None)
+        else: self.hub.params["levels"] = lv
+        self.after_hook(); self.hub.notify(record=record)
+    def _move(self, k, v):
+        lv = self._lv(); i = ["b", "g", "w", "ob", "ow"].index(k)
+        v = round(v, 2) if k == "g" else int(round(v))
+        if k == "b": v = min(v, lv[2] - 2)
+        if k == "w": v = max(v, lv[0] + 2)
+        lv[i] = v; self._store(lv)
+    def auto(self):
+        h = _histogram(self.hub)
+        if h is None: return
+        c = np.cumsum(h) / max(1, h.sum()); b = int(np.searchsorted(c, 0.005)); w = int(np.searchsorted(c, 0.995))
+        self._store([min(b, 250), 1.0, max(w, b + 5), 0, 255])
+    def after_hook(self):
+        if self._hkey != self.hub._key or self._hist is None: self._hist = _histogram(self.hub); self._hkey = self.hub._key
+        S = self.g.S; self.g.delete("all"); lv = self._lv()
+        if self._hist is not None:
+            h = self._hist / max(1e-6, np.percentile(self._hist, 99.5)); pts = [0, 150]
+            for i, v in enumerate(h): pts += [i / 255 * (S - 1), 150 - min(1, v) * 140]
+            self.g.create_polygon(*(pts + [S, 150]), fill="#6b7894", outline="")
+        for x, col in ((lv[0], "black"), (lv[2], "white")): X = x / 255 * (S - 1); self.g.create_line(X, 0, X, 150, fill=col, width=2)
+        mid = lv[0] + (lv[2] - lv[0]) * (0.5 ** lv[1]); X = mid / 255 * (S - 1); self.g.create_line(X, 0, X, 150, fill="#9aa0aa", width=2, dash=(3, 2))
+        for (k, (s_, lab, lo, hi)), v in zip(self.rows.items(), lv):
+            want = (v - lo) / (hi - lo)
+            if abs(s_.value - want) > 1e-6: s_.value = want; s_._draw()
+            lab.configure(text=f"{v:.2f}" if k == "g" else str(int(v)))
+
+
 class FiltersPage(EditBase):
     def __init__(self, master, app):
         super().__init__(master, app, "Filters"); self.tiles = {}; self._thumbs = []; self._tkey = None
@@ -406,7 +551,7 @@ class HistoryPage(EditBase):
         self.lcv.pack(side="left", fill="both", expand=True)
         self.list = tk.Frame(self.lcv, bg=T.PALETTE["panel2"]); self.lcv.create_window((0, 0), window=self.list, anchor="nw")
         self.list.bind("<Configure>", lambda e: T.fit_scrollregion(self.lcv)); T.on_change(lambda: (self.lcv.configure(bg=T.PALETTE["panel2"]), self.list.configure(bg=T.PALETTE["panel2"])))
-        T.Text(c, "Your edit goes into the picture when you go back to Drawing (or press Apply); Drawing's Undo can take it back.", muted=True).pack(anchor="w", pady=8)
+        T.Text(c, "Your edit goes into the picture when you go\nback to Drawing (or press Apply); Drawing's\nUndo can take it back.", muted=True).pack(anchor="w", pady=8)
         self.show_list()
 
     def show_list(self):
@@ -511,4 +656,5 @@ class TransformPage(EditBase):
 
 
 def page_classes():
-    return {"Light": LightPage, "Color": ColorPage, "Effects": EffectsPage, "Filters": FiltersPage, "Transform": TransformPage, "History": HistoryPage}
+    return {"Light": LightPage, "Color": ColorPage, "Curves": CurvesPage, "Levels": LevelsPage, "Effects": EffectsPage, "Filters": FiltersPage,
+            "Transform": TransformPage, "History": HistoryPage}

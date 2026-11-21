@@ -92,6 +92,7 @@ SECTIONS = [
         _b("Radial Gradient", "tool:gradient fill", kind="tool", tool="gradient_radial", look=dict(fx="gradfill")),
         _b("Pattern Fill", "tool:pattern fill", kind="tool", tool="pattern_fill", look=dict(fx="pattern", pat="checks", col=(150, 80, 40))),
         _b("Magic Wand", "tool:magic wand", kind="tool", tool="wand", look=dict(fx="icon", icon="Magic Wand")),
+        _b("Color Range", "tool:color range", kind="tool", tool="color_range", look=dict(fx="icon", icon="Magic Wand")),
         _b("Lasso", "tool:lasso", kind="tool", tool="sel_lasso", look=dict(fx="shape", shape="freehand")),
         _b("Object Selection", "tool:smart select", kind="tool", tool="smart", look=dict(fx="shape", shape="rect")),
         _b("Quick Selection", "tool:quick selection", kind="tool", tool="quick_sel", look=dict(fx="shape", shape="rect")),

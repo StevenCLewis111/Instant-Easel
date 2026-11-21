@@ -8,6 +8,10 @@ studio_ai.py: the AI cut-out tools (Photoshop-style), run on this PC by ai_cutou
   Magic Remove          (tool) paint over a person, a wire, a spot, anything: it's filled in from what's round it (LaMa), like
                         Photoshop's Remove tool; Remove selected does the same to whatever is selected (Content-Aware Fill)
   Blur Background       the subject stays sharp, the rest of the layer is blurred (Options > Magic: how much)
+  Magic Expand          a bigger canvas on every side (Options > Magic: by how much), the new edges filled in to carry the
+                        picture on (Photoshop's Generative Expand, without the cloud)
+  Upscale 2x / 4x       the whole picture bigger with real detail (Real-ESRGAN), every layer
+  Smooth Skin           skin evened out on this layer (or what's selected), pores and edges kept
   Refine Edge           Options > Cut Out: Edge radius, Smooth, Contrast, Shift edge, Refine hair & fur; Decontaminate colors
                         (no background colour left round the edges of what you cut out). AI selections are refined as they're
                         made; the Refine edge button does it again (to any selection) with the sliders as they are now.
@@ -84,7 +88,7 @@ class StudioAI:
             return
         mb = AI.download_size(kind) / 1e6
         what = {"subject": "Select Subject, Remove Background and Blur Background", "sam": "Object Selection and Quick Selection",
-                "remove": "Magic Remove"}[kind]
+                "remove": "Magic Remove and Magic Expand", "upscale": "Upscale"}[kind]
         ans = T.popup(self, "A ONE-TIME DOWNLOAD", f"{what} use an AI model that runs on this PC (nothing is sent anywhere).\n\n"
                       f"It's {mb:.0f} MB, downloaded once. Download it now?", buttons=(("Download", "normal"), ("Not now", "normal")))
         if ans != "Download":
@@ -273,6 +277,74 @@ class StudioAI:
             self.cv.delete("xov")
         self._ai_ready("remove", go, fallback=no)
 
+    # ------------------------------------------------------------------ Magic Expand, Upscale, Smooth Skin
+    def magic_expand(self):
+        """the canvas grows by Options > Magic > Expand (% of each side, half on each edge); the layer you're on gets the new edges
+        filled in from the picture (from the picture as you see it if this layer is see-through there). One Undo step"""
+        w, h = self.size_wh; pc = float(self.gopts.get("expand", 20.0)) / 100
+        dx, dy = int(round(w * pc / 2)), int(round(h * pc / 2))
+        if max(w + 2 * dx, h + 2 * dy) > 8000: T.banner(self.app, "THAT WOULD BE OVER 8000 PIXELS — expand by less"); return
+        L = self.cur
+        if L.cv is not L.img: T.banner(self.app, "YOU'RE ON THE LAYER'S MASK — click the layer's picture first"); return
+        own = float(L.img.alpha.mean()) > 0.95
+        src = np.asarray(L.img.a if own else self._comp[..., :3], np.float32)
+        def go():
+            def work(): return AI.expand(src, dx, dy, dx, dy)
+            def done(big):
+                if big is None: return
+                W, H = w + 2 * dx, h + 2 * dy; self._whole_snapshot()
+                def fn(arr):                                                       # every layer, mask and the paper: the same picture, more room
+                    out = np.full((H, W) + arr.shape[2:], 255.0 if arr.ndim == 3 else 0.0, np.float32)
+                    out[dy:dy + h, dx:dx + w] = arr; return out
+                self._resize_doc(fn, W, H)
+                ring = np.ones((H, W), bool); ring[dy:dy + h, dx:dx + w] = False         # the new edges
+                if own: L.img.a = big.astype(np.float32); L.img.alpha = np.ones((H, W), np.float32)
+                else: L.img.a = np.where(ring[..., None], big, L.img.a).astype(np.float32); L.img.alpha = np.maximum(L.img.alpha, ring.astype(np.float32))
+                self._recomp(); self._draw(); self.set_size_level(self.size_lvl); self.changed = True
+                T.banner(self.app, f"EXPANDED TO {W} x {H} — Ctrl+Z undoes it", "success")
+            self._ai_bg(work, done, "EXPANDING THE PICTURE… (this can take a minute)")
+        self._ai_ready("remove", go, fallback=lambda: None)
+
+    def upscale_picture(self, factor):
+        """the whole picture factor (2 / 4) times bigger: each layer's colours with Real-ESRGAN (real detail), see-through-ness and
+        masks smoothly. One Undo step"""
+        w, h = self.size_wh; W, H = w * factor, h * factor
+        if max(W, H) > 8000: T.banner(self.app, f"{W} x {H} IS TOO BIG — up to 8000 pixels each way (try 2x, or crop first)"); return
+        layers = list(self.layers); jobs = [L.img.a for L in layers if L.img.alpha.max() > 0.01]; key = self._pic_key()
+        def go():
+            def work():
+                done_, out = [0], {}
+                for a in jobs:
+                    out[id(a)] = AI.upscale(a, factor)
+                    done_[0] += 1; self._aiq.put(lambda n=done_[0]: T.banner(self.app, f"UPSCALING… layer {n} of {len(jobs)}", "success", seconds=120))
+                return out
+            def done(out):
+                if out is None: return
+                if self._pic_key() != key: T.banner(self.app, "THE PICTURE CHANGED WHILE IT WAS WORKING — try again"); return
+                self._whole_snapshot(); smooth = lambda a2: np.asarray(Image.fromarray(np.ascontiguousarray(a2, np.float32), "F").resize((W, H), Image.BICUBIC), np.float32)
+                def fn(arr):
+                    if id(arr) in out: return out[id(arr)].astype(np.float32)
+                    return np.stack([smooth(arr[..., k]) for k in range(arr.shape[2])], -1) if arr.ndim == 3 else np.clip(smooth(arr), 0, 1)
+                self._resize_doc(fn, W, H); self._recomp(); self._draw(); self.set_size_level(self.size_lvl); self.changed = True
+                T.banner(self.app, f"UPSCALED {factor}x TO {W} x {H} — Ctrl+Z undoes it", "success")
+            self._ai_bg(work, done, "UPSCALING…")
+        from PIL import Image
+        self._ai_ready("upscale", go, fallback=lambda: None)
+
+    def smooth_skin(self):
+        """skin evened out on this layer (only what's selected, if anything is). One Undo step"""
+        L = self.cur
+        if L.cv is not L.img: T.banner(self.app, "YOU'RE ON THE LAYER'S MASK — click the layer's picture first"); return
+        if L.img.alpha.max() < 0.05: T.banner(self.app, "THIS LAYER IS EMPTY — pick the layer with the picture on it"); return
+        area = self._sel_full() if self.sel is not None else None; rgb = np.asarray(L.img.a, np.float32); amt = float(self.gopts.get("skin", 70.0)) / 100
+        def work(): return AI.smooth_skin(rgb, amt, area)
+        def done(res):
+            if res is None: return
+            self._begin_edit(); L.img.a[...] = res.astype(np.float32); self._dirty = None
+            r = self._commit_edit(); self._recomp(r) if r else self._recomp(); self._draw(); self.changed = True
+            T.banner(self.app, "SKIN SMOOTHED — Ctrl+Z puts it back", "success")
+        self._ai_bg(work, done, "SMOOTHING SKIN…")
+
     # ------------------------------------------------------------------ Options > MAGIC: every AI tool in one place
     def _magic_options(self, parent, frame):
         self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "MAGIC", font=T.f(10, "underline")).pack()
@@ -282,7 +354,11 @@ class StudioAI:
                 (("Select subject", self.select_subject, "Select subject"), ("Refine edge", self.refine_selection, "Refine edge")),
                 (("Magic remove", lambda: self.set_tool(REMOVE_TOOL), "Magic Remove: paint over anything and it's filled in from what's round it"),
                  ("Remove selected", self.remove_selected, "Fill what's selected from what's round it")),
-                (("Remove background", self.remove_background, "Remove background"),), (("Blur background", self.blur_background, "Blur background"),)]
+                (("Remove background", self.remove_background, "Remove background"),), (("Blur background", self.blur_background, "Blur background"),),
+                (("Smooth skin", self.smooth_skin, "Smooth skin: on this layer, or what's selected"),),
+                (("Magic expand", self.magic_expand, "Magic expand: a bigger canvas, its new edges filled in"),),
+                (("Upscale 2x", lambda: self.upscale_picture(2), "The whole picture twice as big, with real detail"),
+                 ("Upscale 4x", lambda: self.upscale_picture(4), "The whole picture four times as big, with real detail"))]
         for row in rows:
             f = frame(parent, fill="x", pady=(2, 1))
             for i, (text, cmd, tip) in enumerate(row):
@@ -291,6 +367,11 @@ class StudioAI:
         row = self._slider_row(parent, "Blur:", (self.gopts["bg_blur"] - 2) / 38, lambda v: self._set_g("bg_blur", 2 + v * 38), f"{int(self.gopts['bg_blur'])}px")
         row.entry.bind("<Return>", lambda e: self._typed(row, lambda x: self._set_g("bg_blur", x, sync=True))); row.top, row.unit, row.lo = 38, "px", 2
         self._tip(row.slider, "How much Blur background blurs"); self.g_rows["bg_blur"] = row
+        for key, label, lo, hi, d, tip in (("skin", "Skin:", 0, 100, 70.0, "How much Smooth skin smooths"), ("expand", "Expand:", 5, 100, 20.0, "How much bigger Magic expand makes the canvas (half on each side)")):
+            self.gopts.setdefault(key, d); span = hi - lo
+            row = self._slider_row(parent, label, (self.gopts[key] - lo) / span, lambda v, k=key, lo=lo, span=span: self._set_g(k, lo + v * span), f"{int(self.gopts[key])}%")
+            row.entry.bind("<Return>", lambda e, k=key, row=row: self._typed(row, lambda x, k=k: self._set_g(k, x, sync=True))); row.top, row.unit, row.lo = span, "%", lo
+            self._tip(row.slider, tip); self.g_rows[key] = row
 
     # ------------------------------------------------------------------ Blur Background
     def blur_background(self):

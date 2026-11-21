@@ -153,6 +153,32 @@ class StudioCutout:
         m = ndi.binary_dilation(k > 0.5, iterations=n) if grow else ndi.binary_erosion(k > 0.5, iterations=n)
         self._sel_from_full(m.astype(np.float32))
 
+    def sel_modify(self, how):
+        """Select > Modify, by Options > Cut Out > By (pixels): feather (a soft edge), smooth (rounded, no jaggies or specks),
+        border (just a band along the edge)"""
+        from scipy import ndimage as ndi
+        k = self._sel_full()
+        if k is None: T.banner(self.app, "NOTHING SELECTED — select something first"); return
+        n = max(1, int(self.gopts.get("grow", 4)))
+        if how == "feather": m = ndi.gaussian_filter(k.astype(np.float32), n / 2)
+        elif how == "smooth": m = (ndi.gaussian_filter((k > 0.5).astype(np.float32), n) > 0.5).astype(np.float32); m = ndi.gaussian_filter(m, 0.7)
+        else:
+            hard = k > 0.5; m = (ndi.binary_dilation(hard, iterations=max(1, n // 2)) & ~ndi.binary_erosion(hard, iterations=max(1, n - n // 2))).astype(np.float32)
+        self._sel_commit(); self._sel_from_full(np.clip(m, 0, 1).astype(np.float32)); self._x_overlay()
+
+    # ------------------------------------------------------------------ Color Range: a colour (and its near colours) everywhere, softly
+    def _color_range(self, p, how="new"):
+        """Photoshop's Select > Color Range: click a colour; everything that colour, anywhere, is selected, the near colours
+        partly (Options > Cut Out > Fuzziness: how near counts). Shift-click adds a colour, Alt-click takes one away"""
+        w, h = self.size_wh; x, y = int(p[0]), int(p[1])
+        if not (0 <= x < w and 0 <= y < h): return
+        src = self._source()[..., :3].astype(np.float32)
+        c = src[max(0, y - 1):y + 2, max(0, x - 1):x + 2].reshape(-1, 3).mean(0)        # (a 3x3 average: not one noisy pixel)
+        d = np.sqrt((((src - c) * np.array([0.9, 1.2, 0.7], np.float32)) ** 2).sum(-1))   # (weighted like the eye: green counts most)
+        fz = max(1.0, float(self.gopts.get("fuzz", 40)))
+        m = np.clip(1 - (d - fz * 0.35) / (fz * 0.65), 0, 1)
+        self._sel_commit(); self._combine(m.astype(np.float32), how); self._x_overlay()
+
     def sel_to_layer(self, cut=True):
         """what's selected on this layer, onto a new layer above it (Cut also takes it off this one)"""
         from draw_studio import Layer
@@ -176,7 +202,9 @@ class StudioCutout:
                  ("Copy to layer", lambda: self.sel_to_layer(False), "What's selected is copied onto a new layer")),
                 (("Make sticker", self.make_sticker, "What's selected on this layer (or all of it) becomes a sticker, kept in the Color view"),),
                 (("Invert", self.sel_invert, "Select everything that isn't selected (Ctrl+Shift+I)"),),
-                (("Grow", lambda: self.sel_grow(True), "Make the selection bigger all round"), ("Shrink", lambda: self.sel_grow(False), "Make the selection smaller all round"))]
+                (("Grow", lambda: self.sel_grow(True), "Make the selection bigger all round"), ("Shrink", lambda: self.sel_grow(False), "Make the selection smaller all round")),
+                (("Feather", lambda: self.sel_modify("feather"), "Give the selection a soft edge (By: how soft)"), ("Smooth", lambda: self.sel_modify("smooth"), "Round off the selection's jaggies and specks")),
+                (("Border", lambda: self.sel_modify("border"), "Just a band along the selection's edge (By: how wide)"), ("Color range", lambda: self.set_tool("color_range"), "Color Range: click a colour, it's selected everywhere"))]
         for row in rows:
             f = frame(parent, fill="x", pady=(2, 1))
             for i, (text, cmd, tip) in enumerate(row):
@@ -184,7 +212,11 @@ class StudioCutout:
         self.gopts.setdefault("grow", 4.0)
         row = self._slider_row(parent, "By:", self.gopts["grow"] / 50, lambda v: self._set_g("grow", v * 50), f"{int(self.gopts['grow'])}px")
         row.entry.bind("<Return>", lambda e: self._typed(row, lambda x: self._set_g("grow", x, sync=True))); row.top, row.unit = 50, "px"; self.g_rows["grow"] = row
-        self._tip(row.slider, "How many pixels Grow and Shrink change the selection by")
+        self._tip(row.slider, "How many pixels Grow, Shrink, Feather, Smooth and Border change the selection by")
+        self.gopts.setdefault("fuzz", 40.0)
+        row = self._slider_row(parent, "Fuzz:", self.gopts["fuzz"] / 200, lambda v: self._set_g("fuzz", v * 200), f"{int(self.gopts['fuzz'])}")
+        row.entry.bind("<Return>", lambda e: self._typed(row, lambda x: self._set_g("fuzz", x, sync=True))); row.top, row.unit = 200, ""; self.g_rows["fuzz"] = row
+        self._tip(row.slider, "Color Range's fuzziness: how near a colour still counts")
         for key, label, lo, hi, unit, tip in (("edge_radius", "Edge:", 1, 40, "px", "Edge radius"), ("edge_smooth", "Smooth:", 0, 100, "%", "Smooth"),
                                               ("edge_contrast", "Contrast:", 0, 100, "%", "Contrast"), ("edge_shift", "Shift:", -100, 100, "%", "Shift edge")):
             span = hi - lo

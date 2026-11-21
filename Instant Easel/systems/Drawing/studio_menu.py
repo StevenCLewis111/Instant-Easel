@@ -19,7 +19,7 @@ _SEL = [("Options", "CUT OUT"), ("Options", "FILL")]
 _MAGIC = [("Options", "MAGIC"), ("Options", "CUT OUT")]
 TOOL_SECTIONS = {"text": [("Options", "TEXT")], "fill": [("Options", "FILL")], "pattern_fill": [("Options", "FILL")],
                  "gradient": [("Options", "FILL")], "gradient_radial": [("Options", "FILL")], "magic_eraser": [("Options", "FILL")],
-                 "wand": _SEL, "smart": _MAGIC, "quick_sel": _MAGIC, "magic_remove": [("Options", "MAGIC")], "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
+                 "wand": _SEL, "color_range": _SEL, "smart": _MAGIC, "quick_sel": _MAGIC, "magic_remove": [("Options", "MAGIC")], "sel_rect": _SEL, "sel_oval": _SEL, "sel_lasso": _SEL, "crop": [("Options", "CANVAS")]}
 
 
 class StudioMenu:
@@ -56,11 +56,16 @@ class StudioMenu:
                     ("Free Transform", "Ctrl+T", self._xf_start), "-", ("Keyboard shortcuts…", "", self._open_shortcuts)]
         if name == "Image":
             k = lambda a: self._key_label_of(a)
-            return [("Canvas size…", "", lambda: self._goto_section("Options", "CANVAS")), ("Crop", k("crop"), lambda: self.set_tool("crop")), "-",
+            return [("Image size…", "", lambda: self._goto_section("Options", "CANVAS")), ("Canvas size…", "", lambda: self._goto_section("Options", "CANVAS")),
+                    ("Crop", k("crop"), lambda: self.set_tool("crop")), "-",
+                    ("Rotate picture 90° left", "", lambda: self.turn_picture("left")), ("Rotate picture 90° right", "", lambda: self.turn_picture("right")),
+                    ("Rotate picture 180°", "", lambda: self.turn_picture("180")), ("Flip picture ↔", "", lambda: self.turn_picture("flip_h")),
+                    ("Flip picture ↕", "", lambda: self.turn_picture("flip_v")), "-",
                     ("Turn view left", k("turn_left"), lambda: self._key_action("turn_left")), ("Turn view right", k("turn_right"), lambda: self._key_action("turn_right")),
                     ("Straighten view", k("straighten"), lambda: self._key_action("straighten")), ("Mirror view", k("mirror_view"), lambda: self._key_action("mirror_view")), "-",
                     ("Zoom in", "Wheel", lambda: self.zoom_by(1.25)), ("Zoom out", "Wheel", lambda: self.zoom_by(1 / 1.25)), ("Fit to window", "", self.fit), "-",
-                    ("Light, color & filters… (Editing)", "", lambda: self.app.goto("Editing", "Light"))]
+                    ("Light, color & filters… (Editing)", "", lambda: self.app.goto("Editing", "Light")), ("Curves… (Editing)", "", lambda: self.app.goto("Editing", "Curves")),
+                    ("Levels… (Editing)", "", lambda: self.app.goto("Editing", "Levels"))]
         if name == "Layer":
             return [("New layer", "", self.add_layer), ("Duplicate layer", "", self.dup_layer), ("Delete layer", "", self.del_layer), "-",
                     ("Merge down", "", self.merge_down), ("Move up", "", lambda: self.move_layer(1)), ("Move down", "", lambda: self.move_layer(-1)), "-",
@@ -68,7 +73,9 @@ class StudioMenu:
                     ("check", "Lock transparency", self.lock_alpha.get, lambda: self.lock_alpha.set(not self.lock_alpha.get()))]
         if name == "Select":
             return [("Select all", "Ctrl+A", self._sel_all), ("Deselect", "Ctrl+D", lambda: sel() and (self._sel_commit(), setattr(self, "sel", None), self._x_overlay())),
-                    ("Invert", "Ctrl+Shift+I", self.sel_invert), ("Grow / shrink…", "", lambda: self._goto_section("Options", "CUT OUT")), "-",
+                    ("Invert", "Ctrl+Shift+I", self.sel_invert), ("Color range", "", lambda: self.set_tool("color_range")), "-",
+                    ("Grow", "", lambda: self.sel_grow(True)), ("Shrink", "", lambda: self.sel_grow(False)), ("Feather", "", lambda: self.sel_modify("feather")),
+                    ("Smooth", "", lambda: self.sel_modify("smooth")), ("Border", "", lambda: self.sel_modify("border")), ("How much (By)…", "", lambda: self._goto_section("Options", "CUT OUT")), "-",
                     ("Cut to layer", "", lambda: self.sel_to_layer(True)),
                     ("Copy to layer", "", lambda: self.sel_to_layer(False)), ("Make sticker", "", self.make_sticker)]
         if name == "Magic":                                                      # every AI tool (also Options > Magic)
@@ -76,7 +83,8 @@ class StudioMenu:
                     ("Select subject", "", self.select_subject), ("Refine edge", "", self.refine_selection), "-",
                     ("head", "REMOVE"), ("Magic remove", "", lambda: self.set_tool("magic_remove")), ("Remove selected", "", self.remove_selected),
                     ("Remove background", "Ctrl+I", self.remove_background), "-",
-                    ("head", "EFFECTS"), ("Blur background", "", self.blur_background)]
+                    ("head", "EFFECTS"), ("Blur background", "", self.blur_background), ("Smooth skin", "", self.smooth_skin), "-",
+                    ("head", "SIZE"), ("Magic expand", "", self.magic_expand), ("Upscale 2x", "", lambda: self.upscale_picture(2)), ("Upscale 4x", "", lambda: self.upscale_picture(4))]
         if name == "View":
             return [("check", "Brushes panel", lambda: bool(self.L.winfo_manager()), lambda: self.toggle_panel(self.L)),
                     ("check", "Color / Options panel", lambda: bool(self._R.winfo_manager()), lambda: self.toggle_panel(self._R)),

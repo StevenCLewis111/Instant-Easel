@@ -44,6 +44,7 @@ def apply(img, p=None, filt="none", seed=3):
         k = 1 + p["saturation"] / 100.0
         if p["vibrance"]: k = k + (p["vibrance"] / 100.0) * (1 - np.clip(sat * 1.6, 0, 1))         # vibrance boosts dull colours most
         a = np.clip(L + (a - L) * k, 0, 1)
+    a = tone_curves(a, p.get("levels"), p.get("curves"))                                                 # Levels, then Curves
     out = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
     # detail
     if p["clarity"]: out = out.filter(ImageFilter.UnsharpMask(radius=max(8, out.width // 120), percent=int(abs(p["clarity"]) * 1.2), threshold=2)) if p["clarity"] > 0 \
@@ -63,6 +64,41 @@ def apply(img, p=None, filt="none", seed=3):
     if p["grain"] > 0:
         rng = np.random.default_rng(seed); n = rng.normal(0, 1, (h, w, 1)).astype(np.float32); a = a + n * (p["grain"] / 100.0) * 0.08
     return Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
+
+# ---------------- Levels and Curves ----------------
+LEVELS0 = [0, 1.0, 255, 0, 255]                    # input black, midtone (gamma), input white, output black, output white
+CURVE0 = [[0, 0], [255, 255]]
+
+def curve_lut(pts):
+    """a smooth curve through the points (0-255 each way) that never overshoots between them (monotone cubic): 256 values, 0-1"""
+    pts = sorted((float(x), float(y)) for x, y in pts); xs = np.array([p[0] for p in pts]); ys = np.array([p[1] for p in pts])
+    keep = np.concatenate([[True], np.diff(xs) > 0.5]); xs, ys = xs[keep], ys[keep]
+    if len(xs) < 2: return np.linspace(0, 1, 256, dtype=np.float32)
+    d = np.diff(ys) / np.diff(xs); m = np.zeros(len(xs))
+    m[1:-1] = np.where(d[:-1] * d[1:] > 0, 2 / (1 / np.where(d[:-1] == 0, 1e-9, d[:-1]) + 1 / np.where(d[1:] == 0, 1e-9, d[1:])), 0)
+    m[0], m[-1] = d[0], d[-1]
+    t = np.arange(256, dtype=np.float64); i = np.clip(np.searchsorted(xs, t) - 1, 0, len(xs) - 2)
+    h = xs[i + 1] - xs[i]; u = np.clip((t - xs[i]) / h, 0, 1)
+    y = (2 * u ** 3 - 3 * u ** 2 + 1) * ys[i] + (u ** 3 - 2 * u ** 2 + u) * h * m[i] + (-2 * u ** 3 + 3 * u ** 2) * ys[i + 1] + (u ** 3 - u ** 2) * h * m[i + 1]
+    y = np.where(t < xs[0], ys[0], np.where(t > xs[-1], ys[-1], y))
+    return np.clip(y / 255.0, 0, 1).astype(np.float32)
+
+def levels_lut(lv):
+    b, g, w, ob, ow = lv; t = np.arange(256, dtype=np.float32)
+    x = np.clip((t - b) / max(1.0, w - b), 0, 1) ** (1.0 / max(0.05, g))
+    return ((ob + x * (ow - ob)) / 255.0).astype(np.float32)
+
+def tone_curves(a, levels=None, curves=None):
+    """a (H x W x 3, 0-1) through Levels and then Curves ("rgb" for all three, "r" / "g" / "b" for one each)"""
+    if not levels and not curves: return a
+    idx = np.clip(a * 255 + 0.5, 0, 255).astype(np.uint8)
+    lut = [np.linspace(0, 1, 256, dtype=np.float32)] * 3
+    if levels and list(levels) != LEVELS0: lv = levels_lut(levels); lut = [lv[np.clip(l * 255 + 0.5, 0, 255).astype(np.uint8)] for l in lut]
+    if curves:
+        if curves.get("rgb"): c = curve_lut(curves["rgb"]); lut = [c[np.clip(l * 255 + 0.5, 0, 255).astype(np.uint8)] for l in lut]
+        for k, ch in (("r", 0), ("g", 1), ("b", 2)):
+            if curves.get(k): c = curve_lut(curves[k]); lut[ch] = c[np.clip(lut[ch] * 255 + 0.5, 0, 255).astype(np.uint8)]
+    return np.dstack([lut[c][idx[..., c]] for c in range(3)])
 
 def look(img, name):
     """one-click filter looks"""

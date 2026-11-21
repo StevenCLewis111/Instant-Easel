@@ -10,6 +10,9 @@ ai_cutout.py: the AI behind the cut-out tools, run on your own PC (onnxruntime; 
   inpaint(rgb, hole)      Magic Remove: what's painted over is filled in from what's round it (LaMa, Samsung AI, Apache 2.0),
                           like Photoshop's Remove tool / Content-Aware Fill. Loaded when the tool is first picked, not at start-up
   blur_background(...)    Blur Background: the subject stays sharp, everything else is blurred (like a wide-open lens)
+  expand(rgb, l, t, r, b) Magic Expand: a bigger canvas, its new edges filled to carry the picture on (LaMa again)
+  upscale(rgb, factor)    Upscale: 2x / 4x bigger with real detail (Real-ESRGAN general x4v3, xinntao, BSD-3-Clause), in tiles
+  smooth_skin(rgb, ...)   Smooth Skin: skin evened out (an edge-keeping filter on skin colours), pores and edges kept
 
 The models are built into the app (the Windows build packs them inside the .exe: my-models/cutout/) and loaded while the
 splash screen shows (preload()). Run from the source code without them, they're downloaded once, the first time a tool needs
@@ -28,8 +31,12 @@ MODELS = {
     "lama": ("lama_fp32.onnx", 208044816, "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
              "https://github.com/neureps/carousel-fit-models/releases/download/lama-v1/lama-fp32-1faef5301d78.onnx"),
 }
-NEEDS = {"subject": ["subject"], "sam": ["sam_enc", "sam_dec"], "remove": ["lama"]}
-LAZY = ("remove",)                                                             # (big: loaded when its tool is picked, not at start-up)
+# made here from the official PyTorch file (esr_convert.py): (name, None, None, the .pth's url, its SHA-256, its size)
+MODELS["esr"] = ("realesr-general-x4v3.onnx", None, None,
+                 "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",
+                 "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292", 4885111)
+NEEDS = {"subject": ["subject"], "sam": ["sam_enc", "sam_dec"], "remove": ["lama"], "upscale": ["esr"]}
+LAZY = ("remove", "upscale")                                                             # (big: loaded when its tool is picked, not at start-up)
 _dir = None
 
 
@@ -53,9 +60,14 @@ def set_model_dir(d):
 def _path(key): return os.path.join(model_dir(), MODELS[key][0])
 
 
+def _ok(k):
+    p = _path(k)
+    return os.path.exists(p) and (os.path.getsize(p) == MODELS[k][1] if MODELS[k][1] else os.path.getsize(p) > 1000)
+
+
 def have(kind):
-    """the models for 'subject' or 'sam' are already on this PC"""
-    return all(os.path.exists(_path(k)) and os.path.getsize(_path(k)) == MODELS[k][1] for k in NEEDS[kind])
+    """the models for 'subject', 'sam', 'remove' or 'upscale' are already on this PC"""
+    return all(_ok(k) for k in NEEDS[kind])
 
 
 def runtime_ok():
@@ -65,16 +77,18 @@ def runtime_ok():
     except Exception: return False
 
 
-def download_size(kind): return sum(MODELS[k][1] for k in NEEDS[kind] if not (os.path.exists(_path(k)) and os.path.getsize(_path(k)) == MODELS[k][1]))
+def download_size(kind): return sum((MODELS[k][1] or MODELS[k][5]) for k in NEEDS[kind] if not _ok(k))
 
 
 def ensure(kind, progress=None, cancel=None):
     """download what 'kind' needs (once). progress(done_bytes, total_bytes); cancel() -> True stops it. Raises on failure"""
-    todo = [k for k in NEEDS[kind] if not (os.path.exists(_path(k)) and os.path.getsize(_path(k)) == MODELS[k][1])]
-    total = sum(MODELS[k][1] for k in todo); done = 0
+    todo = [k for k in NEEDS[kind] if not _ok(k)]
+    total = sum((MODELS[k][1] or MODELS[k][5]) for k in todo); done = 0
     for k in todo:
         name, size, sha = MODELS[k][:3]; dst = _path(k); part = dst + ".part"; h = hashlib.sha256()
         url = MODELS[k][3] if len(MODELS[k]) > 3 else _REL + name
+        convert = size is None                                                   # (a PyTorch file, turned into ONNX here)
+        if convert: sha = MODELS[k][4]; part = dst + ".pth.part"
         with urllib.request.urlopen(url, timeout=60) as r, open(part, "wb") as out:
             while True:
                 if cancel and cancel(): raise RuntimeError("cancelled")
@@ -84,7 +98,10 @@ def ensure(kind, progress=None, cancel=None):
                 if progress: progress(done, total)
         if h.hexdigest() != sha:
             os.remove(part); raise RuntimeError(f"{name} didn't download correctly (checksum)")
-        os.replace(part, dst)
+        if convert:
+            import esr_convert
+            esr_convert.build(esr_convert.load_pth(part), dst + ".tmp"); os.replace(dst + ".tmp", dst); os.remove(part)
+        else: os.replace(part, dst)
 
 
 _sessions = {}
@@ -262,30 +279,109 @@ def foreground(rgb, a, r=24):
 
 
 # ------------------------------------------------------------------ Magic Remove
-def inpaint(rgb, hole, cancel=None):
-    """fill the hole (H x W bool / 0-1) from its surroundings: rgb is H x W x 3, 0-255; returns the whole picture, changed
-    only inside the hole (softly at its edge). The model works at 512 x 512, so it's given the area round the hole (the hole
-    plus about its own size again on every side): small things come back sharp, big ones as sharp as the model allows"""
-    hole = np.asarray(hole) > 0.5
-    if not hole.any(): return rgb
-    H, W = hole.shape; ys, xs = np.where(hole); y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    side = max(y1 - y0, x1 - x0); pad = max(32, int(side * 0.9)); side = side + 2 * pad
-    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2; half = side // 2
-    X0, Y0 = max(0, cx - half), max(0, cy - half); X1, Y1 = min(W, X0 + side), min(H, Y0 + side); X0, Y0 = max(0, X1 - side), max(0, Y1 - side)
-    crop = rgb[Y0:Y1, X0:X1]; ch = hole[Y0:Y1, X0:X1]; h, w = ch.shape
+def _lama_box(rgb, hole, box, keep=None):
+    """LaMa on one square box of the picture (at 512 x 512): rgb is changed in place inside the hole (softly at its edge)"""
     from scipy import ndimage as nd
+    X0, Y0, X1, Y1 = box; crop = rgb[Y0:Y1, X0:X1]; ch = hole[Y0:Y1, X0:X1]; h, w = ch.shape
+    if not ch.any(): return
     grow = max(2, int(round(max(h, w) / 512 * 3)))                               # (a little past the edge: no halo of the old thing)
     ch2 = nd.binary_dilation(ch, iterations=grow)
+    if keep is not None: ch2 &= ~keep[Y0:Y1, X0:X1]                              # (never past the picture's real edge, when expanding)
     x = _resize(crop, 512, 512).transpose(2, 0, 1)[None] / 255.0
     m = (_resize(ch2.astype(np.float32), 512, 512) > 0.01).astype(np.float32)[None, None]
-    if cancel and cancel(): raise RuntimeError("cancelled")
     out = _session("lama").run(None, {"image": x.astype(np.float32), "mask": m})[0][0].transpose(1, 2, 0)
     if out.max() <= 2: out = out * 255
     out = _resize(out, w, h)
     k = np.clip(nd.gaussian_filter(ch2.astype(np.float32), max(1, grow / 2)) * 1.6, 0, 1)[..., None]
     k = np.maximum(k, ch[..., None])                                             # (all of the hole itself is replaced)
-    res = np.array(rgb, np.float32, copy=True); res[Y0:Y1, X0:X1] = crop * (1 - k) + out * k
+    if keep is not None: k = k * (~keep[Y0:Y1, X0:X1])[..., None]
+    rgb[Y0:Y1, X0:X1] = crop * (1 - k) + out * k
+
+
+def inpaint(rgb, hole, cancel=None, keep=None):
+    """fill the hole (H x W bool / 0-1) from its surroundings: rgb is H x W x 3, 0-255; returns the whole picture, changed
+    only inside the hole. The model works at 512 x 512, so it's given the area round the hole (the hole plus about its own
+    size again on every side). A long thin hole (a wire, a canvas edge) is done in overlapping squares along it, each one
+    seeing what the last one filled, so it stays sharp"""
+    from scipy import ndimage as nd
+    hole = np.asarray(hole) > 0.5; res = np.array(rgb, np.float32, copy=True)
+    if not hole.any(): return res
+    H, W = hole.shape; ys, xs = np.where(hole); y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    bw, bh = x1 - x0, y1 - y0; thick = 2 * float(nd.distance_transform_edt(np.pad(hole[y0:y1, x0:x1], 1)).max())
+    def box_at(cx, cy, side):
+        side = int(min(side, W, H)); half = side // 2
+        X0, Y0 = max(0, int(cx) - half), max(0, int(cy) - half); X1, Y1 = min(W, X0 + side), min(H, Y0 + side)
+        return (max(0, X1 - side), max(0, Y1 - side), X1, Y1)
+    if max(bw, bh) <= 2.2 * max(64, thick) or max(bw, bh) < 384:                 # one box: the hole and about its size round it
+        side = max(bw, bh) + 2 * max(32, int(max(bw, bh) * 0.9))
+        _lama_box(res, hole, box_at((x0 + x1) / 2, (y0 + y1) / 2, side), keep); return res
+    win = int(np.clip(thick * 4.5, 320, 1024)); step = max(64, int(win * 0.6)); todo = hole.copy()
+    for cy in range(y0 + win // 2 - win // 4, y1 + step, step):                    # squares along the hole, top-left to bottom-right
+        for cx in range(x0 + win // 2 - win // 4, x1 + step, step):
+            if cancel and cancel(): raise RuntimeError("cancelled")
+            b = box_at(min(cx, x1), min(cy, y1), win)
+            if not todo[b[1]:b[3], b[0]:b[2]].any(): continue
+            _lama_box(res, todo, b, keep); todo[b[1]:b[3], b[0]:b[2]] = False   # (filled: what the next square sees)
     return res
+
+
+def expand(rgb, left, top, right, bottom, cancel=None):
+    """Magic Expand: rgb on a bigger canvas (left / top / right / bottom pixels more), the new edges filled in. -> H' x W' x 3"""
+    H, W = rgb.shape[:2]; H2, W2 = H + top + bottom, W + left + right
+    big = np.zeros((H2, W2, 3), np.float32); big[top:top + H, left:left + W] = rgb
+    for i in range(left): big[top:top + H, i] = rgb[:, 0]                          # (a first guess: the edge pixels carried out)
+    for i in range(right): big[top:top + H, left + W + i] = rgb[:, -1]
+    big[:top] = big[top]; big[top + H:] = big[top + H - 1]
+    hole = np.ones((H2, W2), bool); hole[top:top + H, left:left + W] = False
+    from scipy import ndimage as nd
+    rim = max(3, int(round(max(H2, W2) / 200)))                                    # (a few of the old edge's pixels are redone too: no seam)
+    keep = nd.binary_erosion(~hole, iterations=rim, border_value=1)
+    for side, n in (("l", left), ("t", top), ("r", right), ("b", bottom)):           # (only on the sides that grew)
+        if n == 0:
+            if side == "l": keep[:, :left + rim] |= ~hole[:, :left + rim]
+            if side == "r": keep[:, W2 - right - rim:] |= ~hole[:, W2 - right - rim:]
+            if side == "t": keep[:top + rim] |= ~hole[:top + rim]
+            if side == "b": keep[H2 - bottom - rim:] |= ~hole[H2 - bottom - rim:]
+    return inpaint(big, ~keep, cancel, keep=keep)
+
+
+# ------------------------------------------------------------------ Upscale
+def upscale(rgb, factor=4, progress=None, cancel=None, tile=192, pad=12):
+    """rgb (H x W x 3, 0-255) made factor (2 or 4) times bigger with Real-ESRGAN, in overlapping tiles (any size, little memory)"""
+    H, W = rgb.shape[:2]; S = 4; out = np.zeros((H * S, W * S, 3), np.float32); x = np.clip(rgb, 0, 255).astype(np.float32) / 255.0
+    sess = _session("esr"); tiles = [(ty, tx) for ty in range(0, H, tile) for tx in range(0, W, tile)]
+    for n, (ty, tx) in enumerate(tiles):
+        if cancel and cancel(): raise RuntimeError("cancelled")
+        y0, x0, y1, x1 = max(0, ty - pad), max(0, tx - pad), min(H, ty + tile + pad), min(W, tx + tile + pad)
+        r = sess.run(None, {"input": x[y0:y1, x0:x1].transpose(2, 0, 1)[None]})[0][0].transpose(1, 2, 0)
+        cy, cx = (ty - y0) * S, (tx - x0) * S; th, tw = (min(H, ty + tile) - ty) * S, (min(W, tx + tile) - tx) * S
+        out[ty * S:ty * S + th, tx * S:tx * S + tw] = r[cy:cy + th, cx:cx + tw]
+        if progress: progress((n + 1) / len(tiles))
+    out = np.clip(out * 255, 0, 255)
+    if factor != 4: out = _resize(out, int(round(W * factor)), int(round(H * factor)))
+    return out
+
+
+# ------------------------------------------------------------------ Smooth Skin
+def skin_mask(rgb):
+    """how skin-like each pixel's colour is (0-1), from its YCbCr colour (the usual skin range), softened"""
+    from scipy import ndimage as nd
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b; cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b; y = 0.299 * r + 0.587 * g + 0.114 * b
+    m = np.clip(1 - np.maximum(np.abs(cr - 150) / 22, np.abs(cb - 112) / 22), 0, 1) * np.clip((y - 40) / 30, 0, 1)
+    return np.clip(nd.gaussian_filter(m, 2) * 1.4, 0, 1)
+
+
+def smooth_skin(rgb, amount=0.7, area=None):
+    """skin evened out: an edge-keeping (guided) blur on skin-coloured areas, with a little fine texture put back so it isn't
+    plastic. area (0-1) limits it (a selection); otherwise every skin-coloured part"""
+    H, W = rgb.shape[:2]; r = max(2, int(round(max(H, W) / 180))); I = np.clip(rgb, 0, 255) / 255.0
+    sm = np.dstack([guided(I, I[..., c], r, 0.0025) for c in range(3)])
+    detail = I - np.dstack([_box(I[..., c], 1) for c in range(3)])               # (the finest texture: pores)
+    res = sm + detail * 0.35
+    m = skin_mask(rgb) * amount
+    if area is not None: m = m * area
+    return np.clip((I * (1 - m[..., None]) + res * m[..., None]) * 255, 0, 255)
 
 
 # ------------------------------------------------------------------ Blur Background

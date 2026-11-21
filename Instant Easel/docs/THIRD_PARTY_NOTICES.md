@@ -18,6 +18,7 @@ SHA-256 hash, and kept in `my-models/cutout/` on your PC. They run on your PC on
 | ISNet / DIS, `isnet-general-use` (Qin et al., [xuebinqin/DIS](https://github.com/xuebinqin/DIS)) | Select Subject, Remove Background, Object Selection's outlines | Apache-2.0 |
 | Segment Anything, ViT-B, quantized (Meta AI, [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything)) | Object Selection, Quick Selection | Apache-2.0 |
 | LaMa, big-lama (Suvorov et al., Samsung AI, [advimman/lama](https://github.com/advimman/lama)); ONNX export by Carve ([Carve/LaMa-ONNX](https://huggingface.co/Carve/LaMa-ONNX)) | Magic Remove, Remove selected | Apache-2.0 |
+| Real-ESRGAN, realesr-general-x4v3 (Xintao Wang et al., [xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)); turned into ONNX by the build | Upscale 2x / 4x | BSD-3-Clause |
 
 ## Methods (written for this app, after the published papers)
 - Guided filter, He, Sun & Tang (2010): Refine Edge's hair and fur.

@@ -708,6 +708,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         self._text_panel(LV)                                                         # TEXT: words, font, size, style (the Text tool)
         self._navigator(LV, frame, self._apx(IW) - 4)                                 # NAVIGATOR (studio_more)
         self._magic_options(LV, frame)                                               # MAGIC: every AI tool (studio_ai)
+        self._fx_options(LV, frame)                                                  # LAYER STYLE: shadow, outline, glow (studio_groups)
         self._cutout_options(LV, frame)                                              # CUT OUT (studio_cutout)
         self._more_options(LV, frame)                                                # GUIDES, FILL, CANVAS, SAVING (studio_more)
         self._timelapse(LV, frame)
@@ -1266,7 +1267,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
             if getattr(b, "_is_art", False): b._selected = k == t; b._style()
             else: b.configure(highlightbackground=T.PALETTE["border"] if k == t else b.master["bg"])
         cur = self._no_cursor() if t in ("brush", "eraser") else {"pick": "tcross", "fill": "spraycan", "text": "xterm", "sel_rect": "tcross",
-                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "quick_sel": "pencil", "magic_eraser": "X_cursor", "magic_remove": "circle"}.get(t, "crosshair")
+                                                                     "sel_oval": "tcross", "crop": "sizing", "move": "fleur", "wand": "tcross", "pattern_fill": "spraycan", "sel_lasso": "pencil", "smart": "tcross", "quick_sel": "pencil", "magic_eraser": "X_cursor", "magic_remove": "circle", "color_range": "tcross"}.get(t, "crosshair")
         for cv in {self.cv, getattr(self, "_cv_small", self.cv), getattr(self, "_cv_big", self.cv)}:     # both canvases (normal and whole-page)
             try: cv.configure(cursor=cur)
             except tk.TclError: cv.configure(cursor="crosshair")
@@ -1643,6 +1644,8 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         """after the change: keep only the area that actually changed (not the whole layer) on the undo list"""
         if self._edit is None: return None
         i, a0, al0 = self._edit; self._edit = None
+        if i < len(self.layers) and getattr(self.layers[i], "fx", None):            # a styled layer: its shadow / outline / glow catch up
+            self.after_idle(lambda: (self._recomp(), self._draw()))
         if i >= len(self.layers): return None
         L = self.layers[i]; w, h = self.size_wh
         if self._dirty is not None:                                              # a stroke: look around it (wide margin for splatter), not the whole layer
@@ -2105,6 +2108,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
 
     # ------------------------------------------------------------------ layers
     def _layers_ui(self):
+        if hasattr(self, "_fx_sync"): self.after_idle(self._fx_sync)              # Options > Layer Style shows this layer's style
         if getattr(self, "_artp", False): return self._layers_ui_art()
         for w in self.layer_box.winfo_children(): w.destroy()
         for i in range(len(self.layers) - 1, -1, -1):
@@ -2146,15 +2150,25 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
     def add_layer(self):
         w, h = self.size_wh; L = Layer(w, h, f"Layer {len(self.layers) + 1}"); L.group = self._group_of(self.cur)      # a new layer goes in with the one you're on
         self.layers.insert(self.li + 1, L); self.li += 1; self.sel_group = None; self._layers_ui()
+    def _undo_after_layer_change(self):
+        """a layer went (deleted / merged): the undo steps that still fit. A layer's own steps stay if it's still there; a
+        whole-picture step (crop, resize, rotate, expand...) only if it was made with this many layers"""
+        n = len(self.layers)
+        def ok(u):
+            if isinstance(u[0], str): return u[0] != "whole" or len(u[6]) == n
+            return u[0] < n
+        return [u for u in self.undo_stack if ok(u)]
+
     def dup_layer(self):
         w, h = self.size_wh; src = self.cur; L = Layer(w, h, src.name + " copy"); L.img.a, L.img.alpha = src.img.a.copy(), src.img.alpha.copy()
         if src.maskcv is not None: L.add_mask(); L.maskcv.alpha = src.maskcv.alpha.copy()
-        L.opacity, L.mode = src.opacity, src.mode; L.group = self._group_of(src); self.layers.insert(self.li + 1, L); self.li += 1; self._layers_ui(); self._picture_changed()
+        L.opacity, L.mode = src.opacity, src.mode; L.group = self._group_of(src); L.fx = __import__("copy").deepcopy(getattr(src, "fx", None))
+        self.layers.insert(self.li + 1, L); self.li += 1; self._layers_ui(); self._picture_changed()
     def del_layer(self):
         if getattr(self, "sel_group", None) is not None: return self.delete_group()      # a picked group goes with its layers
         if len(self.layers) == 1: self.cur.mask_edit = False; self.cur.maskcv = None; self._begin_edit(); self.cur.cv.alpha[:] = 0; self._commit_edit()
         else: self.layers.pop(self.li); self.li = max(0, self.li - 1)
-        self.undo_stack = [u for u in self.undo_stack if u[0] < len(self.layers)]; self._layers_ui(); self._picture_changed()
+        self.undo_stack = self._undo_after_layer_change(); self._layers_ui(); self._picture_changed()
     def merge_down(self):
         if getattr(self, "sel_group", None) is not None: return self.merge_group()       # a picked group: flattened into one layer
         if self.li == 0: return
@@ -2163,7 +2177,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         col = blend_layer(low.img.a.copy(), top) if top.mode != "normal" else top.img.a
         out_a = a_l + a_t * (1 - a_l)
         low.img.a = (low.img.a * a_l * (1 - a_t) + col * a_t) / np.maximum(out_a, 1e-4); low.img.alpha = out_a[..., 0]; low.maskcv = None; low.mask_edit = False
-        self.layers.pop(self.li); self.li -= 1; self.undo_stack = [u for u in self.undo_stack if u[0] < len(self.layers)]; self._layers_ui(); self._picture_changed()
+        self.layers.pop(self.li); self.li -= 1; self.undo_stack = self._undo_after_layer_change(); self._layers_ui(); self._picture_changed()
     def move_layer(self, d):
         j = self.li + d
         if getattr(self, "sel_group", None) is not None: return self.move_group(d)       # a picked group moves as one

@@ -10,6 +10,7 @@ Layers keep their group as L.group (an id in self.groups, or None); the layers o
 Mixed into DrawStudio (draw_studio.py).
 """
 import numpy as np
+import tkinter as tk
 import theme as T
 
 class Group:
@@ -24,6 +25,95 @@ class StudioGroups:
         g = getattr(L, "group", None)
         return g if g is not None and g in getattr(self, "groups", {}) else None
 
+    # ------------------------------------------------------------------ layer styles (drop shadow, outline, outer glow): live
+    def _fx_pic(self, L):
+        """the layer's style as a picture of its own, under the layer: (colour, coverage), full size; None when it has none.
+        Made again only when the layer's paint (or the style) changes, and never mid-stroke (the stroke's end brings it up to date)"""
+        fx = getattr(L, "fx", None)
+        if not fx or not any(e.get("on") for e in fx.values()): return None
+        A = L.shown(); sub = A[::8, ::8]
+        key = (A.shape, float(sub.sum()), int((sub > 0.5).sum()), float(A[A.shape[0] // 2].sum()), repr(sorted((k, sorted(v.items())) for k, v in fx.items())))
+        cache = getattr(L, "_fx_cache", None)
+        if cache is not None and (cache[0] == key or (getattr(self, "_edit", None) is not None and cache[1].shape[:2] == A.shape)): return cache[1], cache[2]
+        from scipy import ndimage as nd
+        h, w = A.shape; col = np.zeros((h, w, 3), np.float32); al = np.zeros((h, w), np.float32)
+        def over(c, a):
+            nonlocal col, al
+            out = a + al * (1 - a); col = (np.asarray(c, np.float32) * a[..., None] + col * (al * (1 - a))[..., None]) / np.maximum(out, 1e-5)[..., None]; al = out
+        sh = fx.get("shadow", {})
+        if sh.get("on"):
+            ang = np.radians(sh.get("angle", 135)); d = sh.get("distance", 12); dx, dy = -np.cos(ang) * d, np.sin(ang) * d
+            a = nd.shift(A, (dy, dx), order=1, mode="constant"); a = nd.gaussian_filter(a, max(0.5, sh.get("size", 10) / 2)) * sh.get("opacity", 0.6)
+            over(sh.get("color", (0, 0, 0)), np.clip(a, 0, 1))
+        gl = fx.get("glow", {})
+        if gl.get("on"):
+            a = np.clip(nd.gaussian_filter(A, max(0.5, gl.get("size", 16) / 2)) * 2.2, 0, 1) * gl.get("opacity", 0.8)
+            over(gl.get("color", (255, 230, 120)), a)
+        st = fx.get("stroke", {})
+        if st.get("on"):
+            n = st.get("size", 6); dist = nd.distance_transform_edt(A < 0.5)
+            over(st.get("color", (255, 255, 255)), np.clip(n + 0.5 - dist, 0, 1).astype(np.float32))
+        L._fx_cache = (key, col, al); return col, al
+
+    # the Options > LAYER STYLE section
+    FX_ROWS = [("shadow", "Drop shadow", (0, 0, 0), [("distance", "Distance:", 0, 100, 12, "px"), ("size", "Blur:", 0, 80, 10, "px"), ("opacity", "Opacity:", 0, 100, 60, "%")]),
+               ("stroke", "Outline", (255, 255, 255), [("size", "Width:", 1, 60, 6, "px")]),
+               ("glow", "Outer glow", (255, 230, 120), [("size", "Size:", 2, 120, 16, "px"), ("opacity", "Opacity:", 0, 100, 80, "%")])]
+
+    def _fx_options(self, parent, frame):
+        self._rule(parent); r = frame(parent, fill="x", pady=(4, 2)); T.Text(r, "LAYER STYLE", font=T.f(10, "underline")).pack()
+        self._fx_vars = {}; self._fx_sync_busy = False
+        for eff, name, col, sliders in self.FX_ROWS:
+            f = frame(parent, fill="x", pady=(4, 1)); v = tk.BooleanVar(master=self, value=False); self._fx_vars[eff] = v
+            T.Text(f, name, font=T.f(9)).pack(side="left"); self._tip(T.Toggle(f, v), f"{name} on this layer").pack(side="right")
+            sw = tk.Label(f, width=2, bg="#%02x%02x%02x" % col, cursor="hand2", relief="solid", bd=1); sw.pack(side="right", padx=6)
+            self._tip(sw, f"{name} colour: click to use the brush colour"); sw.bind("<Button-1>", lambda e, k=eff: self._fx_color(k))
+            self._fx_vars[eff + "_sw"] = sw
+            v.trace_add("write", lambda *a: self._fx_changed())
+            for key, label, lo, hi, d, unit in sliders:
+                gk = f"fx_{eff}_{key}"; self.gopts.setdefault(gk, float(d)); span = hi - lo
+                row = self._slider_row(parent, label, (self.gopts[gk] - lo) / span, lambda v, k=gk, lo=lo, span=span: (self._set_g(k, lo + v * span), self._fx_changed()), f"{int(self.gopts[gk])}{unit}")
+                row.entry.bind("<Return>", lambda e, k=gk, row=row: self._typed(row, lambda x, k=k: (self._set_g(k, x, sync=True), self._fx_changed())))
+                row.top, row.unit, row.lo = span, unit, lo; self.g_rows[gk] = row
+        self._fx_cols = {eff: col for eff, _, col, _ in self.FX_ROWS}
+
+    def _fx_color(self, eff):
+        self._fx_cols[eff] = tuple(int(c) for c in self.color); self._fx_vars[eff + "_sw"].configure(bg="#%02x%02x%02x" % self._fx_cols[eff])
+        if not self._fx_vars[eff].get(): self._fx_vars[eff].set(True)
+        else: self._fx_changed()
+
+    def _fx_changed(self):
+        """the section's settings onto the layer you're on, and the picture brought up to date (just after: dragging stays smooth)"""
+        if getattr(self, "_fx_sync_busy", False) or not hasattr(self, "_fx_vars"): return
+        fx = {}
+        for eff, _, _, sliders in self.FX_ROWS:
+            e = dict(on=bool(self._fx_vars[eff].get()), color=tuple(self._fx_cols[eff]))
+            for key, *_r in sliders:
+                v = float(self.gopts[f"fx_{eff}_{key}"]); e[key] = v / 100 if key == "opacity" else v
+            if eff == "shadow": e["angle"] = 135
+            fx[eff] = e
+        L = self.cur; L.fx = fx if any(e["on"] for e in fx.values()) else None; self.changed = True
+        if getattr(self, "_fx_job", None): self.after_cancel(self._fx_job)
+        self._fx_job = self.after(60, lambda: (setattr(self, "_fx_job", None), self._recomp(), self._draw()))
+
+    def _fx_sync(self):
+        """the section shows the style of the layer you're on"""
+        if not hasattr(self, "_fx_vars"): return
+        fx = getattr(self.cur, "fx", None) or {}; self._fx_sync_busy = True
+        try:
+            for eff, _, col, sliders in self.FX_ROWS:
+                e = fx.get(eff, {}); self._fx_vars[eff].set(bool(e.get("on")))
+                if e.get("color") is not None: self._fx_cols[eff] = tuple(e["color"]); self._fx_vars[eff + "_sw"].configure(bg="#%02x%02x%02x" % self._fx_cols[eff])
+                for key, label, lo, hi, d, unit in sliders:
+                    if key in e: self._set_g(f"fx_{eff}_{key}", e[key] * 100 if key == "opacity" else e[key], sync=True)
+        finally: self._fx_sync_busy = False
+
+    def _fx_under(self, part, L, sl):
+        """the layer's style onto part, just before the layer itself"""
+        f = self._fx_pic(L) if L.visible else None
+        if f is None: return part
+        c, a = f; a = (a[sl] * L.opacity)[..., None]; return part * (1 - a) + c[sl] * a
+
     # ------------------------------------------------------------------ painting a stack of layers (with groups) into a picture
     def _blend_one(self, part, L, sl, base_al):
         """one layer onto part (clipping to the layer below's coverage if it's clipped); returns (part, coverage for clipping)"""
@@ -32,7 +122,7 @@ class StudioGroups:
             if L.visible: part = blend_layer(part, L, sl, clip=base_al if base_al is not None else np.zeros(part.shape[:2], np.float32))
             return part, base_al
         base_al = L.shown(sl) * L.opacity if L.visible else np.zeros(part.shape[:2], np.float32)
-        if L.visible: part = blend_layer(part, L, sl)
+        if L.visible: part = blend_layer(self._fx_under(part, L, sl), L, sl)
         return part, base_al
 
     def _runs(self, layers):
@@ -56,6 +146,10 @@ class StudioGroups:
                 base_al = L.shown(sl) * L.opacity if L.visible else np.zeros(shape[:2], np.float32)
                 if not L.visible: continue
                 a = L.shown(sl) * L.opacity
+            f = None if getattr(L, "clip", False) else self._fx_pic(L)
+            if f is not None:                                                       # its style, under it
+                fa = f[1][sl] * L.opacity; fo = fa + al * (1 - fa)
+                col = (f[0][sl] * fa[..., None] + col * (al * (1 - fa))[..., None]) / np.maximum(fo, 1e-5)[..., None]; al = fo
             src = L.img.a[sl]
             top = src if L.mode == "normal" else np.where(al[..., None] > 0.002, brushes.blend_rgb(col, src, L.mode), src)
             out = a + al * (1 - a); col = (top * a[..., None] + col * (al * (1 - a))[..., None]) / np.maximum(out, 1e-5)[..., None]; al = out

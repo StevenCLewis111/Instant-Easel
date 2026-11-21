@@ -102,6 +102,16 @@ class StudioMore:
         self._recomp(); self._draw(); self.set_size_level(self.size_lvl); self.changed = True
         T.banner(self.app, f"RESIZED — {W} x {H} (Ctrl+Z undoes it)", "success")
 
+    def turn_picture(self, how):
+        """Image > Rotate / Flip picture: the picture itself (every layer, mask and the paper), not just the view. One Undo step"""
+        w, h = self.size_wh; self._whole_snapshot()
+        f = {"left": lambda a: np.rot90(a, 1), "right": lambda a: np.rot90(a, -1), "180": lambda a: np.rot90(a, 2),
+             "flip_h": lambda a: a[:, ::-1], "flip_v": lambda a: a[::-1]}[how]
+        W, H = (h, w) if how in ("left", "right") else (w, h)
+        self._resize_doc(lambda a: np.ascontiguousarray(f(a), np.float32), W, H)
+        self._recomp(); self._draw(); self.changed = True
+        T.banner(self.app, {"left": "TURNED LEFT", "right": "TURNED RIGHT", "180": "TURNED UPSIDE DOWN", "flip_h": "FLIPPED SIDE TO SIDE", "flip_v": "FLIPPED TOP TO BOTTOM"}[how] + " — Ctrl+Z undoes it", "success")
+
     def _sync_canvas_size(self):
         if hasattr(self, "cw_var"): w, h = self.size_wh; self.cw_var.set(str(w)); self.ch_var.set(str(h))
 

@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import theme as T, paths
 
-SEL_TOOLS = ("sel_rect", "sel_oval", "wand", "sel_lasso", "smart", "quick_sel")                                # wand: Magic Wand (selects an area of about one colour)
+SEL_TOOLS = ("sel_rect", "sel_oval", "wand", "sel_lasso", "smart", "quick_sel", "color_range")                                # wand: Magic Wand (selects an area of about one colour)
 HANDLE = 7                                                                   # handle size on screen (pixels)
 
 # ---------------------------------------------------------------- fonts: the app's own, plus common ones the PC has
@@ -364,6 +364,7 @@ class StudioExtras:
         if getattr(self, "_xf", None): return self._xf_down(p)
         if self.tool == "quick_sel":                                            # Quick Selection: paint over the thing (Alt: take away)
             self._sel_commit(); self._x_drag = ("sel_quick", [(p[0], p[1])], self._how(e)); return
+        if self.tool == "color_range": self._color_range(p, self._how(e)); return  # Color Range: that colour, everywhere
         if self.tool in ("wand", "smart") and self._how(e) != "new":                # Shift / Alt: add / take away (never a move)
             self._sel_commit()
             if self.tool == "wand": return self._wand(p, self._how(e))
