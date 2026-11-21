@@ -415,6 +415,15 @@ class InstantEasel(tk.Tk):
         if self._zoom_job: self.after_cancel(self._zoom_job); self._zoom_job = None
         self._rezoom(now=True)
 
+    def _load_cutout_ai(self):
+        """the drawing studio's cut-out AI (built into the app), loaded while the splash shows: ready on the first click"""
+        try:
+            import ai_cutout
+            if not (ai_cutout.runtime_ok() and (ai_cutout.have("subject") or ai_cutout.have("sam"))): return
+            if self._splash: self._splash.step(0.97, "LOADING THE CUT-OUT AI…")
+            ai_cutout.preload()
+        except Exception: prefs.log_note("loading the cut-out AI at start-up")
+
     def warm_up(self):
         """visit every tab and every page once while the window is still invisible, so each one is laid out at the real size and its
         pictures are made: the first visit later is as quick and still as every other one"""
@@ -558,6 +567,7 @@ class InstantEasel(tk.Tk):
         self.deiconify(); self.apply_window_mode(); self.after(50, self._win_prep)       # place to keep (scaled) when maximized or full screen
         if first:
             self._settle(); self.warm_up(); self._ready = True
+            self._load_cutout_ai()
             if self._splash: self._splash.close(); self._splash = None
             self._unhide()
 
@@ -915,6 +925,9 @@ class Splash:
         s.geometry(self.geo); s.deiconify(); s.attributes("-topmost", True); s.update_idletasks()
         s.geometry(self.geo)                                                          # again once it's showing (Windows can ignore it before)
         self.t0 = time.monotonic(); self.step(0.02, "LOADING…")
+        try:                                                                          # the picture shown while the .exe unpacked: this takes over
+            import pyi_splash; pyi_splash.close()
+        except Exception: pass
     def step(self, frac, text=None):
         try:
             self.bar.delete("all"); self.bar.create_rectangle(0, 0, 300 * max(0.0, min(1.0, frac)), 10, fill=T.PALETTE["border"], width=0)

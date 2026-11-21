@@ -1,0 +1,8 @@
+#!/bin/sh
+# After a pull (GitHub Desktop runs this too): fetch the newest InstantEasel.exe / InstantEaselPro.exe from the Releases page into
+# EXE Build, in the background so the pull doesn't wait (tools/get-latest-exes.ps1). Turned on by "Set up automatic exe updates.bat".
+# Does nothing on a computer without PowerShell.
+root="$(git rev-parse --show-toplevel)"
+command -v powershell.exe >/dev/null 2>&1 || exit 0
+powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','\"$root/tools/get-latest-exes.ps1\"'" >/dev/null 2>&1
+exit 0

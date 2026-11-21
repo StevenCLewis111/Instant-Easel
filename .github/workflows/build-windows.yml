@@ -1,7 +1,7 @@
 name: Build InstantEaselPro.exe (Windows)
 # Builds Instant Easel Pro into one Windows program on a GitHub Windows machine, then publishes it as a
-# prerelease on the Releases page and (while it's under GitHub's 100 MB limit) saves it to
-# "Instant Easel Pro/EXE Build/InstantEaselPro.exe" on the same branch (and as a download on the run's page).
+# prerelease on the Releases page (and as a download on the run's page). The .exe isn't kept in the repo (too big);
+# pulling with GitHub Desktop fetches it into EXE Build (tools/get-latest-exes.ps1, after Set up automatic exe updates.bat).
 # Runs on every push that changes Instant Easel Pro, or by hand: Actions tab > this workflow > Run workflow.
 on:
   push:
@@ -24,6 +24,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt pyinstaller
+      - uses: actions/cache@v4                              # the cut-out AI's models (~285 MB): fetched once, kept between builds
+        with:
+          path: Instant Easel Pro/my-models/cutout
+          key: cutout-models-isnet-general-sam-vitb-quant-v1
+      - name: Fetch the cut-out AI's models (built into the .exe; checked by SHA-256)
+        run: python -c "import sys; sys.path.insert(0, 'systems/Drawing'); import ai_cutout as A; A.set_model_dir('my-models/cutout'); A.ensure('subject'); A.ensure('sam'); print('models ready')"
       - run: python -m PyInstaller --noconfirm --distpath "EXE Build" PaintEngine.spec
       - uses: actions/upload-artifact@v4
         with:
@@ -43,20 +49,6 @@ jobs:
 
           Download **InstantEaselPro.exe** below and run it (no install needed). Windows may say it protected your PC because the program isn't signed yet: click *More info* > *Run anyway*.
 
-          The cut-out AI (Select Subject, Object Selection, Remove Background) downloads its models once, the first time you use it, after asking."
-      - name: Save the new InstantEaselPro.exe to the branch
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          size=$(stat -c %s "EXE Build/InstantEaselPro.exe")
-          if [ "$size" -gt 104000000 ]; then echo "InstantEaselPro.exe is $((size / 1000000)) MB: too big for the branch (GitHub's 100 MB limit) - it's on the Releases page"; exit 0; fi
-          git add -f "EXE Build/InstantEaselPro.exe"
-          if git diff --cached --quiet; then echo "exe unchanged"; exit 0; fi
-          git commit -m "Build InstantEaselPro.exe (Windows) from ${GITHUB_SHA::7}"
-          git reset -q --hard HEAD && git clean -fdq          # drop PyInstaller's working files (build/), keep only the new exe
-          for i in 1 2 3 4 5; do                               # the other app's build may push at the same moment: try again
-            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
-            sleep $((i * 7))
-          done
-          exit 1
+          The cut-out AI (Select Subject, Object Selection, Quick Selection, Remove Background) is built in: nothing else to download.
+
+          In the repo: double-click *Set up automatic exe updates.bat* once, and every GitHub Desktop pull fetches the newest build into EXE Build."

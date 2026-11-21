@@ -1,0 +1,3 @@
+# the hooks run in Git's sh: they must keep Unix line endings (Windows Git would otherwise convert them and they would stop working)
+.githooks/* text eol=lf
+*.bat text eol=crlf

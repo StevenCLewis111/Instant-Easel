@@ -79,3 +79,13 @@ Instant Easel/EXE Build/stickers/9_credit_card.png
 Instant Easel/EXE Build/stickers/9_palm_tree.png
 Instant Easel/EXE Build/stickers/9_sketchbook.png
 Instant Easel/EXE Build/stickers/Readme.png
+
+# the .exe builds live on the Releases page (too big for the repo); pulling fetches them here (tools/get-latest-exes.ps1)
+Instant Easel/EXE Build/*.exe
+Instant Easel/EXE Build/*.exe.part
+Instant Easel/EXE Build/.exe-build
+Instant Easel/EXE Build/exe-update.log
+Instant Easel Pro/EXE Build/*.exe
+Instant Easel Pro/EXE Build/*.exe.part
+Instant Easel Pro/EXE Build/.exe-build
+Instant Easel Pro/EXE Build/exe-update.log

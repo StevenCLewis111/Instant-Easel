@@ -8,9 +8,9 @@ ai_cutout.py: the AI behind the cut-out tools, run on your own PC (onnxruntime; 
                           Contrast / Shift Edge, like Photoshop's Select and Mask
   foreground(rgb, a)      Decontaminate Colors: the subject's own colours at its soft edges, without the old background's fringe
 
-The models are big, so they're downloaded once, the first time a tool needs one (ensure()), into the app's models folder,
-and checked against their SHA-256 before use. If that isn't possible (offline), available() says so and the colour-based
-tools are used instead.
+The models are built into the app (the Windows build packs them inside the .exe: my-models/cutout/) and loaded while the
+splash screen shows (preload()). Run from the source code without them, they're downloaded once, the first time a tool needs
+one (ensure(), after asking), and checked against their SHA-256; if that isn't possible the colour-based tools are used.
 """
 import os, hashlib, threading, urllib.request
 import numpy as np
@@ -27,10 +27,14 @@ _dir = None
 
 
 def model_dir():
+    """the models built into the app if they're there; otherwise my-models/cutout next to the app (downloaded ones)"""
     global _dir
     if _dir is None:
         try:
-            import paths; _dir = paths.data("my-models", "cutout")              # (with the app's other downloaded models; never uploaded)
+            import paths
+            inside = os.path.join(paths.APP, "my-models", "cutout")             # (packed inside the .exe by the build)
+            if all(os.path.exists(os.path.join(inside, MODELS[k][0])) for k in MODELS): _dir = inside; return _dir
+            _dir = paths.data("my-models", "cutout")                            # (with the app's other downloaded models; never uploaded)
         except Exception: _dir = os.path.join(os.path.expanduser("~"), ".instant_easel_models")
     os.makedirs(_dir, exist_ok=True); return _dir
 
@@ -77,6 +81,16 @@ def ensure(kind, progress=None, cancel=None):
 
 _sessions = {}
 _lock = threading.Lock()
+
+
+def preload():
+    """load the models that are here, so the first cut-out is quick (the splash screen calls this). Returns what was loaded"""
+    done = []
+    if not runtime_ok(): return done
+    for kind, keys in NEEDS.items():
+        if have(kind):
+            for k in keys: _session(k); done.append(k)
+    return done
 
 
 def _session(key):
