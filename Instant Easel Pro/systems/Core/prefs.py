@@ -14,6 +14,8 @@ DEFAULTS = {
     "work_folder": "",                     # "" = the folder of the app you launched (main.py's folder, or the .exe's folder)
     "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-pro-{date}-{time}-{n}",
     "start_tab": "AI Images", "confirm_exit": True,
+    # Pen & Tablet
+    "pen_pressure": True, "pen_feel": "Normal", "pen_eraser": True,
     "seed_mode": "random", "fixed_seed": 1234,
     # Performance
     "edit_preview": "Normal", "undo_steps": 30,

@@ -145,6 +145,7 @@ MENUS = [
    dict(name="AI Storage", status="built", order=0, desc="Give the AI its own drive; each AI gets its own portion.",
         options=["Choose the AI drive (everything moves there)", "Each AI's portion with used / budget", "Adding stops politely when a portion is full"]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
+   dict(name="Pen & Tablet", status="built", order=0, desc="A drawing tablet's pen pressure: on / off, how it feels, its eraser end; a tester.", options=[]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=["Anywhere", "Text to Image", "Image to Image", "Draw studio", "Editing"]),
    dict(name="Backup & Reset", status="built", order=0, desc="Export / import settings, theme, words and learned style; reset all settings.", options=["Export backup", "Import backup", "Reset all settings"]),
    dict(name="Theme", status="built", order=0, desc="Look of the app.", options=["Border color", "Background color", "Panel opacity", "Build a theme from one color (Matching, Complementary, Split, Triadic)", "Reset"]),

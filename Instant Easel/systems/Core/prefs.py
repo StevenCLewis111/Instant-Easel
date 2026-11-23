@@ -14,6 +14,8 @@ DEFAULTS = {
     "work_folder": "",                     # "" = the folder of the app you launched (main.py's folder, or the .exe's folder)
     "save_format": "PNG", "jpeg_quality": 92, "auto_save": False, "name_pattern": "instant-easel-{date}-{time}-{n}",
     "start_tab": "Drawing", "confirm_exit": True,
+    # Pen & Tablet
+    "pen_pressure": True, "pen_feel": "Normal", "pen_eraser": True,
     # Generation defaults
     "default_model": "Core (default)", "default_style": "Painterly", "default_aspect": "2:3", "default_count": "1",
     "seed_mode": "random", "fixed_seed": 1234,

@@ -180,3 +180,35 @@ class BackupPage(SettingsPage):
         if T.popup(self.app, "RESET ALL SETTINGS?", "Every setting goes back to its default. Your drawings are kept.",
                    (("Reset", "danger"), ("Cancel", "normal"))) == "Reset":
             prefs.reset_all(); T.banner(self.app, "SETTINGS RESET — close and reopen the app to finish", "success")
+
+
+# ---------------------------------------------------------------- Pen & Tablet
+class PenPage(SettingsPage):
+    TITLE = "Pen & Tablet"; NOTE = ("A drawing tablet or pen screen (Wacom, XP-Pen, Huion, Surface Pen...) draws with its real pressure: press lightly "
+                                    "for thin, light lines, harder for full ones (each brush's Pr. Size / Pr. Opac say how much). A mouse is left alone; "
+                                    "for a mouse, Brush Options > Pressure (by speed) fakes it.")
+    def build(self):
+        self.toggle("Use pen pressure", "pen_pressure", "Off: a pen draws at full strength, like a mouse.")
+        self.choice("Pressure feel", "pen_feel", ["Soft", "Normal", "Firm"], "Soft: light touches already count a lot. Firm: you press harder for full strength.")
+        self.toggle("Pen's eraser end erases", "pen_eraser", "Turn the pen over and it picks the Eraser; back to the tip, your tool again.")
+        r = self.row("Try your pen here", "Draw on the strip: the bar shows the pressure Windows is sending.")
+        import pen_input
+        self.pad = tk.Canvas(r, width=420, height=70, bg=T.PALETTE["field"], highlightthickness=2, highlightbackground=T.PALETTE["border"], cursor="pencil")
+        self.pad.pack(side="left"); self.state = T.Text(self.body, "", font=T.f(9)); self.state.pack(anchor="w", pady=(6, 0))
+        self.pen = pen_input.attach(self.pad); self.pen.listeners.append(lambda s: self.after_idle(self.show))
+        self.pad.bind("<B1-Motion>", lambda e: self.show(e)); self.pad.bind("<ButtonRelease-1>", lambda e: self.after(300, self.show))
+        T.Text(self.body, "   No pressure? In your tablet's own settings (Wacom / XP-Pen / Huion), make sure Windows Ink is switched on:\n"
+               "   that's what Instant Easel (and Photoshop, by default) listens to.", muted=True, font=T.f(8)).pack(anchor="w", pady=(8, 0))
+        self.show()
+    def show(self, e=None):
+        if not self.winfo_exists(): return
+        import pen_input
+        p = self.pen; c = self.pad; c.delete("bar")
+        if not p.ok: self.state.configure(text=f"PEN PRESSURE ISN'T AVAILABLE HERE — {p.why}"); return
+        if not p.seen:
+            self.state.configure(text="NO PEN SEEN YET — draw on the strip with your pen" + ("  (that's the mouse: no pressure)" if e is not None else "")); return
+        pr = pen_input.feel(p.pressure, prefs.get("pen_feel")) if p.live() else 0
+        c.create_rectangle(4, 4, 4 + pr * 410, 66, fill=T.PALETTE["border"], outline="", tags="bar")
+        c.create_text(210, 35, text=f"{int(p.pressure * 100)}% pressed" + ("   (eraser end)" if p.eraser else ""), fill="white", font=T.f(10), tags="bar")
+        self.state.configure(text="PEN FOUND — pressure is working" if p.live() else "PEN FOUND — lift and draw again to see the pressure")
+

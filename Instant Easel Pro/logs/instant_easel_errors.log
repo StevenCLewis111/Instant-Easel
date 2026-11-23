@@ -5404,3 +5404,61 @@ Traceback (most recent call last):
     return (W - w * z) / 2 + self.pan[0], (H - h * z) / 2 + self.pan[1], z
                 ~~^~~
 TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'
+
+=== TEST shots started 2026-11-23T12:38:24 ===
+pens attached: 1 | on Linux: False - pen pressure is read on Windows only
+doc (1600, 1100) screen y 350..680 -> [763, 988, 1212, 1369, 1504]
+widths  mouse 63 | pen full 63 | pen light 34 | light+Soft 41 | pressure off 63
+mouse after pen (pen idle): 1.0
+eraser end -> eraser | tip again -> brush
+=== TEST shots PASSED 2026-11-23T12:38:57 ===
+
+=== TEST full_app_test started 2026-11-23T12:38:57 ===
+ok   open image in Editing (it's the Drawing picture)
+ok   drag Exposure 25 steps (background render)
+ok   Editing > Color
+ok   Editing > Effects
+ok   Editing > Filters
+ok   Editing > Transform
+ok   Editing > History
+ok   undo / redo edits
+ok   back to Drawing: the edit is in the picture
+ok   Draw: every tool, mirror, undo/redo, layers, colour, zoom, pan
+ok   Theme sliders
+ok   tabs this PC can't use are hidden (AI Videos)
+ok   AI Images > Text to Image
+ok   AI Images > Image to Image
+ok   AI Images > Prompt to Edit
+ok   AI Images > Multi-Image Fusion
+ok   AI Images > Consistent Character
+ok   AI Images > Depth to Image
+ok   AI Images > Sketch to Image
+ok   AI Images > Pose to Image
+ok   AI Images > Inpainting
+ok   AI Images > Image Prompting
+ok   AI Chat > Chats
+ok   AI Coding > Projects
+ok   AI Coding > Code Editor
+ok   AI Coding > Run
+ok   AI Training > Image Learning
+ok   AI Training > Chat Learning
+ok   AI Training > Coding Learning
+ok   AI Training > Image Scraper
+ok   AI Training > Pictures
+ok   Settings > General
+ok   Settings > Performance
+ok   Settings > Display
+ok   Settings > Privacy & Data
+ok   Settings > AI Models
+ok   Settings > AI Images
+ok   Settings > AI Storage
+ok   Settings > Updates
+ok   Settings > Pen & Tablet
+ok   Settings > Shortcuts
+ok   Settings > Backup & Reset
+ok   Settings > Theme
+ok   Settings > About
+ok   window: maximized -> full screen -> fixed -> maximized
+ok   zoom changes
+ERRORS LOGGED: none
+=== TEST full_app_test PASSED 2026-11-23T12:39:32 ===

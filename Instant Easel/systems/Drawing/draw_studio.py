@@ -210,6 +210,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
                        ("<Button-4>", lambda e: self.zoom_by(1.15, (e.x, e.y))), ("<Button-5>", lambda e: self.zoom_by(1 / 1.15, (e.x, e.y))), ("<Configure>", lambda e: self._cv_resized())):
             cv.bind(ev, fn)
         cv.bind("<Enter>", lambda e: cv.focus_set())
+        self._pen_attach(cv)                                                         # a tablet pen's real pressure (pen_input; Windows)
         cv.bind("<Double-Button-1>", lambda e: self.fit() if self.tool == "move" else (self._poly_finish() if self.tool in POLY_TOOLS else None), add="+")   # Move: fit back; Polygon / Curve: finish
         cv.bind("<Motion>", lambda e: self._poly_preview(self.to_img(e)) if self.tool in POLY_TOOLS and self._poly else None, add="+")
         for ev in ("<Motion>", "<B1-Motion>", "<Enter>"): cv.bind(ev, lambda e: self._tip_move(e), add="+")   # the brush tip follows the mouse
@@ -496,7 +497,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         self._tip(small(T.Button(r, "Delete", self._delete_preset, kind="danger")), "Forget the saved brush shown above").pack(side="right")
         head("STROKE")
         gslider("smooth", "Smooth:", "Steadies your hand: the line follows the mouse a little behind, so wobbles smooth out (0 = off)")
-        toggle("Pressure (by speed)", self.use_pressure, "A mouse has no pressure: draw slowly for full strength, faster for lighter / thinner")
+        toggle("Pressure (by speed)", self.use_pressure, "For a mouse (a tablet pen uses its real pressure: Settings > Pen & Tablet): draw slowly for full strength, faster for lighter / thinner")
         toggle("Mirror X", self.mirror, "Paint is mirrored left / right")
         toggle("Mirror Y", self.mirror_y, "Paint is mirrored top / bottom")
         choice("Radial:", self.radial, ["Off", "3", "4", "5", "6", "8", "12", "16"], "Radial symmetry: your stroke repeats round the middle of the picture")
@@ -1203,7 +1204,30 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         return w / 2 + u * (-1 if self.view_flip else 1), h / 2 + v
 
     def to_img(self, e):
-        x, y = self._from_scr(e.x, e.y); return (x, y, 1.0)
+        x, y = self._from_scr(e.x, e.y); return (x, y, self._pen_pressure())
+
+    # ------------------------------------------------------------------ a tablet pen (Settings > Pen & Tablet)
+    def _pen_attach(self, cv):
+        import pen_input
+        st = pen_input.attach(cv); self._pens = getattr(self, "_pens", []) + [st]
+        st.listeners.append(lambda s: self.after_idle(lambda: self._pen_end(s)))
+
+    def _pen_live(self):
+        return prefs.get("pen_pressure") and any(p.live() for p in getattr(self, "_pens", ()))
+
+    def _pen_pressure(self):
+        """the pen's pressure (with Settings' Pressure feel) while a pen is drawing; 1 for a mouse"""
+        if not self._pen_live(): return 1.0
+        import pen_input
+        p = max((p for p in self._pens if p.live()), key=lambda p: p.t)
+        return pen_input.feel(p.pressure, prefs.get("pen_feel"))
+
+    def _pen_end(self, st):
+        """turning the pen over to its eraser end picks the Eraser; back to the tip, the tool you had (Settings: Pen's eraser end erases)"""
+        if not prefs.get("pen_eraser") or st.eraser == getattr(self, "_pen_was_eraser", False): return
+        self._pen_was_eraser = st.eraser
+        if st.eraser and self.tool != "eraser": self._pen_back = self.tool; self.set_tool("eraser")
+        elif not st.eraser and self.tool == "eraser" and getattr(self, "_pen_back", None): self.set_tool(self._pen_back); self._pen_back = None
 
     def set_view(self, rot=None, flip=None, delta=None):
         """turn the view (degrees, round the middle of the window) and / or mirror it; the picture under the middle stays put"""
@@ -1801,7 +1825,7 @@ class DrawStudio(StudioMenu, StudioAI, StudioCutout, StudioGroups, StudioMore, S
         f_ = 1 - 0.9 * self.gopts["smooth"] / 100                                 # Smooth 0 = right on the mouse, 100 = a long way behind
         if sp_ is not None: p = (sp_[0] + (p[0] - sp_[0]) * f_, sp_[1] + (p[1] - sp_[1]) * f_, p[2])
         self._smooth_pt = p
-        if self.use_pressure.get() and self.points:                              # a mouse has no pressure: slower = harder, faster = lighter (eased in)
+        if self.use_pressure.get() and self.points and not self._pen_live():     # a mouse has no pressure: slower = harder, faster = lighter (eased in)
             q = self.points[-1]; speed = math.hypot(p[0] - q[0], p[1] - q[1]) * max(self.zoom or 1, 0.01)
             self._smooth_pr = getattr(self, "_smooth_pr", 1.0) * 0.85 + min(1.0, max(0.3, 1.2 - speed / 35)) * 0.15
             p = (p[0], p[1], self._smooth_pr)
