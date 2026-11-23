@@ -1,15 +1,15 @@
 """
 glossary.py: words and names the AI doesn't know, looked up once and remembered (my-library/glossary.json), so it learns them.
 
-When a picture request or a chat question has a name or an unusual word in it (Bulbasaur, a car model, a dish, a brand...), it's
+When a picture request or a chat question has a name or an unusual word in it (a character, a car model, a dish, a brand...), it's
 looked up - Wikipedia for names and things, a dictionary for ordinary words - and the short definition goes in with the request,
 so the text model writes about the right thing. Every lookup is kept, so the next time it's instant; and each one is also written
 into the AI's library (AI Chat and AI Images), so it's part of what the AI knows from then on.
 
     import glossary
-    glossary.lookup("Bulbasaur")                 -> dict(term, text, source, url) or None
-    glossary.lookup("Bulbasaur", hint="Pokémon") (a hint picks the right page when a name means several things)
-    glossary.for_text("a bulbasaur eating cake") -> [entry, ...] for the words in it it doesn't already know (up to 4)
+    glossary.lookup("Mustang")                   -> dict(term, text, source, url) or None
+    glossary.lookup("Mustang", hint="Ford car")  (a hint picks the right page when a name means several things)
+    glossary.for_text("a quokka eating cake")    -> [entry, ...] for the words in it it doesn't already know (up to 4)
     glossary.notes(entries)                      -> the lines that go in with a request
     glossary.teach(term, text)                   your own definition (wins over a looked-up one)
 """

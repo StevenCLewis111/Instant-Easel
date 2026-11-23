@@ -119,7 +119,7 @@ MENUS = [
                  "New, Open, Use last created, Save, Send to Editing", "Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y",
                  "Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails"])]),
  ("AI Training", "Teach it", [
-   dict(name="Image Learning", status="partial", order=5, desc="Your image models (Pokémon, cars, a look...), each with its own things, pictures and captions, step by step.", options=[]),
+   dict(name="Image Learning", status="partial", order=5, desc="Your image models (a category of things, or a look), each with its own things, pictures and captions, step by step.", options=[]),
    dict(name="Video Learning", status="planned", order=22, desc="Teach it movement from short clips (needs a 16 GB+ graphics card to train).", options=[]),
    dict(name="Chat Learning", status="built", order=0, desc="Teach it how to answer: examples, a check set, training, testing; a library for facts.", options=[]),
    dict(name="Coding Learning", status="built", order=0, desc="Teach it to code your way from permitted, clean code and your examples.", options=[]),

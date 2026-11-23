@@ -396,7 +396,7 @@ class AIImagesPage(SettingsPage):
 class StyleAddonsPage(SettingsPage):
     TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained for Z-Image Turbo, one per style. With one here, that style uses it "
                                      "whenever Z-Image paints; without one, the style's own words do the job. Each is about 100-300 MB. "
-                                     "Add your own (a Pokémon, a character, a look) from a Hugging Face link: it shows up as a style everywhere.")
+                                     "Add your own (a character, a thing, a look) from a Hugging Face link: it shows up as a style everywhere.")
     def build(self):
         top = _frame(self.body); top.pack(anchor="w", pady=(4, 8))
         T.Button(top, "Get them all", self._sa_all, width=14).pack(side="left")

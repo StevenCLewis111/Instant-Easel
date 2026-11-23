@@ -103,12 +103,12 @@ def _text_steps(tab, code=False):
     return [("Goal", goal), ("Collect", collect), ("Clean", clean), ("Format", fmt), ("Settings", settings), ("Train", train), ("Test", test)]
 
 AREAS = {
- "Image Learning": dict(tab="AI Images", intro="Each image model learns from its own pictures: a set of things (Pokémon, cars...) or a look. Pick or make one at the top.",
+ "Image Learning": dict(tab="AI Images", intro="Each image model learns from its own pictures: a set of things (one category of characters, products, vehicles...) or a look. Pick or make one at the top.",
   steps=[
    ("Goal", [C("What is this image model for?", "built", "Saved with the model. A focused model (only cartoons, only shoes) learns faster and better.",
                "focus", ["Cartoons", "Fashion", "Nature", "Portraits", "Animals", "Products", "Architecture", "Anything"], "Anything"),
              I("Image model it trains on top of", "built", "Chosen in Settings > AI Models. Train add-ons for Z-Image Turbo (on a rented graphics card) so they work with the Style Add-ons.", "base")]),
-   ("Collect", [B("The things it learns", "built", "One entry per thing (a Pokémon, a car, a shoe...): its name, group and what it looks like. Look it up fills them in; Search finds its pictures.", "subjects"),
+   ("Collect", [B("The things it learns", "built", "One entry per thing: its name, category, subcategory and what it looks like. Look it up fills them in; Search finds its pictures.", "subjects"),
                 B("Search Google Images", "built", "Type the word; every picture found is labelled with that word.", "scraper"),
                 B("Add my own pictures", "built", "Your own photos or art. Your files are never changed or moved.", "add_pictures"),
                 C("Pictures per word", "built", "15 to 50 varied pictures is the sweet spot. Under about 15 it copies them; past 100 it hardly helps.",
@@ -634,7 +634,7 @@ class PicturesPage(tk.Frame):
 
 
 class SubjectsPage(tk.Frame):
-    """AI Training > Things to learn: one entry per thing the active image model learns (a Pokémon, a car, a shoe, a dish, a person's dog...),
+    """AI Training > Things to learn: one entry per thing the active image model learns (any kind of thing),
     with the same questions for any of them. Look it up fills in what it is (Wikipedia / a dictionary) and drafts what it looks like (the text
     model); Search finds its pictures (filed under its name); its details become the captions training learns from."""
     def __init__(self, master, app):
@@ -655,7 +655,7 @@ class SubjectsPage(tk.Frame):
         T.Button(left, "Back to Image Learning", lambda: app.goto("AI Training", "Image Learning"), width=24).pack(anchor="w", pady=(8, 0))
         form = self.form = _frame(body); form.pack(side="left", fill="both", expand=True)
         for key, label, help_ in self.IM.FIELDS:
-            row = _frame(form); row.pack(fill="x", pady=(4, 0))
+            row = _frame(form); row.pack(fill="x", pady=(2, 0))
             T.Text(row, label.upper(), font=T.f(9), width=20, anchor="w").pack(side="left")
             v = tk.StringVar(); self.vars[key] = v
             if key == "kind": T.Choice(row, "", [""] + self.IM.KINDS, v).pack(side="left")
@@ -664,13 +664,13 @@ class SubjectsPage(tk.Frame):
                 e.pack(side="left", fill="x", expand=True); T.on_change(lambda e=e: e.configure(bg=T.PALETTE["field"]))
             T.Text(form, "      " + help_, muted=True, font=T.f(8)).pack(anchor="w")
             v.trace_add("write", lambda *a: self._dirty())
-        self.token = T.Text(form, "", font=T.f(9)); self.token.pack(anchor="w", pady=(8, 0))
+        self.token = T.Text(form, "", font=T.f(9)); self.token.pack(anchor="w", pady=(4, 0))
         self.caption = T.Text(form, "", muted=True, font=T.f(8)); self.caption.configure(wraplength=900); self.caption.pack(anchor="w")
-        b = _frame(form); b.pack(anchor="w", pady=(10, 0))
+        b = _frame(form); b.pack(anchor="w", pady=(6, 0))
         T.Button(b, "Look it up", self.look_up, width=12).pack(side="left")
         T.Button(b, "Search for its pictures", self.search, width=22).pack(side="left", padx=6)
         T.Button(b, "Save", self.save, width=8).pack(side="left", padx=6)
-        self.state = T.Text(form, "", font=T.f(9)); self.state.pack(anchor="w", pady=(8, 0))
+        self.state = T.Text(form, "", font=T.f(9)); self.state.configure(wraplength=900); self.state.pack(anchor="w", pady=(6, 0))
         self._loading = False; self._save_job = None
         self.bind("<Map>", lambda e: self.refresh(), add="+")
 
@@ -722,9 +722,9 @@ class SubjectsPage(tk.Frame):
     def add(self):
         n = self.IM.active()
         if not n: return T.banner(self.app, "MAKE AN IMAGE MODEL FIRST")
-        d = Dialog(self.app, "Add a thing", "Its name (e.g. Bulbasaur, 1967 Shelby GT500, Air Jordan 1)", "Its group (e.g. Pokémon, Ford Mustang, sneaker) - optional")
+        d = Dialog(self.app, "Add a thing", "Its name (exactly what it's called)", "Its category (the broad family it belongs to) - optional")
         if not d.result: return
-        try: lab = self.IM.add_subject(n, d.result[0].strip(), group=(d.result[1] or "").strip())
+        try: lab = self.IM.add_subject(n, d.result[0].strip(), category=(d.result[1] or "").strip())
         except ValueError as e: return T.banner(self.app, f"CAN'T ADD IT — {e}")
         self.cur = lab; self.refresh(); self.look_up()
 
@@ -740,7 +740,7 @@ class SubjectsPage(tk.Frame):
         """what it is from Wikipedia (or a dictionary), then the text model drafts what it looks like from that (you check it)"""
         if not self.cur: return
         self.save(quiet=True); p = self._profile(); lab = self.cur; q = self.app.q
-        term = p.get("name") or lab; hint = p.get("group", "")
+        term = p.get("name") or lab; hint = " ".join(x for x in (p.get("category", ""), p.get("subcategory", "")) if x)
         self.state.configure(text=f"LOOKING UP {term.upper()}…")
         def work():
             import glossary
