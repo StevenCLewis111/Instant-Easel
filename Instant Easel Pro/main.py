@@ -917,6 +917,14 @@ class ScraperPage(Page):
     def running(self, on):
         self.start_btn.state("disabled" if on else "!disabled"); self.stop_btn.state("!disabled" if on else "disabled")
 
+    def search_for(self, label, words):
+        """Things to learn > Search for its pictures: these search words, every picture filed under the thing's name"""
+        g = self._grabber()
+        if g is None: return
+        self.words.delete("1.0", "end"); self.words.insert("1.0", "\n".join(words[:g.MAX_WORDS]))
+        self.label_for = getattr(self, "label_for", {}); self.label_for.update({g.safe_name(w): label for w in words})
+        self.log(f"Searching for {label}: " + "; ".join(words)); self.start()
+
     def send_to_learning(self):
         """every picture the scraper saved -> the Pictures review for the active image model (you check them; the ones you keep go in, and the
         scraped files are deleted either way)"""
@@ -927,7 +935,8 @@ class ScraperPage(Page):
         if not ps: return T.banner(self.app, "NOTHING TO REVIEW — the scraper hasn't saved any pictures yet")
         words = sorted({os.path.basename(os.path.dirname(p)) for p in ps})
         self.app.goto("AI Training", "Pictures"); tp = self.app.pages["AI Training"].pages["Pictures"]
-        tp.review(ps[:300], remove_originals=True, source="Image Scraper (" + ", ".join(words[:6]) + ("…" if len(words) > 6 else "") + ")")
+        tp.review(ps[:300], remove_originals=True, source="Image Scraper (" + ", ".join(words[:6]) + ("…" if len(words) > 6 else "") + ")",
+                  file_as=getattr(self, "label_for", {}))
 
     def start(self):
         if self.thread is not None and self.thread.is_alive(): return
@@ -951,7 +960,7 @@ class ScraperPage(Page):
                 self.app.q.put(lambda: self.running(False))
                 if self.stop_event.is_set(): T.banner(self.app, "IMAGE SCRAPER STOPPED — the pictures saved so far are in the images folder")
                 elif self._had_error: T.banner(self.app, "IMAGE SCRAPER FINISHED WITH PROBLEMS — see its log for which pictures failed")
-                else: T.banner(self.app, f"DOWNLOADED — pictures for {len(words)} keyword(s) are in the images folder", "success")
+                else: T.banner(self.app, f"DOWNLOADED — pictures for {len(words)} keyword(s): press Review & add to check them", "success")
         self.thread = threading.Thread(target=work, daemon=True); self.thread.start()
 
     def stop(self):

@@ -455,6 +455,11 @@ def ask(tab, text, system=None, max_tokens=600, use_library=True):
     sysmsg = system or SYSTEMS.get(tab, CHAT_SYSTEM)
     found = lookup(tab, text) if use_library else []
     if found: sysmsg += "\n\nUse these notes from the user's library when they help:\n" + "\n---\n".join(f"[{f}]\n{c}" for f, c in found)
+    if use_library and tab in ("AI Chat", "AI Coding"):                          # names / words it may not know: looked up once, remembered
+        try:
+            import glossary; words = glossary.for_text(text, limit=3)
+            if words: sysmsg += "\n\nWhat some words in the question mean (looked up):\n" + glossary.notes(words)
+        except Exception: pass
     msgs = [dict(role="system", content=sysmsg)] + _shots(tab, text) + [dict(role="user", content=text)]
     r = _chat(tab, dict(messages=msgs, max_tokens=max_tokens, temperature=0.7, top_p=0.8, chat_template_kwargs=dict(enable_thinking=False)))
     out = r["choices"][0]["message"].get("content") or ""

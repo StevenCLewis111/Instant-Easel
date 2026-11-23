@@ -73,3 +73,81 @@ def pictures(name):
         p = os.path.join(d, lab)
         if os.path.isdir(p): out[lab] = len([f for f in os.listdir(p) if f.lower().endswith(EXT)])
     return out
+
+
+# ---------------------------------------------------------------- the things it learns (one per label): what each one is
+KINDS = ["Character", "Creature / animal", "Person", "Object", "Vehicle", "Clothing", "Food", "Place / building", "Plant", "Style / look", "Other"]
+FIELDS = [  # key, label, help (the same questions for anything: a Pokémon, a car, a shoe, a dish, a person's dog...)
+    ("name", "Name", "What it's called, exactly (Bulbasaur, 1967 Shelby GT500, Air Jordan 1)."),
+    ("group", "Group", "What family it belongs to, so it's not mixed up with same-named things (Pokémon, Ford Mustang, sneaker)."),
+    ("kind", "Kind of thing", "Character, creature, object, vehicle, food, place, style..."),
+    ("what_it_is", "What it is", "A sentence or two: Look it up fills this in from Wikipedia or a dictionary."),
+    ("looks", "What it looks like", "Colours, shape, size, parts and markings: the things that make it it. This matters most."),
+    ("confused_with", "Often confused with", "Things that look similar, so it learns the difference (Ivysaur, Venusaur)."),
+    ("search", "Extra search words", "Comma-separated, for the image search (official art, 3d model, side view). Its name is always searched."),
+    ("notes", "Notes", "Anything else that helps: what to avoid (plush toys, cards, fan art), its usual pose or setting."),
+]
+
+
+def _token(label):
+    """its own word for training: its name squashed, plus a tag so it never clashes with an everyday word"""
+    t = re.sub(r"[^a-z0-9]+", "", label.lower())[:16] or "thing"; return t + "_ie"
+
+
+def subjects(name):
+    """{label: profile} for every label (thing) of an image model, with the empty fields filled in"""
+    d = info(name).get("subjects", {}); out = {}
+    for lab in sorted(set(pictures(name)) | set(d)):
+        p = dict(name=lab, group="", kind="", what_it_is="", looks="", confused_with="", search="", notes="", token=_token(lab)); p.update(d.get(lab, {}))
+        out[lab] = p
+    return out
+
+
+def set_subject(model, label, **fields):
+    d = info(model); s = d.setdefault("subjects", {}); p = s.setdefault(label, {}); p.update({k: v for k, v in fields.items() if v is not None})
+    p.setdefault("token", _token(label)); _save(model, d)
+
+
+def add_subject(model, label, **fields):
+    label = _safe(label)
+    if not label: raise ValueError("give it a name")
+    os.makedirs(os.path.join(pictures_dir(model), label), exist_ok=True); fields.setdefault("name", label); set_subject(model, label, **fields); return label
+
+
+def remove_subject(name, label, delete_pictures=False):
+    d = info(name); d.get("subjects", {}).pop(label, None); _save(name, d)
+    if delete_pictures: shutil.rmtree(os.path.join(pictures_dir(name), label), ignore_errors=True)
+
+
+def search_words(profile):
+    """what the image search looks for: its name with its group (so 'Mew' finds the Pokémon, not cats), plus each extra search word"""
+    base = " ".join(x for x in (profile.get("name", ""), profile.get("group", "")) if x).strip()
+    out = [base] if base else []
+    for w in (profile.get("search") or "").split(","):
+        w = w.strip()
+        if w: out.append(f"{base} {w}".strip())
+    return list(dict.fromkeys(out))
+
+
+def caption(name, label, profile=None):
+    """the description written beside each of its pictures for training: its own word first, then what it is and how it looks"""
+    p = profile or subjects(name).get(label, {}); i = info(name)
+    bits = [p.get("token") or _token(label), p.get("name") or label]
+    kind = (p.get("kind") or "").split("/")[0].strip().lower(); group = p.get("group", "").strip()
+    if kind or group: bits.append(" ".join(x for x in (f"a {kind}" if kind else "", f"from {group}" if group else "") if x))
+    if p.get("looks"): bits.append(p["looks"].strip().rstrip("."))
+    if i.get("style_words"): bits.append(i["style_words"].strip())
+    return ", ".join(b for b in bits if b)
+
+
+def write_captions(name):
+    """a .txt caption beside every picture (the way training tools read them). -> (pictures captioned, labels with no profile yet)"""
+    n, missing = 0, []
+    for lab, p in subjects(name).items():
+        if not p.get("looks") and not p.get("what_it_is"): missing.append(lab)
+        d = os.path.join(pictures_dir(name), lab); text = caption(name, lab, p)
+        if not os.path.isdir(d): continue
+        for f in os.listdir(d):
+            if f.lower().endswith(EXT):
+                with open(os.path.join(d, os.path.splitext(f)[0] + ".txt"), "w", encoding="utf-8") as fh: fh.write(text + "\n"); n += 1
+    return n, missing

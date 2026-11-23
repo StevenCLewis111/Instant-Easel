@@ -119,12 +119,13 @@ MENUS = [
                  "New, Open, Use last created, Save, Send to Editing", "Shortcuts: B E I G L T, [ ] size, Ctrl+Z / Ctrl+Y",
                  "Next: selection and move, brush presets you can save, pressure from a pen tablet, layer thumbnails"])]),
  ("AI Training", "Teach it", [
-   dict(name="Image Learning", status="partial", order=5, desc="Your image models (Cartoon, Fashion, Nature...), each with its own pictures, step by step.", options=[]),
+   dict(name="Image Learning", status="partial", order=5, desc="Your image models (Pokémon, cars, a look...), each with its own things, pictures and captions, step by step.", options=[]),
    dict(name="Video Learning", status="planned", order=22, desc="Teach it movement from short clips (needs a 16 GB+ graphics card to train).", options=[]),
    dict(name="Chat Learning", status="built", order=0, desc="Teach it how to answer: examples, a check set, training, testing; a library for facts.", options=[]),
    dict(name="Coding Learning", status="built", order=0, desc="Teach it to code your way from permitted, clean code and your examples.", options=[]),
    dict(name="Image Scraper", status="built", order=0, hidden=True, parent="Image Learning", desc="Find pictures on Google Images to learn from.", options=[]),
    dict(name="Pictures", status="built", order=0, hidden=True, parent="Image Learning", desc="The active image model's pictures and their review.", options=[]),
+   dict(name="Things to learn", status="built", order=0, hidden=True, parent="Image Learning", desc="Each thing an image model learns: its name, group, what it looks like; Look it up; captions.", options=[]),
  ]),
  ("Settings", "The app itself", [
    dict(name="General", status="built", order=0, desc="Save folder, file format and quality, auto-save, file names, start tab, confirm on quit.",

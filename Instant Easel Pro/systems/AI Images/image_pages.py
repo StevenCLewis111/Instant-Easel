@@ -706,6 +706,11 @@ class ImagePage(tk.Frame):
             else:
                 ask = ("Rewrite this request as one short picture description for Stable Diffusion: the subject first, then style, lighting and details, "
                        "as comma-separated tags, under 45 words. Reply with the tags only.\n\n" + text)
+            try:                                                                     # names / words it may not know: looked up and remembered
+                import glossary; found = glossary.for_text(text)
+                if found: ask += ("\n\nWhat these words in the request mean (use this so you describe the right thing, and describe how it looks "
+                                  "rather than only naming it):\n" + glossary.notes(found))
+            except Exception: pass
             ans = brain.ask("AI Images", ask, max_tokens=200, use_library=False)
             return ans.strip().strip('"') or text
         except Exception: return text

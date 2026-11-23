@@ -103,12 +103,13 @@ def _text_steps(tab, code=False):
     return [("Goal", goal), ("Collect", collect), ("Clean", clean), ("Format", fmt), ("Settings", settings), ("Train", train), ("Test", test)]
 
 AREAS = {
- "Image Learning": dict(tab="AI Images", intro="Each image model (Cartoon, Fashion, Nature...) learns from its own pictures. Pick one at the top.",
+ "Image Learning": dict(tab="AI Images", intro="Each image model learns from its own pictures: a set of things (Pokémon, cars...) or a look. Pick or make one at the top.",
   steps=[
    ("Goal", [C("What is this image model for?", "built", "Saved with the model. A focused model (only cartoons, only shoes) learns faster and better.",
                "focus", ["Cartoons", "Fashion", "Nature", "Portraits", "Animals", "Products", "Architecture", "Anything"], "Anything"),
-             I("Image model it trains on top of", "built", "Chosen in Settings > AI Models (Stable Diffusion 1.5 is best for a 6 GB card).", "base")]),
-   ("Collect", [B("Search Google Images", "built", "Type the word; every picture found is labelled with that word.", "scraper"),
+             I("Image model it trains on top of", "built", "Chosen in Settings > AI Models. Train add-ons for Z-Image Turbo (on a rented graphics card) so they work with the Style Add-ons.", "base")]),
+   ("Collect", [B("The things it learns", "built", "One entry per thing (a Pokémon, a car, a shoe...): its name, group and what it looks like. Look it up fills them in; Search finds its pictures.", "subjects"),
+                B("Search Google Images", "built", "Type the word; every picture found is labelled with that word.", "scraper"),
                 B("Add my own pictures", "built", "Your own photos or art. Your files are never changed or moved.", "add_pictures"),
                 C("Pictures per word", "built", "15 to 50 varied pictures is the sweet spot. Under about 15 it copies them; past 100 it hardly helps.",
                   "per_word", ["10", "20", "30", "50"], "20")]),
@@ -120,7 +121,7 @@ AREAS = {
               B("Its style words", "built", "A few words for the look (e.g. 'bold black outlines, flat pastel colours, rounded shapes'). They go into every picture painted with it.", "style_words"),
               B("Choose its reference pictures", "built", "Up to 4 of its best pictures. With FLUX.2 Klein they guide the look of every picture painted with it (no training needed).", "pick_refs"),
               I("Trigger word", "built", "A made-up word for this model, used the same way on every picture. Type it in a request to switch the model on.", "trigger"),
-              S("Describe each picture", "planned", "The core model writes a short description of each picture for you to check. Wrong descriptions teach wrong things.", "captions", False)]),
+              B("Write the captions", "built", "A description beside every picture, from its thing's details (its own word, name, group, looks). Training learns from these.", "captions")]),
    ("Settings", [S("Keep copies after training", "built", "Off: the app's copies are deleted after training. Your originals are never touched.", "keep", False),
                  C("Strength", "planned", "How strongly it learns (the add-on's size). Too strong and everything looks like your pictures.",
                    "strength", ["Gentle", "Normal", "Strong"], "Normal"),
@@ -528,6 +529,14 @@ class ImageAreaPage(AreaPage):
         self.IM.update(n, references=list(ps)[:4]); T.banner(self.app, f"CHOSEN — {min(4, len(ps))} reference pictures for {n}", "success"); self.show(self.step)
     def do_scraper(self):
         if self.need_model(): self.goto("Image Scraper")
+    def do_subjects(self):
+        if self.need_model(): self.goto("Things to learn")
+    def do_captions(self):
+        n = self.need_model()
+        if not n: return
+        done, missing = self.IM.write_captions(n)
+        if not done: return T.banner(self.app, f"NO PICTURES YET IN {n.upper()} — collect some first")
+        T.banner(self.app, f"CAPTIONED {done} PICTURES" + (f" — still no description for: {', '.join(missing[:5])}{'…' if len(missing) > 5 else ''} (Things to learn)" if missing else ""), "success" if not missing else "busy")
     def do_review(self):
         if self.need_model(): self.goto("Pictures")
     def do_add_pictures(self):
@@ -561,7 +570,7 @@ class PicturesPage(tk.Frame):
                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")])
         if ps: self.review(ps)
 
-    def review(self, ps, remove_originals=False, source=""):
+    def review(self, ps, remove_originals=False, source="", file_as=None):
         """'What does each picture show?' Pictures from a search are labelled with the word searched; your own get the model's
         name. remove_originals: they came from the scraper, so the scraped files are deleted once reviewed (nothing left behind)"""
         from PIL import Image, ImageTk
@@ -581,6 +590,7 @@ class PicturesPage(tk.Frame):
         rows = []; self._thumbs = []; size = max(24, int(round(60 * T.Z))); labels = list(self.IM.pictures(n))
         for path in ps:
             lab = os.path.basename(os.path.dirname(path)) if remove_originals else n.lower()
+            lab = (file_as or {}).get(lab, lab)                                       # (a search word filed under its thing's name)
             r = tk.Frame(inner, bg=v_["bg"]); r.pack(fill="x", pady=3)
             try: th = Image.open(path).convert("RGB"); th.thumbnail((size, size)); ph = ImageTk.PhotoImage(th)
             except Exception: ph = None
@@ -622,8 +632,153 @@ class PicturesPage(tk.Frame):
         if self.review_view is not None:
             self.review_view.destroy(); self.review_view = None; self._thumbs = []; self.home.pack(fill="both", expand=True)
 
+
+class SubjectsPage(tk.Frame):
+    """AI Training > Things to learn: one entry per thing the active image model learns (a Pokémon, a car, a shoe, a dish, a person's dog...),
+    with the same questions for any of them. Look it up fills in what it is (Wikipedia / a dictionary) and drafts what it looks like (the text
+    model); Search finds its pictures (filed under its name); its details become the captions training learns from."""
+    def __init__(self, master, app):
+        super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
+        import image_models as IM; self.IM = IM; self.cur = None; self.vars = {}
+        self.title = T.Title(self, "Things to learn"); self.title.pack(pady=(0, 4))
+        T.Text(self, "One entry per thing this model learns. The same questions work for anything: fill in what you know, or press Look it up.",
+               muted=True).pack(pady=(0, 8))
+        body = _frame(self); body.pack(fill="both", expand=True)
+        left = _frame(body); left.pack(side="left", fill="y", padx=(0, 16))
+        T.Text(left, "THINGS", font=T.f(10)).pack(anchor="w")
+        self.lb = tk.Listbox(left, width=26, height=18, bg=T.PALETTE["field"], fg="white", selectbackground=T.PALETTE["border"], relief="flat",
+                             highlightthickness=1, highlightbackground=T.PALETTE["border"], font=T.f(10), exportselection=False)
+        self.lb.pack(fill="y", expand=True, pady=(4, 6)); self.lb.bind("<<ListboxSelect>>", lambda e: self._pick())
+        T.on_change(lambda: self.lb.configure(bg=T.PALETTE["field"], selectbackground=T.PALETTE["border"], highlightbackground=T.PALETTE["border"]))
+        r = _frame(left); r.pack(anchor="w")
+        T.Button(r, "+ Add a thing", self.add, width=13).pack(side="left"); T.Button(r, "Remove", self.remove, kind="danger", width=8).pack(side="left", padx=4)
+        T.Button(left, "Back to Image Learning", lambda: app.goto("AI Training", "Image Learning"), width=24).pack(anchor="w", pady=(8, 0))
+        form = self.form = _frame(body); form.pack(side="left", fill="both", expand=True)
+        for key, label, help_ in self.IM.FIELDS:
+            row = _frame(form); row.pack(fill="x", pady=(4, 0))
+            T.Text(row, label.upper(), font=T.f(9), width=20, anchor="w").pack(side="left")
+            v = tk.StringVar(); self.vars[key] = v
+            if key == "kind": T.Choice(row, "", [""] + self.IM.KINDS, v).pack(side="left")
+            else:
+                e = tk.Entry(row, textvariable=v, width=78, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat", font=T.f(9))
+                e.pack(side="left", fill="x", expand=True); T.on_change(lambda e=e: e.configure(bg=T.PALETTE["field"]))
+            T.Text(form, "      " + help_, muted=True, font=T.f(8)).pack(anchor="w")
+            v.trace_add("write", lambda *a: self._dirty())
+        self.token = T.Text(form, "", font=T.f(9)); self.token.pack(anchor="w", pady=(8, 0))
+        self.caption = T.Text(form, "", muted=True, font=T.f(8)); self.caption.configure(wraplength=900); self.caption.pack(anchor="w")
+        b = _frame(form); b.pack(anchor="w", pady=(10, 0))
+        T.Button(b, "Look it up", self.look_up, width=12).pack(side="left")
+        T.Button(b, "Search for its pictures", self.search, width=22).pack(side="left", padx=6)
+        T.Button(b, "Save", self.save, width=8).pack(side="left", padx=6)
+        self.state = T.Text(form, "", font=T.f(9)); self.state.pack(anchor="w", pady=(8, 0))
+        self._loading = False; self._save_job = None
+        self.bind("<Map>", lambda e: self.refresh(), add="+")
+
+    def refresh(self):
+        n = self.IM.active()
+        if not n: self.title.configure(text="Things to learn"); self.state.configure(text="MAKE AN IMAGE MODEL FIRST — AI Training > Image Learning > + New image model"); return
+        self.title.configure(text=f"Things {n} learns"); subs = self.IM.subjects(n); counts = self.IM.pictures(n)
+        keep = self.cur; self.lb.delete(0, "end"); self._labels = list(subs)
+        for lab in self._labels:
+            done = "✓ " if (subs[lab].get("looks") or subs[lab].get("what_it_is")) else "   "
+            self.lb.insert("end", f"{done}{lab}  ({counts.get(lab, 0)})")
+        if keep in self._labels: i = self._labels.index(keep)
+        elif self._labels: i = 0
+        else: self.cur = None; self._fill({}); self.state.configure(text="NOTHING YET — press + Add a thing (or collect pictures: each search word becomes a thing)"); return
+        self.lb.selection_clear(0, "end"); self.lb.selection_set(i); self._pick()
+
+    def _pick(self):
+        sel = self.lb.curselection()
+        if not sel: return
+        if self._save_job: self.after_cancel(self._save_job); self.save(quiet=True)
+        self.cur = self._labels[sel[0]]; self._fill(self.IM.subjects(self.IM.active()).get(self.cur, {}))
+
+    def _fill(self, p):
+        self._loading = True
+        try:
+            for k, v in self.vars.items(): v.set(p.get(k, ""))
+        finally: self._loading = False
+        self._show_caption()
+
+    def _profile(self): return {k: v.get().strip() for k, v in self.vars.items()}
+    def _dirty(self):
+        if self._loading or not self.cur: return
+        self._show_caption()
+        if self._save_job: self.after_cancel(self._save_job)
+        self._save_job = self.after(800, lambda: self.save(quiet=True))        # (saves itself as you type)
+
+    def _show_caption(self):
+        if not self.cur: self.token.configure(text=""); self.caption.configure(text=""); return
+        p = dict(self.IM.subjects(self.IM.active()).get(self.cur, {}), **self._profile())
+        self.token.configure(text=f"ITS OWN WORD: {p.get('token')}   (type it in a request to call it up once it's trained)")
+        self.caption.configure(text="CAPTION ON EACH OF ITS PICTURES: " + self.IM.caption(self.IM.active(), self.cur, p))
+
+    def save(self, quiet=False):
+        self._save_job = None
+        if not self.cur or not self.IM.active(): return
+        self.IM.set_subject(self.IM.active(), self.cur, **self._profile())
+        if not quiet: T.banner(self.app, f"SAVED — {self.cur}", "success"); self.refresh()
+
+    def add(self):
+        n = self.IM.active()
+        if not n: return T.banner(self.app, "MAKE AN IMAGE MODEL FIRST")
+        d = Dialog(self.app, "Add a thing", "Its name (e.g. Bulbasaur, 1967 Shelby GT500, Air Jordan 1)", "Its group (e.g. Pokémon, Ford Mustang, sneaker) - optional")
+        if not d.result: return
+        try: lab = self.IM.add_subject(n, d.result[0].strip(), group=(d.result[1] or "").strip())
+        except ValueError as e: return T.banner(self.app, f"CAN'T ADD IT — {e}")
+        self.cur = lab; self.refresh(); self.look_up()
+
+    def remove(self):
+        if not self.cur: return
+        n = self.IM.active(); c = self.IM.pictures(n).get(self.cur, 0)
+        a = T.popup(self.app, f"REMOVE {self.cur.upper()}?", f"Its details are removed." + (f" Its {c} pictures too?" if c else ""),
+                    ((("Remove it and its pictures", "danger"), ("Keep the pictures", "normal"), ("Cancel", "normal")) if c else (("Remove", "danger"), ("Cancel", "normal"))))
+        if a in (None, "Cancel"): return
+        self.IM.remove_subject(n, self.cur, delete_pictures=a in ("Remove it and its pictures", "Remove")); self.cur = None; self.refresh()
+
+    def look_up(self):
+        """what it is from Wikipedia (or a dictionary), then the text model drafts what it looks like from that (you check it)"""
+        if not self.cur: return
+        self.save(quiet=True); p = self._profile(); lab = self.cur; q = self.app.q
+        term = p.get("name") or lab; hint = p.get("group", "")
+        self.state.configure(text=f"LOOKING UP {term.upper()}…")
+        def work():
+            import glossary
+            e = glossary.lookup(term, hint=hint); found = {}
+            if e: found["what_it_is"] = e["text"]
+            looks = ""
+            try:
+                import brain
+                if brain.installed() and (e or hint):
+                    ask = (f"Describe exactly what {term}" + (f" ({hint})" if hint else "") + " looks like, for an artist who has never seen it: colours, "
+                           "shape, body or parts, size, markings, anything that sets it apart. One plain sentence of 25 to 45 words, no story. "
+                           + (f"Here is what it is: {e['text']}" if e else "") + " If you really don't know what it looks like, reply only: UNKNOWN")
+                    looks = brain.ask("AI Images", ask, max_tokens=120, use_library=False).strip().strip('"')
+                    if "UNKNOWN" in looks.upper(): looks = ""
+            except Exception: looks = ""
+            if looks: found["looks"] = looks
+            def done():
+                if not self.winfo_exists(): return
+                cur = self.IM.subjects(self.IM.active()).get(lab, {})
+                fill = {k: v for k, v in found.items() if not cur.get(k)}            # (never over what you typed)
+                if fill: self.IM.set_subject(self.IM.active(), lab, **fill)
+                if self.cur == lab: self._fill(self.IM.subjects(self.IM.active()).get(lab, {}))
+                self.refresh()
+                if not e: self.state.configure(text=f"NOTHING FOUND FOR {term.upper()} — check the spelling, add its group, or type what you know")
+                elif not looks: self.state.configure(text=f"FOUND — {e['source']}. Type what it looks like (the text model isn't set up, or didn't know): that matters most")
+                else: self.state.configure(text=f"FOUND — {e['source']}. Check 'What it looks like' and fix anything wrong: it's what training learns from")
+            q.put(done)
+        threading.Thread(target=work, daemon=True, name="look up " + term).start()
+
+    def search(self):
+        """the image search, with its search words, filed under its name"""
+        if not self.cur: return
+        self.save(quiet=True); p = self.IM.subjects(self.IM.active())[self.cur]; words = self.IM.search_words(p)
+        self.app.goto("AI Training", "Image Scraper"); sp = self.app.pages["AI Training"].pages["Image Scraper"]
+        sp.search_for(self.cur, words)
+
 def page_classes():
     """{"Image Learning": class, ...} for main.py's page list"""
     out = {name: type(name.replace(" ", "") + "Page", (AreaPage,), dict(AREA=name)) for name in AREAS}
-    out["Image Learning"] = ImageAreaPage; out["Pictures"] = PicturesPage
+    out["Image Learning"] = ImageAreaPage; out["Pictures"] = PicturesPage; out["Things to learn"] = SubjectsPage
     return out
