@@ -79,7 +79,7 @@ MENUS = [
                  "Running summary + every message searchable", "Notes it keeps; memory updates you approve", "Project library: your code and docs, indexed",
                  "Web search when it needs current information", "Save code to your code folder"]),
    dict(name="Code Editor", status="planned", order=33, desc="Edit the project's files with the AI beside you.", options=[]),
-   dict(name="Run", status="planned", order=34, desc="Run the code and feed errors back to the AI.", options=[]),
+   dict(name="Run", status="planned", order=34, desc="Run the code and feed errors back to the AI. (Checking that code compiles, and fixing it first, is already in Projects.)", options=[]),
  ]),
  ("Editing", "Change an image (any picture, or one it made)", [
    dict(name="Light", status="built", order=1, desc="Lightroom-style light adjustments.",

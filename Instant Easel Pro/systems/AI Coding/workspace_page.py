@@ -50,15 +50,94 @@ class WorkspacePage(tk.Frame):
             T.Button(side, text, lambda f=f, t=text: self.edit(f, t), width=24).pack(fill="x", pady=2)
         T.Button(side, "Update memory from this talk", self.propose, width=24).pack(fill="x", pady=2)
         T.Button(side, "Compress now", self.compress, width=24).pack(fill="x", pady=2)
-        T.Text(side, "LIBRARY", font=T.f(10)).pack(anchor="w", pady=(10, 2))
+        if self.KIND == "coding": self._language_section(side)
+        self._rule(side); T.Text(side, "LIBRARY", font=T.f(10)).pack(anchor="w", pady=(6, 2))
         T.Button(side, "Add files", self.add_files, width=24).pack(fill="x", pady=2)
         if self.KIND == "coding": T.Button(side, "Add a code folder", self.add_folder, width=24).pack(fill="x", pady=2)
-        T.Text(side, "THE WEB", font=T.f(10)).pack(anchor="w", pady=(10, 2))
+        self._rule(side); T.Text(side, "THE WEB", font=T.f(10)).pack(anchor="w", pady=(6, 2))
         self.web = tk.StringVar(value=prefs.get(f"web_{self.KIND}") or "When needed")
         T.Choice(side, "search", ["Off", "When needed", "Always"], self.web).pack(fill="x")
         self.web.trace_add("write", lambda *a: prefs.set(f"web_{self.KIND}", self.web.get()))
         self.stats = T.Text(side, "", muted=True, font=T.f(7)); self.stats.pack(anchor="w", pady=(8, 0))
         self.show()
+
+    def _rule(self, parent):
+        l = T.Line(parent, vertical=False); l.pack(fill="x", pady=(10, 0)); return l
+
+    # ---- each language's own setup
+    def _language_section(self, side):
+        import code_helpers as CH
+        self._rule(side); T.Text(side, "LANGUAGE", font=T.f(10)).pack(anchor="w", pady=(6, 2))
+        self.lang = tk.StringVar(value="Auto"); self._lang_quiet = False
+        T.Choice(side, "", ["Auto"] + list(CH.LANGS), self.lang).pack(fill="x")
+        self.lang.trace_add("write", lambda *a: self._lang_changed())
+        self.lang_note = T.Text(side, "", muted=True, font=T.f(7)); self.lang_note.configure(wraplength=200, justify="left"); self.lang_note.pack(anchor="w")
+        T.Button(side, "How I write it (profile)", self.edit_profile, width=24).pack(fill="x", pady=2)
+        T.Button(side, "Add to its library", self.add_lang_library, width=24).pack(fill="x", pady=2)
+        r = _frame(side); r.pack(fill="x", pady=(4, 0))
+        self.check_var = tk.BooleanVar(value=True)
+        T.Toggle(r, self.check_var, command=self._check_changed).pack(side="left")
+        T.Text(r, "Check the code first", font=T.f(9)).pack(side="left", padx=6)
+
+    def current_lang(self):
+        n = self.name(); return self.ws.language(n) if n else ""
+
+    def _lang_show(self):
+        if not hasattr(self, "lang"): return
+        import code_helpers as CH
+        n = self.name(); auto = bool(n) and not self.ws.state(n).get("language_fixed"); lang = self.current_lang()
+        self._lang_quiet = True; self.lang.set("Auto" if auto or not lang else lang); self._lang_quiet = False
+        self.check_var.set(self.ws.checking(n) if n else True)
+        if not lang: note = "Works out the language from each question."
+        else:
+            how = CH.available().get(lang, "")
+            how = "the app itself" if how == "built in" else how
+            note = (f"Now: {lang}. " if auto else "") + (f"Code is checked with {how}." if how else f"No {lang} checker on this PC, so code isn't checked.")
+        self.lang_note.configure(text=note)
+
+    def _lang_changed(self):
+        n = self.name()
+        if self._lang_quiet or not n: return
+        st = self.ws.state(n); v = self.lang.get()
+        st["language_fixed"] = v != "Auto"
+        if v != "Auto": st["language"] = v
+        self.ws._save_state(n, st); self._lang_show()
+
+    def _check_changed(self):
+        n = self.name()
+        if n: self.ws.set_checking(n, self.check_var.get())
+
+    def _pick_lang(self):
+        lang = self.current_lang()
+        if lang: return lang
+        T.banner(self.app, "PICK A LANGUAGE FIRST — or ask a question and it works it out"); return None
+
+    def edit_profile(self):
+        import code_helpers as CH
+        lang = self._pick_lang()
+        if not lang: return
+        f = CH.profile_file(lang)
+        def save(text):
+            with open(f, "w", encoding="utf-8") as fh: fh.write(text)
+        Editor(self.app, f"How you write {lang}", f"Your {lang} style, the libraries and versions you use, and what it must never do. "
+               f"In every {lang} request, in every project. Short and specific works best.", CH.profile(lang), save)
+
+    def add_lang_library(self):
+        import code_helpers as CH, learning_areas as LA
+        lang = self._pick_lang()
+        if not lang: return
+        how = T.popup(self.app, f"ADD TO THE {lang.upper()} LIBRARY", f"Docs and code it looks up before answering in {lang}, in every project.",
+                      (("Files", "normal"), ("A folder", "normal"), ("Cancel", "danger")))
+        if how == "Files":
+            ps = filedialog.askopenfilenames(parent=self.app, title=f"Add to the {lang} library", initialdir=prefs.work_folder("code"))
+            if ps and LA.fits(self.app, self.ws.tab, ps): k = CH.add_to_library(lang, files=ps)
+            else: return
+        elif how == "A folder":
+            d = filedialog.askdirectory(parent=self.app, title=f"Add a folder to the {lang} library", initialdir=prefs.work_folder("code"))
+            if d and LA.fits(self.app, self.ws.tab, folder=d): k = CH.add_to_library(lang, folder_path=d)
+            else: return
+        else: return
+        T.banner(self.app, f"ADDED — {k} files to your {lang} library", "success")
 
     def _talk_style(self):
         self.talk.configure(bg=T.PALETTE["field"], fg="white", insertbackground="white")
@@ -75,7 +154,7 @@ class WorkspacePage(tk.Frame):
         msgs = self.ws.messages(n); st = self.ws.state(n)
         if st.get("summarized"): self.talk.insert("end", f"({st['summarized']} older messages are in the summary and still searchable.)\n\n", "muted")
         for m in msgs[st.get("summarized", 0):]: self._line(m["role"], m["text"])
-        self.talk.see("end"); self._stats()
+        self.talk.see("end"); self._stats(); self._lang_show()
 
     def _line(self, role, text):
         self.talk.insert("end", ("YOU: " if role == "you" else "AI: ") + text.strip() + "\n\n", "you" if role == "you" else "ai")
@@ -135,7 +214,7 @@ class WorkspacePage(tk.Frame):
         def done(result):
             ans, urls = result; self.last = (q, ans); self._line("ai", ans)
             if urls: self.talk.insert("end", "From the web: " + ", ".join(urls) + "\n\n", "muted")
-            self.talk.see("end"); self.msg.configure(text=""); self._stats()
+            self.talk.see("end"); self.msg.configure(text=""); self._stats(); self._lang_show()
         self._queue(f"Answer: {q[:40]}", work, done, "COULDN'T ANSWER", "THINKING…")
 
     def save_last(self):

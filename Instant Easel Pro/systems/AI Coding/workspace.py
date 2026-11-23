@@ -105,6 +105,11 @@ class Workspace:
         try: return json.load(open(self.file(name, "state.json")))
         except Exception: return dict(summarized=0)
 
+    def language(self, name): return self.state(name).get("language", "")
+    def set_language(self, name, lang): st = self.state(name); st["language"] = lang; self._save_state(name, st)
+    def checking(self, name): return self.state(name).get("check", True)
+    def set_checking(self, name, on): st = self.state(name); st["check"] = bool(on); self._save_state(name, st)
+
     def _save_state(self, name, st): json.dump(st, open(self.file(name, "state.json"), "w"))
 
     # ---- searchable memory
@@ -134,7 +139,7 @@ class Workspace:
                     messages=len(msgs), summarized=self.state(name).get("summarized", 0), notes=idx.count("note"), library=idx.count("library"))
 
     # ---- the request the model sees
-    def context(self, name, question, web_results=()):
+    def context(self, name, question, web_results=(), lang=""):
         idx = self.index(name); idx.sync_folder(os.path.join(self.dir(name), "library"))
         clip = lambda t, k: t if len(t) <= LIMITS[k] else t[:LIMITS[k]] + "\n…(cut to keep memory small)"
         msgs = self.messages(name); recent_from = max(0, len(msgs) - RECENT)
@@ -147,6 +152,15 @@ class Workspace:
         if notes: parts.append("## NOTES YOU KEPT\n" + clip("\n".join("- " + r["text"] for r in notes), "notes"))
         old = [r for r in idx.search(question, k=6, kinds=("message",)) if int(r["source"].split()[-1]) <= recent_from][:3]
         if old: parts.append("## EARLIER MESSAGES THAT MAY MATTER\n" + clip("\n".join(r["text"][:500] for r in old), "recall"))
+        if lang and self.kind == "coding":                                          # the language's own setup: your profile and its library
+            import code_helpers as CH
+            prof = CH.profile(lang).strip()
+            parts.append(f"## THIS IS {lang.upper()}\nAnswer in {lang}. Put code in ```{CH.LANGS[lang]['fences'][0]} blocks, complete and ready to run. "
+                         "Use only libraries that exist; say what to install.")
+            if prof: parts.append(f"## HOW YOUR USER WRITES {lang.upper()} (follow it)\n{clip(prof, 'rules')}")
+            try: llib = CH.library_lookup(lang, question, k=2)
+            except Exception: llib = []
+            if llib: parts.append(f"## FROM YOUR {lang.upper()} LIBRARY\n" + clip("\n---\n".join(f"[{s}]\n{t}" for s, t in llib), "library"))
         lib = idx.search(question, k=3, kinds=("library",))
         if lib: parts.append("## FROM THE PROJECT LIBRARY\n" + clip("\n---\n".join(f"[{r['source']}]\n{r['text']}" for r in lib), "library"))
         if web_results:
@@ -171,8 +185,25 @@ class Workspace:
                 on_step and on_step(f"Searching the web: {query}")
                 try: found = web_search(query)
                 except Exception: found = []
-        on_step and on_step("Thinking…")
-        ans = brain.complete(self.tab, self.context(name, q, found), max_tokens=1200)
+        lang = ""; st = self.state(name)
+        if self.kind == "coding":
+            import code_helpers as CH
+            recent = "\n".join(m["text"] for m in self.messages(name)[-4:])
+            lang = st.get("language", "") if st.get("language_fixed") else CH.detect(q, st.get("language", ""), recent)
+            if lang and lang != st.get("language"): st["language"] = lang; self._save_state(name, st)
+        on_step and on_step(f"Thinking in {lang}…" if lang else "Thinking…")
+        ans = brain.complete(self.tab, self.context(name, q, found, lang), max_tokens=1600 if lang else 1200, temperature=0.3 if lang else 0.7)
+        if lang and st.get("check", True):
+            on_step and on_step("Checking the code…")
+            def fix(bl, code, err):
+                return brain.complete(self.tab, [dict(role="system", content=f"You fix {bl} code so it compiles. Keep what it does. Reply with only "
+                                                   f"the whole corrected code in one ```{CH.LANGS[bl]['fences'][0]} block."),
+                                                 dict(role="user", content=f"This code:\n```\n{code}```\nGives these errors:\n{err}")],
+                                      max_tokens=1600, temperature=0.2)
+            try:
+                ans, report = CH.check_and_fix(ans, lang, fix, on_step=on_step)
+                if report: ans = ans.rstrip() + "\n\n" + report
+            except Exception: pass
         self._append(name, "you", q); self._append(name, "ai", ans)
         if len(self.messages(name)) - self.state(name).get("summarized", 0) > COMPRESS_AT + RECENT:
             on_step and on_step("Compressing older messages…"); self.compress(name)
