@@ -144,6 +144,7 @@ MENUS = [
                  "Fuller descriptions", "Stop a stuck run after N minutes", "Add-ons: upscalers and guides (download / remove)"]),
    dict(name="AI Storage", status="built", order=0, desc="Give the AI its own drive; each AI gets its own portion.",
         options=["Choose the AI drive (everything moves there)", "Each AI's portion with used / budget", "Adding stops politely when a portion is full"]),
+   dict(name="Style Add-ons", status="built", order=0, desc="Ready-made Z-Image style add-ons (Anime, line art, pixel art...) and your own from Hugging Face.", options=[]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
    dict(name="Pen & Tablet", status="built", order=0, desc="A drawing tablet's pen pressure: on / off, how it feels, its eraser end; a tester.", options=[]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=["Anywhere", "Text to Image", "Image to Image", "Draw studio", "Editing"]),

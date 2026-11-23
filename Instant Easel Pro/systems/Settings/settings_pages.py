@@ -368,6 +368,8 @@ class AIImagesPage(SettingsPage):
         self.choice("Stop a stuck run after", "image_stall_minutes", ["5", "10", "20", "30"], "Minutes with no sign of life before the image engine is stopped, so the AI line moves on.")
         T.Text(self.body, "ADD-ONS", font=T.f(11)).pack(anchor="w", pady=(12, 2))
         self.rows = _frame(self.body); self.rows.pack(anchor="w", fill="x"); self._addons()
+
+
     def _addons(self):
         for w in self.rows.winfo_children(): w.destroy()
         info = {"upscale_photo": "Bigger, sharper photos (Upscale 2x / 4x).", "upscale_art": "Bigger, sharper art: cartoons, anime, line art.",
@@ -389,6 +391,59 @@ class AIImagesPage(SettingsPage):
         except Exception as e: return T.banner(self.app, f"COULDN'T REMOVE IT — {e}")
         self._addons(); T.banner(self.app, "REMOVED", "success")
 
+
+# ---------------------------------------------------------------- Style Add-ons
+class StyleAddonsPage(SettingsPage):
+    TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained for Z-Image Turbo, one per style. With one here, that style uses it "
+                                     "whenever Z-Image paints; without one, the style's own words do the job. Each is about 100-300 MB. "
+                                     "Add your own (a Pokémon, a character, a look) from a Hugging Face link: it shows up as a style everywhere.")
+    def build(self):
+        top = _frame(self.body); top.pack(anchor="w", pady=(4, 8))
+        T.Button(top, "Get them all", self._sa_all, width=14).pack(side="left")
+        T.Button(top, "Add one from Hugging Face…", self._sa_add, width=26).pack(side="left", padx=6)
+        self.sa_rows = _frame(self.body); self.sa_rows.pack(anchor="w", fill="x"); self._sa_list()
+
+    def _sa_list(self):
+        import style_addons as SA
+        for w in self.sa_rows.winfo_children(): w.destroy()
+        for style, e in SA.entries().items():
+            r = _frame(self.sa_rows); r.pack(fill="x", anchor="w", pady=2); here = SA.installed(style)
+            T.Text(r, ("✓ " if here else "   ") + style.upper(), font=T.f(9), width=30, anchor="w").pack(side="left")
+            if here: T.Button(r, "Remove", lambda s=style: (SA.remove(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
+            else: T.Button(r, "Download", lambda s=style: self._sa_get(s), width=10).pack(side="left", padx=4)
+            if e.get("own"): T.Button(r, "Forget", lambda s=style: (SA.forget_own(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
+            T.Text(r, e.get("note", ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
+    def _sa_get(self, style, quiet=False):
+        import style_addons as SA; q = self.app.q
+        def done(ok, m): q.put(lambda: (T.banner(self.app, ("ADD-ON READY — " if ok else "ADD-ON DOWNLOAD FAILED — ") + m, "success" if ok else "error"),
+                                        self.winfo_exists() and self._sa_list(), self._sa_next()))
+        SA.download(style, on_done=done)
+        if not quiet: T.banner(self.app, f"DOWNLOADING THE {style.upper()} ADD-ON", "success")
+    def _sa_all(self):
+        import style_addons as SA
+        self._sa_queue = [s for s in SA.entries() if not SA.installed(s)]
+        if not self._sa_queue: return T.banner(self.app, "YOU HAVE THEM ALL", "success")
+        T.banner(self.app, f"DOWNLOADING {len(self._sa_queue)} STYLE ADD-ONS — one after another", "success"); self._sa_next()
+    def _sa_next(self):
+        if getattr(self, "_sa_queue", None): self._sa_get(self._sa_queue.pop(0), quiet=True)
+    def _sa_add(self):
+        """your own pick: a Hugging Face link, which style it's for, its trigger words"""
+        import style_addons as SA, styles
+        win = tk.Toplevel(self.app); win.title("Add a style add-on"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
+        f = _frame(win); f.pack(padx=16, pady=14)
+        vals = {}
+        for key, label, default in (("link", "Hugging Face link (or owner/name)", ""), ("style", "Style name (an existing one, or a new one)", ""),
+                                    ("trigger", "Trigger words (from its page; blank if none)", ""), ("weight", "Strength (0.6 gentle - 1.0 strong)", "0.9")):
+            T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(6, 2)); v = tk.StringVar(value=default); vals[key] = v
+            tk.Entry(f, textvariable=v, width=52, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
+        T.Text(f, "Only Z-Image Turbo add-ons work here (the page says 'base model: Z-Image-Turbo').", muted=True, font=T.f(8)).pack(anchor="w", pady=(8, 0))
+        def ok():
+            try:
+                w = float(vals["weight"].get() or 0.9); st = vals["style"].get().strip()
+                if not st: raise RuntimeError("give it a style name")
+                SA.add_own(st, vals["link"].get(), vals["trigger"].get(), w); win.destroy(); self._sa_list(); self._sa_get(st)
+            except Exception as ex: T.banner(self.app, f"COULDN'T ADD IT — {ex}")
+        b = _frame(f); b.pack(anchor="w", pady=(10, 0)); T.Button(b, "Add and download", ok).pack(side="left"); T.Button(b, "Cancel", win.destroy).pack(side="left", padx=6)
 # ---------------------------------------------------------------- Updates
 REPO = "StevenCLewis111/Instant-Easel"
 class UpdatesPage(SettingsPage):

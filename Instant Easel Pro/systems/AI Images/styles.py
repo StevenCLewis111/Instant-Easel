@@ -81,9 +81,15 @@ BUILT_IN = {
 }
 YOURS = "Your model: "
 
+def _addon_styles():
+    """styles you added an add-on for under a new name (Settings > AI Images > Style add-ons)"""
+    try:
+        import style_addons as SA; return [s for s in SA.entries() if s not in BUILT_IN]
+    except Exception: return []
+
 def names():
-    """every style for a page's style list: the built-in ones, then your own image models"""
-    out = list(BUILT_IN)
+    """every style for a page's style list: the built-in ones, your own add-on styles, then your own image models"""
+    out = list(BUILT_IN) + _addon_styles()
     try:
         import image_models as IM; out += [YOURS + n for n in IM.names()]
     except Exception: pass
@@ -138,7 +144,12 @@ def resolve(style, prompt, model, editing=False, use_refs=True, allow_switch=Tru
             elif refs and not imaging.have("klein"):
                 out["note"] = f"{mine}: style words only — download FLUX.2 Klein (Settings > AI Models > Image edits) so its pictures guide the look"
         return out
-    sentence, tags, leave, edit = BUILT_IN.get(style or "None", BUILT_IN["None"])
+    sentence, tags, leave, edit = BUILT_IN.get(style or "None", BUILT_IN["None"] if style not in _addon_styles() else ("", "", "", ""))
+    if style and style != "None" and imaging.kind(model) == "zimage":            # a ready-made Z-Image add-on for this style (style_addons)
+        try:
+            import style_addons as SA; bits = SA.lora_for(style)
+            if bits: out["lora"] = bits; out["note"] = f"{style}: its add-on is on"
+        except Exception: pass
     if editing and edit: out["prompt"] = f"{prompt}. Make it look like {edit}." if prompt else f"Turn this picture into {edit}, keeping its subject and layout."
     elif dit and sentence: out["prompt"] = f"{prompt}. {sentence}" if prompt else sentence
     elif tags: out["prompt"] = f"{prompt}, {tags}" if prompt else tags
