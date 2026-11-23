@@ -401,7 +401,7 @@ class AreaPage(tk.Frame):
 
 class Dialog(tk.Toplevel):
     """a question box (and an answer box when b is given). .result = (a, b) or None"""
-    def __init__(self, app, title, a, b):
+    def __init__(self, app, title, a, b, default=""):
         super().__init__(app); self.result = None; self.title(title); self.configure(bg=T.PALETTE["bg"]); self.transient(app)
         p = T.Panel(self, pad=14); p.pack(fill="both", expand=True, padx=8, pady=8); T.Title(p, title).pack(pady=(0, 8)); self.boxes = []
         for label in (a, b):
@@ -409,6 +409,7 @@ class Dialog(tk.Toplevel):
             T.Text(p, label.upper()).pack(anchor="w")
             t = T.Field(p, height=5 if b else 3, scroll=True, width=60); t.configure(font=T.f(10))
             t.pack(fill="both", expand=True, pady=(2, 8)); self.boxes.append(t)
+            if default and len(self.boxes) == 1: t.insert("1.0", default)
         r = tk.Frame(p, bg=p["bg"]); r.pack()
         T.Button(r, "OK", self.ok).pack(side="left", padx=6); T.Button(r, "Cancel", self.destroy, kind="danger").pack(side="left")
         self.boxes[0].focus_set(); self.grab_set(); app.wait_window(self)
@@ -570,39 +571,69 @@ class PicturesPage(tk.Frame):
                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")])
         if ps: self.review(ps)
 
-    def review(self, ps, remove_originals=False, source="", file_as=None):
-        """'What does each picture show?' Pictures from a search are labelled with the word searched; your own get the model's
-        name. remove_originals: they came from the scraper, so the scraped files are deleted once reviewed (nothing left behind)"""
+    def review(self, ps, remove_originals=False, source="", file_as=None, more=None, refine=None, words=None):
+        """Keep or reject: every new picture in a big grid (click one to reject it, click again to keep it; right-click to see it big),
+        each filed under its thing. Pictures from a search are filed under the thing that was searched; your own under the thing named in
+        file_as[""] (or the model's name). more(): fetch the next ones for the same search; refine(words): search again with new words.
+        remove_originals: they came from the scraper, so the scraped files are deleted once reviewed (nothing left behind)"""
         from PIL import Image, ImageTk
         n = self.IM.active()
         if not n: return T.banner(self.app, "MAKE AN IMAGE MODEL FIRST — AI Training > Image Learning > + New image model")
         self.close_review()
         v_ = self.review_view = _frame(self); self.home.pack_forget(); v_.pack(fill="both", expand=True)
-        T.Title(v_, f"What does each picture show?  ({n})").pack(pady=(0, 6))
-        T.Text(v_, (f"From: {source}.\n" if source else "") + "Each picture is labelled with the word you searched; click a label to change it. "
-               "Untick anything wrong, then press Add to " + n + ".", muted=True).pack()
+        T.Title(v_, f"Keep or reject  ({n})").pack(pady=(0, 4))
+        T.Text(v_, (f"From: {source}.\n" if source else "") + "Click a picture to reject it (click again to keep it). Right-click to see it big. "
+               "The label under each is the thing it's filed under.", muted=True).pack()
+        self.count_lbl = T.Text(v_, "", font=T.f(11)); self.count_lbl.pack(pady=(4, 0))
         bar = _frame(v_); bar.pack(side="bottom", pady=(8, 0))
-        box = T.ScrollBox(v_); box.pack(fill="both", expand=True, pady=(10, 0))
+        box = T.ScrollBox(v_); box.pack(fill="both", expand=True, pady=(8, 0))
         cv = tk.Canvas(box.body, bg=v_["bg"], highlightthickness=0); inner = tk.Frame(cv, bg=v_["bg"])
         T.on_change(lambda: (cv.configure(bg=self["bg"]), inner.configure(bg=self["bg"])))
         inner.bind("<Configure>", lambda e: T.fit_scrollregion(cv)); cv.create_window((0, 0), window=inner, anchor="nw")
         box.attach(cv); cv.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
-        rows = []; self._thumbs = []; size = max(24, int(round(60 * T.Z))); labels = list(self.IM.pictures(n))
-        for path in ps:
-            lab = os.path.basename(os.path.dirname(path)) if remove_originals else n.lower()
+        rows = []; cells = []; self._thumbs = []; size = max(90, int(round(170 * T.Z))); labels = list(self.IM.pictures(n))
+        cols = max(3, (max(800, self.winfo_width()) - 60) // (size + 24))
+        def paint(cell, keep):
+            cell["img"].configure(highlightbackground="#2ecc71" if keep.get() else "#e74c3c")
+            cell["mark"].configure(text="KEEP" if keep.get() else "✗  REJECTED", fg="#2ecc71" if keep.get() else "#e74c3c")
+            ph = cell["on"] if keep.get() else cell["off"]
+            if ph is not None: cell["img"].configure(image=ph)
+        def count():
+            k = sum(1 for _, _, use in rows if use.get()); self.count_lbl.configure(text=f"KEEPING {k} OF {len(rows)}")
+        def big(path):
+            try: im = Image.open(path).convert("RGB")
+            except Exception: return
+            w = tk.Toplevel(self.app); w.title(os.path.basename(path)); w.configure(bg=T.PALETTE["bg"]); w.transient(self.app)
+            im.thumbnail((900, 700)); ph = ImageTk.PhotoImage(im); l = tk.Label(w, image=ph, bg=T.PALETTE["bg"]); l.image = ph; l.pack(padx=8, pady=8)
+            T.Text(w, f"{os.path.basename(path)}   {Image.open(path).size[0]} x {Image.open(path).size[1]}", muted=True).pack(pady=(0, 8))
+            w.bind("<Button-1>", lambda e: w.destroy()); w.bind("<Escape>", lambda e: w.destroy())
+        default = (file_as or {}).get("") or n.lower()
+        for i, path in enumerate(ps):
+            lab = os.path.basename(os.path.dirname(path)) if remove_originals else default
             lab = (file_as or {}).get(lab, lab)                                       # (a search word filed under its thing's name)
-            r = tk.Frame(inner, bg=v_["bg"]); r.pack(fill="x", pady=3)
-            try: th = Image.open(path).convert("RGB"); th.thumbnail((size, size)); ph = ImageTk.PhotoImage(th)
-            except Exception: ph = None
-            self._thumbs.append(ph)
-            (tk.Label(r, image=ph, bg=v_["bg"], width=size, height=size) if ph else tk.Label(r, text="?", bg=T.PALETTE["field"], fg=T.PALETTE["muted"])).pack(side="left")
-            T.Text(r, os.path.basename(path)[:30], width=32, anchor="w").pack(side="left", padx=8)
-            v = tk.StringVar(value=lab); T.Choice(r, "shows", list(dict.fromkeys([lab] + labels)), v).pack(side="left")
-            use = tk.BooleanVar(value=True); T.Text(r, "use it", font=T.f(8)).pack(side="left", padx=(12, 4)); T.Toggle(r, use).pack(side="left")
-            rows.append((path, v, use))
-        def commit():
+            cell_f = tk.Frame(inner, bg=v_["bg"]); cell_f.grid(row=i // cols, column=i % cols, padx=8, pady=8, sticky="n")
+            on = off = None
+            try:
+                th = Image.open(path).convert("RGB"); th.thumbnail((size, size)); on = ImageTk.PhotoImage(th)
+                dim = Image.blend(th, Image.new("RGB", th.size, (40, 0, 0)), 0.65); off = ImageTk.PhotoImage(dim)
+            except Exception: pass
+            self._thumbs += [on, off]
+            img = tk.Label(cell_f, image=on, bg=T.PALETTE["field"], width=size, height=size, cursor="hand2", highlightthickness=4,
+                           text="" if on else "?", fg=T.PALETTE["muted"]); img.pack()
+            mark = tk.Label(cell_f, text="KEEP", bg=v_["bg"], font=T.f(8, "bold")); mark.pack()
+            v = tk.StringVar(value=lab); T.Choice(cell_f, "", list(dict.fromkeys([lab] + labels)), v).pack()
+            use = tk.BooleanVar(value=True); cell = dict(img=img, mark=mark, on=on, off=off)
+            def toggle(e, use=use, cell=cell): use.set(not use.get()); paint(cell, use); count()
+            img.bind("<Button-1>", toggle); img.bind("<Button-3>", lambda e, p=path: big(p))
+            paint(cell, use); rows.append((path, v, use)); cells.append(cell)
+        count()
+        def set_all(on):
+            for (_, _, use), cell in zip(rows, cells): use.set(on); paint(cell, use)
+            count()
+        def commit(close=True):
+            """the kept ones go in (skipping tiny ones and duplicates); the rest are left out. -> number added"""
             import hashlib
-            if not fits(self.app, "AI Images", [p for p, _, use in rows if use.get()]): return
+            if not fits(self.app, "AI Images", [p for p, _, use in rows if use.get()]): return None
             added = dropped = skipped = 0; seen = set()
             if get("Image Learning", "dedupe"):
                 for d_, _, fs in os.walk(self.IM.pictures_dir(n)):
@@ -618,14 +649,33 @@ class PicturesPage(tk.Frame):
                 if ok and get("Image Learning", "dedupe"):
                     h = hashlib.md5(open(path, "rb").read()).hexdigest(); ok = h not in seen; seen.add(h); skipped += not ok
                 if ok:
-                    d = os.path.join(self.IM.pictures_dir(n), v.get()); os.makedirs(d, exist_ok=True); shutil.copy(path, d); added += 1
+                    d = os.path.join(self.IM.pictures_dir(n), v.get()); os.makedirs(d, exist_ok=True)
+                    dest = os.path.join(d, os.path.basename(path)); k = 1
+                    while os.path.exists(dest): base, ext = os.path.splitext(os.path.basename(path)); dest = os.path.join(d, f"{base}_{k}{ext}"); k += 1
+                    shutil.copy(path, dest); added += 1
                 elif not use.get(): dropped += 1
                 if remove_originals:
                     try: os.remove(path)
                     except OSError: pass
-            self.close_review(); self.refresh()
-            T.banner(self.app, f"ADDED — {added} pictures to {n}" + (f"; {dropped} left out" if dropped else "") + (f"; {skipped} skipped (tiny or duplicate)" if skipped else ""), "success")
-        T.Button(bar, f"Add to {n}", commit).pack(side="left", padx=8); T.Button(bar, "Close", self.close_review, kind="danger").pack(side="left")
+            if close: self.close_review()
+            self.refresh()
+            T.banner(self.app, f"ADDED — {added} pictures to {n}" + (f"; {dropped} rejected" if dropped else "") + (f"; {skipped} skipped (tiny or duplicate)" if skipped else ""), "success")
+            return added
+        def get_more():
+            if commit() is not None and more: more()
+        def refine_it():
+            if not refine: return
+            d = Dialog(self.app, "Refine the search", "Search words, one per line. Add words that narrow it (official art, side view...); put a minus "
+                       "in front of words to leave out (-toy -card -plush).", None, default="\n".join(words or []))
+            if not d.result: return
+            new = [w.strip() for w in d.result[0].splitlines() if w.strip()]
+            if new and commit() is not None: refine(new)
+        T.Button(bar, f"Add the kept ones to {n}", commit).pack(side="left", padx=6)
+        T.Button(bar, "Keep all", lambda: set_all(True)).pack(side="left", padx=6)
+        T.Button(bar, "Reject all", lambda: set_all(False)).pack(side="left", padx=6)
+        if more: T.Button(bar, "Get the next ones", get_more).pack(side="left", padx=6)
+        if refine: T.Button(bar, "Refine the search…", refine_it).pack(side="left", padx=6)
+        T.Button(bar, "Close", self.close_review, kind="danger").pack(side="left", padx=6)
         return v_
 
     def close_review(self):
@@ -669,6 +719,8 @@ class SubjectsPage(tk.Frame):
         b = _frame(form); b.pack(anchor="w", pady=(6, 0))
         T.Button(b, "Look it up", self.look_up, width=12).pack(side="left")
         T.Button(b, "Search for its pictures", self.search, width=22).pack(side="left", padx=6)
+        T.Button(b, "Import pictures…", self.import_pictures, width=16).pack(side="left", padx=6)
+        T.Button(b, "Draw one", self.draw_one, width=10).pack(side="left", padx=6)
         T.Button(b, "Save", self.save, width=8).pack(side="left", padx=6)
         self.state = T.Text(form, "", font=T.f(9)); self.state.configure(wraplength=900); self.state.pack(anchor="w", pady=(6, 0))
         self._loading = False; self._save_job = None
@@ -769,6 +821,21 @@ class SubjectsPage(tk.Frame):
                 else: self.state.configure(text=f"FOUND — {e['source']}. Check 'What it looks like' and fix anything wrong: it's what training learns from")
             q.put(done)
         threading.Thread(target=work, daemon=True, name="look up " + term).start()
+
+    def import_pictures(self):
+        """pictures you have (found yourself, or drew and saved): picked from your Images folder, filed under this thing, then keep or reject"""
+        if not self.cur: return T.banner(self.app, "PICK A THING FIRST (or + Add a thing)")
+        self.save(quiet=True)
+        ps = filedialog.askopenfilenames(parent=self.app, title=f"Pictures of {self.cur}", initialdir=prefs.save_folder(),
+                                         filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")])
+        if not ps: return
+        self.app.goto("AI Training", "Pictures"); self.app.pages["AI Training"].pages["Pictures"].review(list(ps), source="your pictures", file_as={"": self.cur})
+
+    def draw_one(self):
+        """draw it yourself: Drawing opens; save it, then Import pictures here picks it up from your Images folder"""
+        if not self.cur: return T.banner(self.app, "PICK A THING FIRST (or + Add a thing)")
+        self.save(quiet=True); self.app.goto("Drawing")
+        T.banner(self.app, f"DRAW {self.cur.upper()} — save it (Ctrl+S), then AI Training > Things to learn > Import pictures…", "success")
 
     def search(self):
         """the image search, with its search words, filed under its name"""

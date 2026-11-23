@@ -208,6 +208,36 @@ atexit.register(close_browser)  # also closes it if the app ends some other way
 
 
 # ==== SEARCH WORKER ====
+# ==== pictures already found (so "Get the next 20" brings new ones, never the same again) ====
+def _seen_file():
+    try:
+        import paths as _p; return _p.data("image_scraper_seen.json")
+    except Exception:
+        return os.path.join(app_dir(), "image_scraper_seen.json")
+
+
+def load_seen():
+    try:
+        with open(_seen_file(), encoding="utf-8") as f: return {k: set(v) for k, v in json.load(f).items()}
+    except Exception:
+        return {}
+
+
+def save_seen(seen):
+    try:
+        os.makedirs(os.path.dirname(_seen_file()), exist_ok=True)
+        with open(_seen_file(), "w", encoding="utf-8") as f: json.dump({k: sorted(v)[-3000:] for k, v in seen.items()}, f)
+    except Exception:
+        pass
+
+
+def forget_seen(words):
+    """start these searches from the top again"""
+    seen = load_seen()
+    for w in words: seen.pop(w.lower().strip(), None)
+    save_seen(seen)
+
+
 class Grabber:
     def __init__(self, words, log, stop_event):
         self.words = words
@@ -382,8 +412,10 @@ class Grabber:
         saved = 0
         index = 0
         scrolls = 0
-        used_full = set()
-        used_thumb = set()
+        seen_all = load_seen(); seen = seen_all.setdefault(word.lower().strip(), set())
+        used_full = set(seen)                    # (pictures found in earlier runs of this search are skipped: the next ones come instead)
+        used_thumb = set(seen)
+        n0 = len([f for f in os.listdir(out_dir) if f.lower().endswith(".png")])
 
         while saved < IMAGES_PER_WORD and not self.stop.is_set():
             thumbs = self.driver.execute_script(JS_THUMBS)
@@ -433,9 +465,11 @@ class Grabber:
                     data = self.download(thumb_src, results_tab)
                     self.log("  using thumbnail for result %d" % (saved + 1))
                 else:
-                    used_full.add(chosen)
+                    used_full.add(chosen); seen.add(chosen)
+                if thumb_src and not thumb_src.startswith("data:"): seen.add(thumb_src)
+                save_seen(seen_all)
 
-                path = os.path.join(out_dir, "%s_%02d.png" % (safe_name(word), saved + 1))
+                path = os.path.join(out_dir, "%s_%02d.png" % (safe_name(word), n0 + saved + 1))
                 save_png(data, path)
                 saved += 1
                 self.log("  saved %d/%d" % (saved, IMAGES_PER_WORD))

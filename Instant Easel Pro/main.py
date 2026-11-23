@@ -936,7 +936,24 @@ class ScraperPage(Page):
         words = sorted({os.path.basename(os.path.dirname(p)) for p in ps})
         self.app.goto("AI Training", "Pictures"); tp = self.app.pages["AI Training"].pages["Pictures"]
         tp.review(ps[:300], remove_originals=True, source="Image Scraper (" + ", ".join(words[:6]) + ("…" if len(words) > 6 else "") + ")",
-                  file_as=getattr(self, "label_for", {}))
+                  file_as=getattr(self, "label_for", {}), more=self.more, refine=self.refine, words=getattr(self, "last_words", []))
+
+    def more(self):
+        """the review's Get the next ones: the same searches again; pictures found before are skipped, so these are new ones"""
+        if not getattr(self, "last_words", None): return
+        self.app.goto("AI Training", "Image Scraper"); self.words.delete("1.0", "end"); self.words.insert("1.0", "\n".join(self.last_words))
+        self.log("Getting the next pictures for: " + "; ".join(self.last_words)); self.start()
+
+    def refine(self, new_words):
+        """the review's Refine the search: new search words, filed under the same thing as before (when it was one thing)"""
+        g = self._grabber()
+        if g is None: return
+        old = getattr(self, "last_words", []); m = getattr(self, "label_for", {})
+        things = {m.get(g.safe_name(w), "") for w in old}
+        if len(things) == 1 and "" not in things:
+            lab = things.pop(); self.label_for.update({g.safe_name(w): lab for w in new_words})
+        self.app.goto("AI Training", "Image Scraper"); self.words.delete("1.0", "end"); self.words.insert("1.0", "\n".join(new_words))
+        self.log("Searching again with: " + "; ".join(new_words)); self.start()
 
     def start(self):
         if self.thread is not None and self.thread.is_alive(): return
@@ -950,7 +967,7 @@ class ScraperPage(Page):
         if len(words) > g.MAX_WORDS: return T.banner(self.app, f"TOO MANY KEYWORDS — up to {g.MAX_WORDS} at a time (you typed {len(words)})")
         try: os.makedirs(g.OUTPUT_DIR, exist_ok=True)
         except Exception as e: return T.banner(self.app, f"CAN'T MAKE THE FOLDER — {g.OUTPUT_DIR}: {e}")
-        self.stop_event.clear(); self.running(True); self._had_error = False
+        self.stop_event.clear(); self.running(True); self._had_error = False; self.last_words = list(words)
         try: g.IMAGES_PER_WORD = int(LA.get("Image Learning", "per_word"))                        # Image Learning > Collect > Pictures per word
         except (TypeError, ValueError): pass
         grabber = g.Grabber(words, self.log, self.stop_event)
@@ -960,8 +977,18 @@ class ScraperPage(Page):
                 self.app.q.put(lambda: self.running(False))
                 if self.stop_event.is_set(): T.banner(self.app, "IMAGE SCRAPER STOPPED — the pictures saved so far are in the images folder")
                 elif self._had_error: T.banner(self.app, "IMAGE SCRAPER FINISHED WITH PROBLEMS — see its log for which pictures failed")
-                else: T.banner(self.app, f"DOWNLOADED — pictures for {len(words)} keyword(s): press Review & add to check them", "success")
+                else: T.banner(self.app, f"DOWNLOADED — pictures for {len(words)} keyword(s): keep or reject them", "success")
+                if not self.stop_event.is_set(): self.app.q.put(self._auto_review)
         self.thread = threading.Thread(target=work, daemon=True); self.thread.start()
+
+    def _auto_review(self):
+        """a search finished: straight to keep or reject (when an image model is being trained and anything was found)"""
+        g = self._grabber()
+        try:
+            import image_models as IM
+            if not IM.active(): return
+        except Exception: return
+        if g and any(f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) for _, _, fs in os.walk(g.OUTPUT_DIR) for f in fs): self.send_to_learning()
 
     def stop(self):
         self.stop_event.set(); self.log("Stopping after the current image...")
