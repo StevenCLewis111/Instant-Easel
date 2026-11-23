@@ -624,6 +624,11 @@ class ImagePage(tk.Frame):
         if not im.have(key) and not (self.MODEL == "paint" and im.ready()):
             out.append((key if key in ("zimage", "klein", "sd15") else "sd15", im.MODELS.get(key, {}).get("label", "Stable Diffusion 1.5")))
         return out
+    def upgrade(self):
+        """(download key, label) of the better picture model this PC is meant for, while Stable Diffusion 1.5 stands in for it"""
+        im = self.imaging; key = self.model_key()
+        if self.MODEL == "paint" and key in ("zimage", "klein") and not im.have(key) and im.ready(): return key, im.MODELS[key]["label"]
+        return None
     def request(self, words):
         """the engine settings for this section's request (raise Problem('...') if something is missing)"""
         return dict(size=self.size.get() if self.SIZE else "Square 1:1")
@@ -663,11 +668,11 @@ class ImagePage(tk.Frame):
         else:
             key = self.model_key(); text = f"READY: {self.imaging.model_label(key).upper()}"
             if self.MODEL == "paint" and self.imaging.kind(key) != key and key in ("zimage", "klein"):
-                text += f"  (standing in until {self.imaging.MODELS[key]['label']} is downloaded)"
+                text = f"USING STABLE DIFFUSION 1.5 FOR NOW — press Download for {self.imaging.MODELS[key]['label'].upper()} (much better pictures)"
             if self.SIZE: w, h = self.imaging.pixels(self.size.get(), key); text += f"   {w} x {h}"
         self.status.configure(text=text)
         if self.job is not None and self.job.state == "waiting": self.msg.configure(text=jobs.where(self.job).upper())
-        show = bool(need) and st["state"] != "downloading"
+        show = (bool(need) or bool(self.upgrade())) and st["state"] != "downloading"     # (also offered while 1.5 stands in for a better one)
         if show and not self.get_btn.winfo_manager():
             if self.VIEWER: self._place_dl()                                         # top left, centred up and down in the band above the boxes
             else: self.get_btn.pack(side="left")
@@ -675,7 +680,7 @@ class ImagePage(tk.Frame):
         self.after(800, self._tick)
 
     def download(self):
-        need = self.needs()
+        need = self.needs() or ([self.upgrade()] if self.upgrade() else [])
         if not need: return
         key = need[1][0] if need[0][0] == "engine" and len(need) > 1 else need[0][0]           # the engine comes with any model download
         q = self.app.q; size = self.imaging.download_size(key) / 1e9

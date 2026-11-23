@@ -38,8 +38,8 @@ KLEIN = dict(label="FLUX.2 Klein 4B", repos=["leejet/FLUX.2-klein-4B-GGUF", "uns
 MODELS = {
     "zimage": dict(label="Z-Image Turbo", dit=True, area=1024, steps={12: 6, 20: 8, 30: 10}, cfg=1.0, sampler=None, refs=False),
     "klein": dict(label="FLUX.2 Klein 4B", dit=True, area=1024, steps={12: 4, 20: 4, 30: 6}, cfg=1.0, sampler="euler", refs=True),
-    "sd15": dict(label="Stable Diffusion 1.5", dit=False, area=512, steps=None, cfg=None, sampler="euler_a", refs=False),
-    "sdxl": dict(label="Stable Diffusion XL", dit=False, area=1024, steps=None, cfg=None, sampler="euler_a", refs=False),
+    "sd15": dict(label="Stable Diffusion 1.5", dit=False, area=512, steps=None, cfg=None, sampler="dpm++2m", scheduler="karras", refs=False),
+    "sdxl": dict(label="Stable Diffusion XL", dit=False, area=1024, steps=None, cfg=None, sampler="dpm++2m", scheduler="karras", refs=False),
 }
 ADDON_FILES = {
     "upscale_photo": dict(label="the photo upscaler (Real-ESRGAN x4)", file="RealESRGAN_x4plus.pth", size=0.067,
@@ -52,7 +52,8 @@ ADDON_FILES = {
     "scribble": dict(label="the scribble guide", file="control_v11p_sd15_scribble_fp16.safetensors", size=0.72, type="scribble"),
 }
 GUIDE_REPO = "comfyanonymous/ControlNet-v1-1_fp16_safetensors"
-NEGATIVE = "blurry, low quality, deformed, extra fingers, watermark, text, signature"
+NEGATIVE = ("blurry, low quality, worst quality, jpeg artifacts, deformed, distorted, disfigured, misshapen, bad anatomy, extra fingers, "
+            "extra limbs, cropped, out of frame, duplicate, ugly, watermark, signature, username")
 SIZES = ["Square 1:1", "Portrait 3:4", "Tall 2:3", "Phone 9:16", "Landscape 4:3", "Wide 3:2", "Cinema 16:9"]
 OLD_SIZES = {"Square": "Square 1:1", "Tall": "Tall 2:3", "Wide": "Wide 3:2"}
 GUIDANCE = {"Loosely": 5.0, "Normal": 7.0, "Closely": 9.5}              # how closely the picture follows the words (SD's cfg scale)
@@ -87,8 +88,11 @@ def choice():
     c = _prefs().get("model_AI_Images")
     if c in ("zimage", "klein", "sd15", "sdxl", "file"): return c
     if zimage_parts(): return "zimage"
-    if os.path.exists(os.path.join(IMAGE, SD15["file"])): return "sd15"
-    import catalog; b = catalog.best("AI Images"); return b["key"] if b else "sd15"
+    try:                                                                     # the best for this PC, even if a smaller one is already here
+        import catalog; b = catalog.best("AI Images")                        # (Stable Diffusion 1.5 stands in until it's downloaded)
+        if b: return b["key"]
+    except Exception: pass
+    return "sd15"
 
 def _parts(folder, want):
     """{part: path} when every part is there (want: part -> (name start, endings)), else None"""
@@ -395,7 +399,8 @@ def build_cmd(prompt, w, h, n, steps, cfg, seed, negative, key, mode, low_ram, w
            "-s", str(seed), "-o", dest]
     if n > 1: cmd += ["-b", str(n)]
     if not dit and negative: cmd += [f["negative"], negative]
-    if sp["sampler"]: cmd += ["--sampling-method", sp["sampler"]]
+    if sp["sampler"]: cmd += ["--sampling-method", sp["sampler"] if sp["sampler"] != "dpm++2m" or has("dpm++2m") else "euler_a"]
+    if sp.get("scheduler") and has("--scheduler") and has(sp["scheduler"]): cmd += ["--scheduler", sp["scheduler"]]   # (sharper, cleaner shapes than euler_a)
     if lora_dir: cmd += ["--lora-model-dir", lora_dir]
     cmd += _mode_flags(mode, low_ram, key)
     if plain: sharper = preview = False                                         # plain: none of the optional extras (a retry after an odd error)
@@ -456,7 +461,7 @@ def paint(prompt, n=1, size="Square 1:1", steps=20, cfg=7.0, seed=None, negative
     if upscale:
         up = addon("upscale_art" if "art" in upscale else "upscale_photo") or addon("upscale_photo") or addon("upscale_art")
         if not up: raise RuntimeError("the upscaler isn't downloaded yet (Settings > AI Images > Add-ons)")
-    sharper = sharper if sharper is not None else _pref("image_sharper", False)
+    sharper = sharper if sharper is not None else _pref("image_sharper", True)
     out = []; made = []; plain = False
     with _lock:
         try:

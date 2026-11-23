@@ -29,7 +29,7 @@ DEFAULTS = {
     "core_model": "", "speed_text": "Balanced", "speed_image": "Balanced",   # Fast / Balanced / Safe (Settings > AI Models)
     "model_AI_Chat": "", "model_AI_Coding": "", "model_AI_Images": "", "model_AI_Videos": "", "image_model": "",
     "image_default_style": "None", "image_default_size": "Square 1:1", "image_live_preview": True, "image_speed_boost": False,      # Settings > AI Images
-    "image_sharper": False, "image_auto_upscale": "Off", "image_improve_words": True, "image_stall_minutes": 10,   # "": not chosen yet (the best downloaded / best for this PC)
+    "image_sharper": True, "image_auto_upscale": "Off", "image_improve_words": True, "image_stall_minutes": 10,   # "": not chosen yet (the best downloaded / best for this PC)
     "use_gpu": True, "models_folder": "",
     # Updates
     "check_updates_on_start": False,

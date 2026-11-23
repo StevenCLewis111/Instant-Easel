@@ -363,7 +363,7 @@ class AIImagesPage(SettingsPage):
         self.toggle("Live preview", "image_live_preview", "A rough picture of the run so far, shown while it paints.")
         self.toggle("Fuller descriptions", "image_improve_words", "Text to Image starts with the core text model writing a fuller description of your words.")
         self.toggle("Speed boost", "image_speed_boost", "Reuses work between similar steps: faster, with a little less fine detail.")
-        self.toggle("Sharper Stable Diffusion", "image_sharper", "SD pictures get a second, bigger pass (hires fix): sharper, about twice as slow.")
+        self.toggle("Sharper Stable Diffusion", "image_sharper", "SD pictures get a second, bigger pass (hires fix): sharper and better-shaped, about twice as slow. On by default.")
         self.choice("Upscale every picture", "image_auto_upscale", ["Off", "2x", "4x"], "Each new picture comes out bigger and sharper (the upscaler downloads once, about 70 MB).")
         self.choice("Stop a stuck run after", "image_stall_minutes", ["5", "10", "20", "30"], "Minutes with no sign of life before the image engine is stopped, so the AI line moves on.")
         T.Text(self.body, "ADD-ONS", font=T.f(11)).pack(anchor="w", pady=(12, 2))
