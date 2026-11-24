@@ -478,12 +478,11 @@ class DownloadEverythingPage(SettingsPage):
 class StyleAddonsPage(SettingsPage):
     TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained, one per style. Each is made for one picture model and is used "
                                      "whenever that model paints in its style, while it's switched on; without one, the style's own words do the job. "
-                                     "Add your own (a character, a thing, a look) from a Hugging Face or Civitai link, for any model Pro runs: it shows "
-                                     "up as a style everywhere.")
+                                     "Add your own (a character, a thing, a look) from a link, for any model Pro runs: it shows up as a style everywhere.")
     def build(self):
         top = _frame(self.body); top.pack(anchor="w", pady=(4, 8))
         T.Button(top, "Get them all", self._sa_all, width=14).pack(side="left")
-        T.Button(top, "Add your own (Hugging Face or Civitai)…", self._sa_add, width=36).pack(side="left", padx=6)
+        T.Button(top, "Add your own…", self._sa_add, width=16).pack(side="left", padx=6)
         self.sa_rows = _frame(self.body); self.sa_rows.pack(anchor="w", fill="x"); self._sa_list()
 
     def _sa_list(self):
@@ -523,16 +522,16 @@ class StyleAddonsPage(SettingsPage):
         win = tk.Toplevel(self.app); win.title("Add a style add-on"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
         f = _frame(win); f.pack(padx=16, pady=14)
         vals = {}
-        for key, label, default in (("link", "Hugging Face or Civitai link", ""), ("style", "Style name (an existing one, or a new one)", ""),
+        for key, label, default in (("link", "Link to the add-on", ""), ("style", "Style name (an existing one, or a new one)", ""),
                                     ("trigger", "Trigger words (from its page; blank if none)", ""), ("weight", "Strength (0.6 gentle - 1.0 strong)", "0.9")):
             T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(6, 2)); v = tk.StringVar(value=default); vals[key] = v
             tk.Entry(f, textvariable=v, width=52, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
         T.Text(f, "MADE FOR", font=T.f(9)).pack(anchor="w", pady=(8, 2))
-        names = ["Read it from the page (Civitai)"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
+        names = ["Read it from the page"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
         T.Choice(f, "", names, base).pack(anchor="w")
-        T.Text(f, "An add-on only works with the model it was made for: its page says which ('base model'). From Civitai that's read for you; "
-                  "from Hugging Face pick it (Z-Image Turbo if you don't).", muted=True, font=T.f(8), wraplength=420, justify="left").pack(anchor="w", pady=(4, 0))
-        T.Text(f, "CIVITAI KEY  (only for files that need you signed in; Civitai > Account settings > API keys)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
+        T.Text(f, "An add-on only works with the model it was made for: its page says which ('base model'). When the page says it, "
+                  "that's read for you; otherwise pick it (Z-Image Turbo if you don't).", muted=True, font=T.f(8), wraplength=420, justify="left").pack(anchor="w", pady=(4, 0))
+        T.Text(f, "SITE KEY  (only for files that need you signed in: an API key from your account settings on that site)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
         key = tk.StringVar(value=prefs.get("civitai_key") or "")
         tk.Entry(f, textvariable=key, width=52, show="•", bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
         def ok():
