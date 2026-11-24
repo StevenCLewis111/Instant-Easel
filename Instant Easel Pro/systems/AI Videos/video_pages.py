@@ -106,7 +106,7 @@ class VideoPage(tk.Frame):
         self.style_choice = ListChoice(pick, "template", self._styles(), self.style); self.style_choice.pack(side="left")
         self.model.trace_add("write", lambda *a: (self._fit_pick(), self.refresh(), self._speed_words()))
         T.Text(left, self.WORDS, font=T.f(10)).pack(anchor="w", pady=(6, 2))
-        self.prompt = T.Field(left, height=3); self.prompt.pack(fill="x")
+        self.prompt = T.Field(left, height=3, scroll=True); self.prompt.pack(fill="x")
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         opts = _frame(left); opts.pack(anchor="w", pady=(8, 0))
         def var(name, default):
@@ -414,7 +414,7 @@ class AddSoundPage(tk.Frame):
         T.Line(left, vertical=False).pack(fill="x", pady=(10, 0))
         h = _frame(left); h.pack(fill="x", pady=(4, 2)); self.use_voice = tk.BooleanVar(value=self._mem.get("use_voice", True))
         T.Toggle(h, self.use_voice).pack(side="left"); T.Text(h, "VOICE: WHAT IT SAYS", font=T.f(10)).pack(side="left", padx=6)
-        self.words = T.Field(left, height=3); self.words.pack(fill="x")
+        self.words = T.Field(left, height=3, scroll=True); self.words.pack(fill="x")
         if self._mem.get("words"): self.words.insert("1.0", self._mem["words"])
         o = _frame(left); o.pack(anchor="w", pady=(4, 0))
         self.voice = v("voice", "American woman: Heart"); self.speed = v("speed", "Normal"); self.vpower = v("vpower", "")

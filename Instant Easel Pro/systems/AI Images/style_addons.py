@@ -133,6 +133,9 @@ def fetch(style, report=None):
     e = entries().get(style)
     if not e: raise RuntimeError(f"no add-on is listed for {style}")
     dest = os.path.join(folder(), slug(style) + ".safetensors")
+    if e.get("local"):
+        if os.path.exists(dest): return
+        raise RuntimeError(f"your {style} file was removed: add it again with Add your own")
     if e.get("url"):                                                       # (from Civitai: some files need your Civitai key)
         import prefs
         url = e["url"]; key = (prefs.get("civitai_key") or "").strip()
@@ -195,6 +198,21 @@ def add_own(style, link, trigger="", weight=0.9, base=None):
     with open(_own_file(), "w") as f: json.dump(own, f, indent=1)
     if installed(style): remove(style)                                    # (the old file was a different add-on)
     return own[style].get("repo") or own[style]["url"]
+
+
+def add_file(style, path, trigger="", weight=0.9, base="zimage"):
+    """your own template from a file you already have (a LoRA .safetensors): copied in, nothing to download"""
+    import shutil
+    if not os.path.isfile(path): raise RuntimeError("that file isn't there")
+    if not path.lower().endswith(".safetensors"): raise RuntimeError("a template is a .safetensors file")
+    if os.path.getsize(path) > 3e9: raise RuntimeError("that's too big for a template: a whole model goes in with Settings > AI Models > Add manually")
+    os.makedirs(folder(), exist_ok=True); own = _own(); style = style.strip()
+    dest = os.path.join(folder(), slug(style) + ".safetensors")
+    if os.path.abspath(path) != os.path.abspath(dest): shutil.copyfile(path, dest)
+    own[style] = dict(local=True, trigger=trigger.strip(), weight=float(weight), base=base or "zimage",
+                      note=f"Your file ({os.path.basename(path)}).", own=True)
+    with open(_own_file(), "w") as f: json.dump(own, f, indent=1)
+    return dest
 
 
 def forget_own(style):

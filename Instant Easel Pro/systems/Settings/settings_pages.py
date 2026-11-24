@@ -527,7 +527,7 @@ class DownloadEverythingPage(SettingsPage):
 class StyleAddonsPage(SettingsPage):
     TITLE = "Templates"; NOTE = ("Templates: ready-made styles other people trained, one per style. Each is made for one image or video model and is used "
                                      "whenever that model paints in its style, while it's switched on; without one, the style's own words do the job. "
-                                     "Add your own (a character, a thing, a look) from a link, for any model Pro runs: it shows up as a style everywhere.")
+                                     "Add your own (a character, a thing, a look) from a file you have or a link, for any model Pro runs: it shows up as a style everywhere.")
     def build(self):
         top = _frame(self.body); top.pack(anchor="w", pady=(4, 8))
         T.Button(top, "Get them all", self._sa_all, width=14).pack(side="left")
@@ -560,39 +560,60 @@ class StyleAddonsPage(SettingsPage):
         if not quiet: T.banner(self.app, f"DOWNLOADING THE {style.upper()} TEMPLATE", "success")
     def _sa_all(self):
         import style_addons as SA
-        self._sa_queue = [s for s in SA.entries() if not SA.installed(s)]
+        self._sa_queue = [s for s, e in SA.entries().items() if not SA.installed(s) and not e.get("local")]
         if not self._sa_queue: return T.banner(self.app, "YOU HAVE THEM ALL", "success")
         T.banner(self.app, f"DOWNLOADING {len(self._sa_queue)} TEMPLATES — one after another", "success"); self._sa_next()
     def _sa_next(self):
         if getattr(self, "_sa_queue", None): self._sa_get(self._sa_queue.pop(0), quiet=True)
     def _sa_add(self):
-        """your own pick: a Hugging Face link, which style it's for, its trigger words"""
-        import style_addons as SA, styles
+        """your own template: a file you have (the usual way), or a Hugging Face / Civitai link; which model it's for; its trigger words"""
+        import style_addons as SA
+        from tkinter import filedialog
         win = tk.Toplevel(self.app); win.title("Add a template"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
-        f = _frame(win); f.pack(padx=16, pady=14)
+        bar = _frame(win); bar.pack(side="bottom", fill="x", padx=16, pady=(0, 14))       # (packed first: the buttons are always on show)
+        f = _frame(win); f.pack(side="top", fill="both", expand=True, padx=16, pady=(14, 6))
+        def entry(parent, var, width=52, **kw):
+            e = tk.Entry(parent, textvariable=var, width=width, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat", **kw)
+            e.bind("<Return>", lambda _e: ok()); return e
+        src = tk.StringVar()
+        T.Text(f, "THE TEMPLATE FILE (A .SAFETENSORS LORA)  —  OR A LINK TO ONE", font=T.f(9)).pack(anchor="w", pady=(0, 2))
+        r = _frame(f); r.pack(anchor="w", fill="x")
+        def pick():
+            p = filedialog.askopenfilename(parent=win, title="Choose a template file", filetypes=[("Templates (LoRA)", "*.safetensors"), ("All files", "*.*")])
+            if not p: return
+            src.set(p)
+            if not vals["style"].get().strip():
+                vals["style"].set(os.path.splitext(os.path.basename(p))[0].replace("_", " ").replace("-", " ").strip().title())
+        T.Button(r, "Pick a file…", pick, width=12).pack(side="left")
+        entry(r, src, width=40).pack(side="left", padx=(6, 0), fill="x", expand=True)
         vals = {}
-        for key, label, default in (("link", "Link to the template (a LoRA)", ""), ("style", "Style name (an existing one, or a new one)", ""),
-                                    ("trigger", "Trigger words (from its page; blank if none)", ""), ("weight", "Strength (0.6 gentle - 1.0 strong)", "0.9")):
-            T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(6, 2)); v = tk.StringVar(value=default); vals[key] = v
-            tk.Entry(f, textvariable=v, width=52, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
+        for key, label, default in (("style", "Style name (an existing one, or a new one)", ""),
+                                    ("trigger", "Trigger words (from where you got it; blank if none)", ""), ("weight", "Strength (0.6 gentle - 1.0 strong)", "0.9")):
+            T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(8, 2)); v = tk.StringVar(value=default); vals[key] = v
+            entry(f, v).pack(anchor="w")
         T.Text(f, "MADE FOR", font=T.f(9)).pack(anchor="w", pady=(8, 2))
-        names = ["Read it from the page"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
+        names = ["Not sure / read it from the page"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
         T.Choice(f, "", names, base).pack(anchor="w")
-        T.Text(f, "A template only works with the model it was made for: its page says which ('base model'). When the page says it, "
-                  "that's read for you; otherwise pick it (Z-Image Turbo if you don't).", muted=True, font=T.f(8), wraplength=420, justify="left").pack(anchor="w", pady=(4, 0))
-        T.Text(f, "SITE KEY  (only for files that need you signed in: an API key from your account settings on that site)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
+        T.Text(f, "A template only works with the model it was made for ('base model' where you got it). A Civitai link says it for you; "
+                  "otherwise pick it (Z-Image Turbo if you don't know).", muted=True, font=T.f(8), wraplength=420).pack(anchor="w", pady=(4, 0))
+        T.Text(f, "SITE KEY  (only for links to files that need you signed in)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
         key = tk.StringVar(value=prefs.get("civitai_key") or "")
-        tk.Entry(f, textvariable=key, width=52, show="•", bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
+        entry(f, key, show="•").pack(anchor="w")
         def ok():
             try:
-                w = float(vals["weight"].get() or 0.9); st = vals["style"].get().strip()
+                w = float(vals["weight"].get() or 0.9); st = vals["style"].get().strip(); where = src.get().strip().strip('"')
+                if not where: raise RuntimeError("pick a file (or paste a link)")
                 if not st: raise RuntimeError("give it a style name")
-                prefs.set("civitai_key", key.get().strip())
                 b = next((k for k, n in SA.BASES.items() if n == base.get()), None)
-                if b is None and "civitai.com" not in vals["link"].get(): b = "zimage"
-                SA.add_own(st, vals["link"].get(), vals["trigger"].get(), w, base=b); win.destroy(); self._sa_list(); self._sa_get(st)
+                if os.path.isfile(where):
+                    SA.add_file(st, where, vals["trigger"].get(), w, base=b or "zimage"); win.destroy(); self._sa_list()
+                    return T.banner(self.app, f"ADDED — {st.upper()} TEMPLATE READY", "success")
+                prefs.set("civitai_key", key.get().strip())
+                if b is None and "civitai.com" not in where: b = "zimage"
+                SA.add_own(st, where, vals["trigger"].get(), w, base=b); win.destroy(); self._sa_list(); self._sa_get(st)
             except Exception as ex: T.banner(self.app, f"COULDN'T ADD IT — {ex}")
-        b = _frame(f); b.pack(anchor="w", pady=(10, 0)); T.Button(b, "Add and download", ok).pack(side="left"); T.Button(b, "Cancel", win.destroy).pack(side="left", padx=6)
+        T.Button(bar, "Add it", ok, width=12).pack(side="left"); T.Button(bar, "Cancel", win.destroy, width=10).pack(side="left", padx=6)
+        win.bind("<Escape>", lambda _e: win.destroy())
 class CodeLanguagesPage(SettingsPage):
     TITLE = "Code Languages"; NOTE = ("The languages AI Coding works out from your questions. Each has its own setup: how you write it (style, libraries "
                                       "and versions, things to avoid), its own library it looks things up in, and a checker that compiles its code before "

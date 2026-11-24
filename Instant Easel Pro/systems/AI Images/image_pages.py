@@ -496,10 +496,14 @@ class ImagePage(tk.Frame):
         if self.VIEWER:
             self._words_label = head_row(host); _HeadTitle(self._words_label, self.WORDS).place(relx=0.5, rely=1.0, anchor="s")
         else: self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
-        self.prompt = T.Field(host, height=2, **({"width": 10} if self.VIEWER else {}))   # (a fixed two lines: the settings box gets the rest)
+        self.prompt = T.Field(host, height=2, scroll=True, **({"width": 10} if self.VIEWER else {}))   # (a fixed two lines: the settings box gets the rest)
         self.prompt.pack(fill="x")
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         self.leave_out = self.var("leave_out", imaging.NEGATIVE)
+        self.lo_row = _frame(host)                                                   # LEAVE OUT, right under the words box (Stable Diffusion only; hidden for the others)
+        T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 6))
+        T.Entry(self.lo_row, self.leave_out, width=10).pack(side="left", fill="x", expand=True)
+        self.lo_row.pack(fill="x", pady=(8, 0), after=self.prompt._outer)
         # the settings, laid out in a tidy grid (2 across beside the viewer, 3 across otherwise)
         if self.VIEWER:                                                              # beside the viewer: in a bordered area that scrolls if it must
             self.optarea = OptionPanel(host); self.optarea.pack(pady=(8, 0), fill="x"); self.optbox = self.optarea.inner
@@ -530,8 +534,6 @@ class ImagePage(tk.Frame):
             if self.amount.get() not in self.AMOUNT: self.amount.set(self.AMOUNT_DEFAULT or list(self.AMOUNT)[1])
             add(T.Choice(ob, self.AMOUNT_LABEL, list(self.AMOUNT), self.amount))
             self.amount.trace_add("write", lambda *a: self._model_changed())        # Sketch: following the lines exactly switches to SD 1.5
-        self.lo_row = add(_frame(ob))                                                # LEAVE OUT (Stable Diffusion only; hidden for the others)
-        T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Entry(self.lo_row, self.leave_out, width=22).pack(side="left")
         self.upscale = self.var("upscale", prefs.get("image_auto_upscale") or "Off")
         if self.UPSCALE_AFTER: add(T.Choice(ob, "upscale", UPSCALE, self.upscale))
         self.build_extra(ob)                                                         # a section's own settings (each packs into ob; moved into the grid below)
@@ -568,7 +570,7 @@ class ImagePage(tk.Frame):
             self.msg._first = self.msg
             for lab in (self.msg, self.used): _hide_when_empty(lab)
         if self.VIEWER:                                                              # top to bottom: the words box, Paint it / Stop right under it,
-            self.gobar.pack(fill="x", pady=(10, 10), after=self.prompt)              # then the settings box taking all the height that's left
+            self.gobar.pack(fill="x", pady=(10, 10), after=self.lo_row if self.lo_row.winfo_manager() else self.prompt._outer)   # then the settings box: all the height that's left
             self.optarea.pack_configure(fill="both", expand=True, pady=0, after=self.gobar)
             host.bind("<Configure>", lambda e: e.widget is host and self.after(20, self._fit_left), add="+")
             self.bind("<Configure>", lambda e: e.widget is self and self.get_btn.winfo_manager() and self.after(30, self._place_dl), add="+")
@@ -705,7 +707,9 @@ class ImagePage(tk.Frame):
         """LEAVE OUT and FOLLOW MY WORDS only matter for Stable Diffusion (Z-Image and FLUX.2 ignore them): hidden for the others"""
         try: dit = self.imaging.spec(self.model_key())["dit"]
         except Exception: dit = False
-        self._hidden_opts = {self.follow_choice, self.lo_row} if dit else set()      # (these models follow the words as written)
+        self._hidden_opts = {self.follow_choice} if dit else set()                   # (these models follow the words as written)
+        if dit: self.lo_row.pack_forget()
+        elif not self.lo_row.winfo_manager(): self.lo_row.pack(fill="x", pady=(8, 0), after=self.prompt._outer)
         self._layout_opts()
 
     def _tick(self):
@@ -1020,7 +1024,7 @@ class CharacterPage(ImagePage):
         for text, cmd, kind in (("+ New", self.new_char, "normal"), ("Add a picture", self.add_pic, "normal"), ("Delete", self.del_char, "danger")):
             T.Button(r2, text, cmd, kind=kind, width=11).pack(side="left", padx=2)
         T.Text(left, "WHAT THEY LOOK LIKE (keeps them the same)", font=T.f(8), muted=True).pack(pady=(4, 0))
-        self.desc = T.Field(left, height=2, width=50); self.desc.pack()
+        self.desc = T.Field(left, height=2, width=50, scroll=True); self.desc.pack()
         self.desc.bind("<FocusOut>", lambda e: self._save_desc())
         self.thumbs = _frame(left); self.thumbs.pack(pady=4); self._tph = []
         self.char.trace_add("write", lambda *a: self._show_char()); self.after_idle(self._show_char)
