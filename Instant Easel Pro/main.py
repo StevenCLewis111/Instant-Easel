@@ -523,16 +523,60 @@ class InstantEasel(tk.Tk):
     def _guard(self, ms=500): self._guard_until = time.monotonic() + ms / 1000      # ignore the window's own echo of a change we just made
 
     def _transition(self, change):
-        """a window mode change without the "window drops, then the UI catches up" look: the window goes see-through, changes size,
-        the UI is re-laid out and zoomed for the new size while nobody can see it, then it fades back in finished"""
+        """a window mode change in one smooth move: a picture of the window as it is covers it, the picture glides and scales to the
+        new size and place while the real window changes behind it and is laid out for the new size (fully settled), then the real
+        window takes the picture's place. Nothing disappears and nothing jumps"""
         if not getattr(self, "_ready", False) or getattr(self, "_in_transition", False): return change()   # (start-up has its own hiding)
-        self._in_transition = True
+        self._in_transition = True; ov = None
         try:
-            self._hide(); self.update_idletasks()
-            change(); self._settle(0.5, quick=True)                               # (it zooms once for the new size at the end)
+            r0 = self._window_rect(); shot = None
+            try:
+                from PIL import ImageGrab
+                x, y, w, h = r0; shot = ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
+            except Exception: shot = None
+            if shot is not None:                                                          # the picture, exactly over the window
+                ov = tk.Toplevel(self); ov.overrideredirect(True); ov.configure(bg="black")
+                try: ov.attributes("-topmost", True)
+                except tk.TclError: pass
+                ov.geometry(f"{r0[2]}x{r0[3]}+{r0[0]}+{r0[1]}"); lbl = tk.Label(ov, bd=0, highlightthickness=0, bg="black"); lbl.pack(fill="both", expand=True)
+                lbl._ph = ImageTk.PhotoImage(shot); lbl.configure(image=lbl._ph); ov._zz = "fixed"; lbl._zz = "fixed"; ov.update()
+            self._hide()                                                                  # (the real window changes behind the picture)
+            change(); self.update_idletasks()
+            r1 = self._window_rect()
+            if ov is not None: self._glide(ov, lbl, shot, r0, r1)
+            self._settle(1.2)                                                             # laid out once the size has really settled
             if self._zoom_job: self.after_cancel(self._zoom_job); self._zoom_job = None
+            self._size_mascots(); T.flush(self)
         finally:
-            self._in_transition = False; self._unhide(steps=4)
+            self._in_transition = False
+            try: self.attributes("-alpha", 1.0); self.update()
+            except tk.TclError: pass
+            if ov is not None: self.after(40, ov.destroy)                                 # (gone once the real window has painted)
+
+    def _window_rect(self):
+        """the whole window on screen, title bar included: (x, y, width, height)"""
+        hwnd = self._hwnd()
+        if hwnd:
+            try:
+                import ctypes
+                class R(ctypes.Structure): _fields_ = [("l", ctypes.c_long), ("t", ctypes.c_long), ("r", ctypes.c_long), ("b", ctypes.c_long)]
+                r = R()
+                if ctypes.windll.user32.GetWindowRect(ctypes.c_void_p(hwnd), ctypes.byref(r)): return (r.l, r.t, r.r - r.l, r.b - r.t)
+            except Exception: pass
+        self.update_idletasks(); return (self.winfo_rootx(), self.winfo_rooty(), self.winfo_width(), self.winfo_height())
+
+    def _glide(self, ov, lbl, shot, r0, r1, ms=220):
+        """move and scale the picture from the old window to the new one, easing out"""
+        src = shot.reduce(2) if shot.width > 1400 else shot; t0 = time.monotonic()
+        while True:
+            t = min(1.0, (time.monotonic() - t0) * 1000 / ms); e = 1 - (1 - t) ** 3
+            x, y, w, h = (int(round(a + (b - a) * e)) for a, b in zip(r0, r1))
+            w, h = max(1, w), max(1, h)
+            try:
+                lbl._ph = ImageTk.PhotoImage(src.resize((w, h), Image.BILINEAR)); lbl.configure(image=lbl._ph)
+                ov.geometry(f"{w}x{h}+{x}+{y}"); ov.update()
+            except tk.TclError: return
+            if t >= 1.0: return
 
     def _to_fixed(self): self._transition(self._do_fixed)
     def _to_maximized(self): self._transition(self._do_maximized)
@@ -1037,7 +1081,7 @@ class ScraperPage(Page):
 # ---------------------------------------------------------------- Paint
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.2 (Nov 24, 2026)"
+VERSION = "0.9.3 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
