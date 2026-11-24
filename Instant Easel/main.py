@@ -670,9 +670,9 @@ class InstantEasel(tk.Tk):
         if prev:
             orig["p"] = prev; self._wndproc_ptr = ptr; self._sub_hwnd = hwnd                 # keep the pointer alive for the window's life
 
-    def quit_app(self):
+    def quit_app(self, ask=True):
         if getattr(self, "_asking", False): return                                            # a quit prompt is already up (e.g. Close pressed again on the taskbar)
-        if prefs.get("confirm_exit"):
+        if ask and prefs.get("confirm_exit"):                                                 # (not when an update restarts the app)
             self._asking = True
             try: answer = T.popup(self, "QUIT INSTANT EASEL?", "Anything you haven't saved will be lost.", (("Quit", "danger"), ("Cancel", "normal")))
             finally: self._asking = False
@@ -862,7 +862,7 @@ class PlannedPage(tk.Frame):
 
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.1 (Nov 24, 2026)"
+VERSION = "0.9.2 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
@@ -979,6 +979,8 @@ def _cant_start(err_text):
     except Exception: pass
 
 def run_app():
+    import updater
+    if updater.handle_args(): return                                    # this run only finished an update (the updated app opens next)
     info = crash.start(home_dir(), prefs.log_error)                   # crash log, thread errors, freeze watchdog, last-session check
     if info["safe_mode"]:                                             # failed to start twice in a row: the settings most likely to blame go back to defaults
         for k in ("window_mode", "start_tab", "show_splash", "check_updates_on_start", "text_size"): prefs.set(k, prefs.DEFAULTS[k])

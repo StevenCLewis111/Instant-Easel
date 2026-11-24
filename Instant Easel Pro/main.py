@@ -697,9 +697,9 @@ class InstantEasel(tk.Tk):
         if prev:
             orig["p"] = prev; self._wndproc_ptr = ptr; self._sub_hwnd = hwnd                 # keep the pointer alive for the window's life
 
-    def quit_app(self):
+    def quit_app(self, ask=True):
         if getattr(self, "_asking", False): return                                            # a quit prompt is already up (e.g. Close pressed again on the taskbar)
-        if prefs.get("confirm_exit"):
+        if ask and prefs.get("confirm_exit"):                                                 # (not when an update restarts the app)
             self._asking = True
             try: answer = T.popup(self, "QUIT INSTANT EASEL PRO?", "Anything you haven't saved will be lost.", (("Quit", "danger"), ("Cancel", "normal")))
             finally: self._asking = False
@@ -1037,7 +1037,7 @@ class ScraperPage(Page):
 # ---------------------------------------------------------------- Paint
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.1 (Nov 24, 2026)"
+VERSION = "0.9.2 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
@@ -1154,7 +1154,8 @@ def _cant_start(err_text):
     except Exception: pass
 
 def run_app():
-    import single
+    import single, updater
+    if updater.handle_args(): return                                    # this run only finished an update (the updated app opens next)
     holder = {}
     if not single.claim(on_show=lambda: holder.get("app") and holder["app"].q.put(holder["app"].bring_to_front)):
         return                                                           # already open: that copy comes to the front instead

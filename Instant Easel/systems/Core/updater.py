@@ -3,7 +3,8 @@ updater.py: updates in place, no more downloading the zip by hand.
 
 Each build on GitHub stamps the commit it was made from into the app (build.json). The app compares that with the newest build on
 the Releases page (the pro-latest / drawing-app-latest prerelease), downloads the new zip, and on restart a small helper waits for
-the app to close, puts the new program files in (the .exe and its _internal folder), and opens it again.
+the app to close, puts the new program files in (the .exe and its _internal folder), and opens it again. The helper is the new
+copy itself, run from update/new with --finish-update: it logs every step to update/update.log.
 
 Only the program's own files change: your settings, logs, pictures, models and everything else beside the .exe are left alone.
 
@@ -90,25 +91,87 @@ def ready():
     except Exception: return None
 
 
+def _log(msg):
+    try:
+        with open(os.path.join(_home_of_update(), "update", "update.log"), "a", encoding="utf-8") as f: f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+    except Exception: pass
+
+
+def _home_of_update():
+    """the app's real folder, seen from the new copy that runs from <app>/update/new"""
+    return os.path.dirname(os.path.dirname(paths.HOME)) if os.path.basename(paths.HOME).lower() == "new" else paths.HOME
+
+
+def _launch(exe, *args, cwd=None):
+    """start a program on its own: it carries on after this app closes"""
+    base = 0x00000008 | 0x00000200                                           # detached, its own process group
+    for flags in (base | 0x01000000, base):                                  # (+ break away from this app's job, where Windows allows it)
+        try: return subprocess.Popen([exe, *args], creationflags=flags, close_fds=True, cwd=cwd or os.path.dirname(exe))
+        except OSError: continue
+    raise RuntimeError(f"couldn't start {os.path.basename(exe)}")
+
+
 def restart_into_update(app=None):
-    """hand over to the helper: it waits for this app to close, puts the new files in, and opens the app again"""
+    """the new copy (in update/new) takes over: it waits for this app to close, puts itself in, and opens the app again"""
     if not FROZEN or sys.platform != "win32": raise RuntimeError("updating in place works in the Windows app (from the source, use git pull)")
-    new = os.path.join(folder(), "new"); home = paths.HOME
-    if not os.path.exists(os.path.join(new, EXE)): raise RuntimeError("download the update first")
-    bat = os.path.join(folder(), "apply-update.bat"); log = os.path.join(folder(), "update.log")
-    with open(bat, "w", encoding="utf-8") as f:
-        f.write(f"""@echo off
-rem Instant Easel's updater: waits for the app to close, puts the new program files in, opens it again.
-:wait
-tasklist /FI "PID eq {os.getpid()}" 2>nul | find "{os.getpid()}" >nul && (timeout /t 1 /nobreak >nul & goto wait)
-robocopy "{new}\\_internal" "{home}\\_internal" /MIR /R:5 /W:1 /NFL /NDL /NJH /NJS /NP > "{log}"
-copy /Y "{new}\\{EXE}" "{home}\\{EXE}" >> "{log}"
-rmdir /S /Q "{new}"
-start "" "{home}\\{EXE}"
-del "%~f0"
-""")
-    flags = 0x00000008 | 0x00000200 | 0x08000000                              # (detached, its own group, no window)
-    subprocess.Popen(["cmd", "/c", bat], creationflags=flags, close_fds=True, cwd=folder())
+    new = os.path.join(folder(), "new"); exe = os.path.join(new, EXE)
+    if not os.path.exists(exe): raise RuntimeError("download the update first")
+    try: os.remove(os.path.join(folder(), "update.log"))
+    except OSError: pass
+    _log(f"restarting into the update: {exe} (this copy is {os.getpid()})")
+    _launch(exe, "--finish-update", str(os.getpid()))
+    import threading
+    t = threading.Timer(8, lambda: os._exit(0)); t.daemon = True; t.start()  # (in case anything holds the app open once its window is gone)
     if app is not None:
-        try: app.after(200, getattr(app, "quit_app", app.destroy))          # (closes the way the window's X does: everything saved)
+        try: app.after(150, lambda: app.quit_app(ask=False) if hasattr(app, "quit_app") else app.destroy())
         except Exception: pass
+
+
+def _wait_for(pid, seconds=30):
+    """wait until the old copy has closed (then end it if it's stuck)"""
+    import ctypes
+    k = ctypes.windll.kernel32; h = k.OpenProcess(0x00100000 | 0x0001, False, int(pid))   # SYNCHRONIZE | PROCESS_TERMINATE
+    if not h: return True                                                     # (already gone)
+    try:
+        if k.WaitForSingleObject(h, int(seconds * 1000)) == 0: return True
+        _log(f"the old copy ({pid}) was still open after {seconds} s: ending it"); k.TerminateProcess(h, 0)
+        return k.WaitForSingleObject(h, 10000) == 0
+    finally: k.CloseHandle(h)
+
+
+def finish(pid):
+    """run by the NEW copy from update/new: put the new program in place of the old one, then open it"""
+    home = _home_of_update(); new = paths.HOME; ok = False
+    _log(f"finishing: copying {new} -> {home}")
+    try:
+        _wait_for(pid); time.sleep(0.5)
+        for attempt in range(40):                                             # (a virus scanner or Windows itself can hold a file a moment)
+            try:
+                old_int = os.path.join(home, "_internal")
+                if os.path.isdir(old_int): shutil.rmtree(old_int)
+                shutil.copytree(os.path.join(new, "_internal"), old_int)
+                shutil.copy2(os.path.join(new, EXE), os.path.join(home, EXE))
+                ok = True; break
+            except (PermissionError, OSError) as e:
+                if attempt % 5 == 0: _log(f"waiting for a file to be free ({e.__class__.__name__}: {e})")
+                time.sleep(0.5)
+        _log("copied the new version in" if ok else "COULDN'T put the update in: a file stayed in use. The old version opens; try again from Settings > Updates")
+    except Exception as e: _log(f"FAILED: {e!r}")
+    try: _launch(os.path.join(home, EXE), "--cleanup-update", cwd=home); _log("opened the app")
+    except Exception as e: _log(f"couldn't open the app again: {e!r}")
+
+
+def handle_args():
+    """at start-up: True when this run was only the update's helper (it then quits). --cleanup-update tidies the update folder away"""
+    if "--finish-update" in sys.argv:
+        i = sys.argv.index("--finish-update"); finish(sys.argv[i + 1] if len(sys.argv) > i + 1 else 0); return True
+    if "--cleanup-update" in sys.argv:
+        import threading
+        def tidy():
+            for _ in range(30):
+                time.sleep(1)
+                try: shutil.rmtree(os.path.join(folder(), "new")); _log("tidied the update folder away"); return
+                except FileNotFoundError: return
+                except OSError: pass
+        threading.Thread(target=tidy, daemon=True, name="update tidy").start()
+    return False

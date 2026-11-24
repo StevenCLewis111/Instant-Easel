@@ -306,7 +306,7 @@ class UpdatesPage(SettingsPage):
                 U.download(new, report=lambda t, f: q.put(lambda t=t: self.winfo_exists() and self.msg.configure(text=t.upper())))
                 def done():
                     if self.winfo_exists(): self._show_ready()
-                    a = T.popup(self.app, "UPDATE DOWNLOADED", "Restart now to put it in? The app closes and opens again in a few seconds.",
+                    a = T.popup(self.app, "UPDATE DOWNLOADED", "Restart now to put it in? The app closes and opens again by itself in a few seconds (anything unsaved is lost).",
                                 (("Restart now", "normal"), ("Later", "danger")))
                     if a == "Restart now": self.restart()
                     else: T.banner(self.app, "UPDATE READY — it goes in when you press Restart to update (Settings > Updates)", "success")
