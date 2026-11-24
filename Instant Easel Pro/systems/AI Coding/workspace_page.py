@@ -74,10 +74,16 @@ class WorkspacePage(tk.Frame):
         self.lang_note = T.Text(side, "", muted=True, font=T.f(7)); self.lang_note.configure(wraplength=200, justify="left"); self.lang_note.pack(anchor="w")
         T.Button(side, "How I write it (profile)", self.edit_profile, width=24).pack(fill="x", pady=2)
         T.Button(side, "Add to its library", self.add_lang_library, width=24).pack(fill="x", pady=2)
+        T.Button(side, "Look for checkers again", self.rescan_checkers, width=24).pack(fill="x", pady=2)
         r = _frame(side); r.pack(fill="x", pady=(4, 0))
         self.check_var = tk.BooleanVar(value=True)
         T.Toggle(r, self.check_var, command=self._check_changed).pack(side="left")
         T.Text(r, "Check the code first", font=T.f(9)).pack(side="left", padx=6)
+
+    def rescan_checkers(self):
+        import code_helpers as CH
+        CH.rescan(); have = [l for l, h in CH.available().items() if h]; self._lang_show()
+        T.banner(self.app, "CHECKS: " + ", ".join(have) if have else "NO CHECKERS FOUND — only Python and JSON (built in)", "success" if have else "normal")
 
     def current_lang(self):
         n = self.name(); return self.ws.language(n) if n else ""

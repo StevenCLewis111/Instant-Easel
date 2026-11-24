@@ -10,6 +10,9 @@ code_helpers.py: what makes the coding AI good at each language, without trainin
                       the app; JavaScript with Node, C / C++ with gcc or clang, Java, Go, Rust, Bash, Lua... when they're installed).
                       Errors go back to the model to fix (up to twice) before you see the answer. Code is checked, never run.
 
+Checkers are found on PATH, in the AI drive's "Code Tools" folder, anywhere a few folders deep on the AI drive, and where the usual
+Windows installers put them.
+
 Everything lives with your coding memory: memory/coding/<user>/languages/
 """
 import os, re, json, shutil, subprocess, tempfile, sys
@@ -122,8 +125,60 @@ def by_fence(tag):
 
 
 # ---------------------------------------------------------------- 4: checked before you see it
+_found = {}
+def _places():
+    """folders a checker may be in besides PATH: the AI drive's "Code Tools" folder, the AI drive itself, and where the usual Windows
+    installers put them"""
+    import glob
+    out = [os.path.join(paths.ai_root(), "Code Tools")]
+    if sys.platform == "win32":
+        env = os.environ.get
+        pf = [env("ProgramFiles", r"C:\Program Files"), env("ProgramFiles(x86)", r"C:\Program Files (x86)")]
+        drive = os.path.splitdrive(paths.ai_root())[0] + os.sep
+        for base in pf + [env("LOCALAPPDATA", "") + r"\Programs"]:
+            for sub in ("nodejs", r"Git\bin", r"Git\usr\bin", r"Java\*\bin", r"Eclipse Adoptium\*\bin", r"Microsoft\jdk-*\bin", r"Go\bin",
+                        r"LLVM\bin", r"Lua\*", "Lua", r"Microsoft VS Code\bin"):
+                out += glob.glob(os.path.join(base, sub))
+        for root in {drive, "C:\\"}:
+            for sub in (r"msys64\ucrt64\bin", r"msys64\mingw64\bin", r"msys64\usr\bin", r"w64devkit\bin", r"mingw64\bin", r"MinGW\bin",
+                        r"Go\bin", r"nodejs", r"Program Files\nodejs", r"Program Files\Git\bin", r"Program Files\Java\*\bin"):
+                out += glob.glob(os.path.join(root, sub))
+        out += [os.path.join(os.path.expanduser("~"), ".cargo", "bin"), os.path.join(env("APPDATA", ""), "npm")]
+    return [d for d in out if os.path.isdir(d)]
+
+
+def _scan_drive(names, depth=4):
+    """look for the checkers anywhere on the AI drive (a few folders deep), once"""
+    root = paths.ai_root(); hits = {}
+    want = {n.lower(): n for n in names}
+    base_depth = root.rstrip(os.sep).count(os.sep)
+    for d, subs, files in os.walk(root):
+        if d.count(os.sep) - base_depth >= depth: subs[:] = []
+        subs[:] = [x for x in subs if not x.startswith((".", "$")) and x.lower() not in ("models", "memory", "recovery", "logs", "node_modules")]
+        for f in files:
+            k = f.lower()
+            if k in want and want[k] not in hits: hits[want[k]] = os.path.join(d, f)
+    return hits
+
+
 def _which(cmd):
-    return shutil.which(cmd) or (shutil.which(cmd + ".exe") if sys.platform == "win32" else None)
+    if cmd in _found: return _found[cmd]
+    exe = cmd + ".exe" if sys.platform == "win32" else cmd
+    hit = shutil.which(cmd) or shutil.which(exe)
+    if not hit:
+        for d in _places():
+            f = os.path.join(d, exe)
+            if os.path.isfile(f): hit = f; break
+    if not hit:
+        if "_drive" not in _found:
+            names = {(c[0] + ".exe" if sys.platform == "win32" else c[0]) for d in LANGS.values() if isinstance(d["check"], list) for c in d["check"]}
+            try: _found["_drive"] = _scan_drive(names)
+            except Exception: _found["_drive"] = {}
+        hit = _found["_drive"].get(exe)
+    _found[cmd] = hit; return hit
+
+
+def rescan(): _found.clear()
 
 
 def checker(lang):
@@ -155,7 +210,7 @@ def check(code, lang):
             m = re.search(r"public\s+(?:final\s+)?class\s+(\w+)", code); name = (m.group(1) if m else "Answer") + ".java"
         f = os.path.join(d, name)
         with open(f, "w", encoding="utf-8") as fh: fh.write(code)
-        cmd = [x.replace("{f}", f).replace("{d}", d) for x in how]
+        cmd = [_which(how[0])] + [x.replace("{f}", f).replace("{d}", d) for x in how[1:]]
         kw = dict(capture_output=True, text=True, timeout=30, cwd=d)
         if sys.platform == "win32": kw["creationflags"] = 0x08000000                    # (no console window flashing up)
         r = subprocess.run(cmd, **kw)
