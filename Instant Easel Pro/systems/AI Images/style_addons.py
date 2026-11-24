@@ -10,7 +10,9 @@ on with its trigger words; otherwise the style's own words do the job, as before
     SA.lora_for(style)              -> (text added to the prompt, folder) or None: what styles.resolve hands the engine
     SA.add_own(style, repo_or_link, trigger, weight)   your own pick from Hugging Face
 
-They're Z-Image Turbo add-ons: they don't fit Stable Diffusion 1.5 or FLUX.2 Klein, so they're only used when Z-Image paints.
+Each add-on is made for one picture model (its "base"): the built-in ones for Z-Image Turbo; yours can be for any of BASES (from
+Hugging Face or a Civitai link, where the base is read from the page). An add-on is only used when its own model paints, and only when
+it's switched on (Settings > Style Add-ons: SA.enabled / SA.set_enabled).
 """
 import os, re, json, threading
 
@@ -39,6 +41,35 @@ CATALOG = {
 }
 
 
+BASES = {"zimage": "Z-Image Turbo", "klein": "FLUX.2 Klein", "sdxl": "SDXL", "sd15": "SD 1.5", "wan22": "Wan 2.2 (video)"}
+
+
+def base_of(e): return (e or {}).get("base", "zimage")
+
+
+def base_from_civitai(name):
+    """Civitai's 'baseModel' -> one of BASES ('' when Pro has no engine for it)"""
+    n = (name or "").lower().replace(" ", "").replace("-", "").replace("_", "")
+    if "zimage" in n: return "zimage"
+    if "klein" in n or "flux.2" in n or "flux2" in n: return "klein"
+    if any(k in n for k in ("sdxl", "pony", "illustrious", "noobai")): return "sdxl"
+    if n.startswith("sd1") or "sd1.5" in n: return "sd15"
+    if "wan" in n and "2.2" in n and "5b" in n: return "wan22"
+    return ""
+
+
+def enabled(style):
+    import prefs
+    return style not in (prefs.get("addons_off") or [])
+
+
+def set_enabled(style, on):
+    import prefs
+    off = [s for s in (prefs.get("addons_off") or []) if s != style]
+    if not on: off.append(style)
+    prefs.set("addons_off", off)
+
+
 def folder():
     import imaging
     return os.path.join(imaging.IMAGE, "style-addons")
@@ -65,10 +96,10 @@ def installed(style):
     p = os.path.join(folder(), slug(style) + ".safetensors"); return p if os.path.exists(p) else None
 
 
-def lora_for(style):
-    """(text for the prompt, folder) when this style's add-on is here, else None"""
+def lora_for(style, model_kind="zimage"):
+    """(text for the prompt, folder) when this style's add-on is here, switched on, and made for the model that's painting; else None"""
     e = entries().get(style)
-    if not e or not installed(style): return None
+    if not e or not installed(style) or not enabled(style) or base_of(e) != model_kind: return None
     trig = e.get("trigger", "").strip(); w = float(e.get("weight", 0.9))
     return (f", {trig}" if trig else "") + f" <lora:{slug(style)}:{w:g}>", folder()
 
@@ -100,8 +131,13 @@ def fetch(style, report=None):
     import imaging
     e = entries().get(style)
     if not e: raise RuntimeError(f"no add-on is listed for {style}")
-    name, size = _pick_file(e["repo"], e.get("hint", ""))
     dest = os.path.join(folder(), slug(style) + ".safetensors")
+    if e.get("url"):                                                       # (from Civitai: some files need your Civitai key)
+        import prefs
+        url = e["url"]; key = (prefs.get("civitai_key") or "").strip()
+        if key: url += ("&" if "?" in url else "?") + "token=" + key
+        return imaging._get(url, dest, f"the {style} add-on", max(e.get("size", 0), 5e7) / 1e9, report)
+    name, size = _pick_file(e["repo"], e.get("hint", ""))
     imaging._get(f"https://huggingface.co/{e['repo']}/resolve/main/{name}", dest, f"the {style} add-on", max(size, 5e7) / 1e9, report)
 
 
@@ -112,7 +148,8 @@ def download(style, on_done=None):
     if not e: on_done and on_done(False, f"no add-on is listed for {style}"); return
     def work():
         try:
-            fetch(style); imaging._set(None, ""); on_done and on_done(True, f"the {style} add-on is ready — it switches on when Z-Image paints in {style}")
+            fetch(style); imaging._set(None, "")
+            on_done and on_done(True, f"the {style} add-on is ready — it switches on when {BASES.get(base_of(e), 'its model')} paints in {style}")
         except Exception as ex:
             imaging._set(None, ""); on_done and on_done(False, str(ex))
     threading.Thread(target=work, daemon=True, name="style add-on " + style).start()
@@ -123,13 +160,40 @@ def remove(style):
     if p: os.remove(p)
 
 
-def add_own(style, link, trigger="", weight=0.9):
-    """your own pick from Hugging Face for a style (a built-in style name, or a new one): kept in your-addons.json"""
-    repo = _repo_of(link); os.makedirs(folder(), exist_ok=True); own = _own()
-    own[style.strip()] = dict(repo=repo, trigger=trigger.strip(), weight=float(weight), note=f"Your pick ({repo}).", own=True)
+def civitai_info(link):
+    """from a Civitai link: dict(url, size, base, trigger, name). The model page's chosen version (?modelVersionId=) or its newest"""
+    import brain
+    m = re.search(r"civitai\.com/models/(\d+)", link); v = re.search(r"modelVersionId=(\d+)", link)
+    if not m: raise RuntimeError("that isn't a Civitai model link (civitai.com/models/...)")
+    info = brain._get_json(f"https://civitai.com/api/v1/models/{m.group(1)}")
+    vers = info.get("modelVersions") or []
+    ver = next((x for x in vers if v and str(x.get("id")) == v.group(1)), vers[0] if vers else None)
+    if not ver: raise RuntimeError("that Civitai page has no files")
+    files = [f for f in ver.get("files", []) if f.get("name", "").lower().endswith(".safetensors")]
+    if not files: raise RuntimeError("that Civitai version has no .safetensors file")
+    f = next((x for x in files if x.get("primary")), files[0])
+    return dict(url=f["downloadUrl"], size=(f.get("sizeKB") or 0) * 1024, base=base_from_civitai(ver.get("baseModel", "")),
+                base_name=ver.get("baseModel", ""), trigger=", ".join(ver.get("trainedWords") or []), name=info.get("name", ""), kind=info.get("type", ""))
+
+
+def add_own(style, link, trigger="", weight=0.9, base=None):
+    """your own pick for a style (a built-in style name, or a new one) from a Hugging Face or Civitai link: kept in your-addons.json.
+    base: which picture model it's for (read from Civitai's page when not given; Z-Image for Hugging Face)"""
+    os.makedirs(folder(), exist_ok=True); own = _own(); style = style.strip()
+    if "civitai.com" in link:
+        c = civitai_info(link)
+        if c["kind"] and c["kind"].lower() not in ("lora", "locon", "dora", "lycoris"):
+            raise RuntimeError(f"that's a {c['kind']}, not an add-on (LoRA). A whole model goes in with Settings > AI Models > Add manually")
+        b = base or c["base"]
+        if not b: raise RuntimeError(f"it's made for {c['base_name'] or 'a model'}, which Pro doesn't run")
+        own[style] = dict(url=c["url"], size=c["size"], trigger=(trigger or c["trigger"]).strip(), weight=float(weight), base=b,
+                          note=f"Your pick ({c['name']}, Civitai).", own=True)
+    else:
+        repo = _repo_of(link)
+        own[style] = dict(repo=repo, trigger=trigger.strip(), weight=float(weight), base=base or "zimage", note=f"Your pick ({repo}).", own=True)
     with open(_own_file(), "w") as f: json.dump(own, f, indent=1)
     if installed(style): remove(style)                                    # (the old file was a different add-on)
-    return repo
+    return own[style].get("repo") or own[style]["url"]
 
 
 def forget_own(style):

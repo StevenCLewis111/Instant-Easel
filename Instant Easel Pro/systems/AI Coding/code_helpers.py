@@ -95,8 +95,30 @@ def add_to_library(lang, files=(), folder_path=None):
     library_index(lang).sync_folder(lib); return n
 
 
+# ---------------------------------------------------------------- languages you switched off (Settings > Code Languages)
+def enabled(lang):
+    import prefs
+    return lang not in (prefs.get("languages_off") or [])
+
+
+def set_enabled(lang, on):
+    import prefs
+    off = [l for l in (prefs.get("languages_off") or []) if l != lang]
+    if not on: off.append(lang)
+    prefs.set("languages_off", off)
+
+
+def on_languages(): return [l for l in LANGS if enabled(l)]
+
+
 # ---------------------------------------------------------------- 1: which language
 def detect(question, project_lang="", recent=""):
+    """the language this request is about (only the ones switched on): see _detect"""
+    lang = _detect(question, project_lang, recent)
+    return lang if lang and enabled(lang) else ""
+
+
+def _detect(question, project_lang="", recent=""):
     """the language this request is about: named in it, a code block's language, a file name in it, then the earlier talk, then the
     project's main language. '' if it can't tell"""
     q = " " + question.lower() + " "

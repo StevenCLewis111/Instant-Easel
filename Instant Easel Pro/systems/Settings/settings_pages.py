@@ -8,6 +8,10 @@ import theme as T, prefs, skin
 def _frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
 
+def _rule(parent):
+    """the border line above a section's title"""
+    l = T.Line(parent, vertical=False); l.pack(fill="x", pady=(10, 0)); return l
+
 class SettingsPage(tk.Frame):
     TITLE = "Settings"; NOTE = ""
     def __init__(self, master, app):
@@ -472,20 +476,29 @@ class DownloadEverythingPage(SettingsPage):
 
 
 class StyleAddonsPage(SettingsPage):
-    TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained for Z-Image Turbo, one per style. With one here, that style uses it "
-                                     "whenever Z-Image paints; without one, the style's own words do the job. Each is about 100-300 MB. "
-                                     "Add your own (a character, a thing, a look) from a Hugging Face link: it shows up as a style everywhere.")
+    TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained, one per style. Each is made for one picture model and is used "
+                                     "whenever that model paints in its style, while it's switched on; without one, the style's own words do the job. "
+                                     "Add your own (a character, a thing, a look) from a Hugging Face or Civitai link, for any model Pro runs: it shows "
+                                     "up as a style everywhere.")
     def build(self):
         top = _frame(self.body); top.pack(anchor="w", pady=(4, 8))
         T.Button(top, "Get them all", self._sa_all, width=14).pack(side="left")
-        T.Button(top, "Add one from Hugging Face…", self._sa_add, width=26).pack(side="left", padx=6)
+        T.Button(top, "Add your own (Hugging Face or Civitai)…", self._sa_add, width=36).pack(side="left", padx=6)
         self.sa_rows = _frame(self.body); self.sa_rows.pack(anchor="w", fill="x"); self._sa_list()
 
     def _sa_list(self):
-        import style_addons as SA
+        import style_addons as SA, imaging
         for w in self.sa_rows.winfo_children(): w.destroy()
-        for style, e in SA.entries().items():
+        now = imaging.kind(); group = None
+        for style, e in sorted(SA.entries().items(), key=lambda kv: (list(SA.BASES).index(SA.base_of(kv[1])) if SA.base_of(kv[1]) in SA.BASES else 9)):
+            base = SA.base_of(e)
+            if base != group:
+                group = base; _rule(self.sa_rows)
+                T.Text(self.sa_rows, f"FOR {SA.BASES.get(base, base).upper()}" + ("   (the model you paint with now)" if base == now else ""),
+                       font=T.f(10)).pack(anchor="w", pady=(4, 2))
             r = _frame(self.sa_rows); r.pack(fill="x", anchor="w", pady=2); here = SA.installed(style)
+            v = tk.BooleanVar(value=SA.enabled(style))
+            T.Toggle(r, v, command=lambda s=style, v=v: (SA.set_enabled(s, v.get()), T.banner(self.app, f"{s.upper()} ADD-ON {'ON' if v.get() else 'OFF'}", "success"))).pack(side="left", padx=(0, 6))
             T.Text(r, ("✓ " if here else "   ") + style.upper(), font=T.f(9), width=30, anchor="w").pack(side="left")
             if here: T.Button(r, "Remove", lambda s=style: (SA.remove(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
             else: T.Button(r, "Download", lambda s=style: self._sa_get(s), width=10).pack(side="left", padx=4)
@@ -510,18 +523,62 @@ class StyleAddonsPage(SettingsPage):
         win = tk.Toplevel(self.app); win.title("Add a style add-on"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
         f = _frame(win); f.pack(padx=16, pady=14)
         vals = {}
-        for key, label, default in (("link", "Hugging Face link (or owner/name)", ""), ("style", "Style name (an existing one, or a new one)", ""),
+        for key, label, default in (("link", "Hugging Face or Civitai link", ""), ("style", "Style name (an existing one, or a new one)", ""),
                                     ("trigger", "Trigger words (from its page; blank if none)", ""), ("weight", "Strength (0.6 gentle - 1.0 strong)", "0.9")):
             T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(6, 2)); v = tk.StringVar(value=default); vals[key] = v
             tk.Entry(f, textvariable=v, width=52, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
-        T.Text(f, "Only Z-Image Turbo add-ons work here (the page says 'base model: Z-Image-Turbo').", muted=True, font=T.f(8)).pack(anchor="w", pady=(8, 0))
+        T.Text(f, "MADE FOR", font=T.f(9)).pack(anchor="w", pady=(8, 2))
+        names = ["Read it from the page (Civitai)"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
+        T.Choice(f, "", names, base).pack(anchor="w")
+        T.Text(f, "An add-on only works with the model it was made for: its page says which ('base model'). From Civitai that's read for you; "
+                  "from Hugging Face pick it (Z-Image Turbo if you don't).", muted=True, font=T.f(8), wraplength=420, justify="left").pack(anchor="w", pady=(4, 0))
+        T.Text(f, "CIVITAI KEY  (only for files that need you signed in; Civitai > Account settings > API keys)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
+        key = tk.StringVar(value=prefs.get("civitai_key") or "")
+        tk.Entry(f, textvariable=key, width=52, show="•", bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
         def ok():
             try:
                 w = float(vals["weight"].get() or 0.9); st = vals["style"].get().strip()
                 if not st: raise RuntimeError("give it a style name")
-                SA.add_own(st, vals["link"].get(), vals["trigger"].get(), w); win.destroy(); self._sa_list(); self._sa_get(st)
+                prefs.set("civitai_key", key.get().strip())
+                b = next((k for k, n in SA.BASES.items() if n == base.get()), None)
+                if b is None and "civitai.com" not in vals["link"].get(): b = "zimage"
+                SA.add_own(st, vals["link"].get(), vals["trigger"].get(), w, base=b); win.destroy(); self._sa_list(); self._sa_get(st)
             except Exception as ex: T.banner(self.app, f"COULDN'T ADD IT — {ex}")
         b = _frame(f); b.pack(anchor="w", pady=(10, 0)); T.Button(b, "Add and download", ok).pack(side="left"); T.Button(b, "Cancel", win.destroy).pack(side="left", padx=6)
+class CodeLanguagesPage(SettingsPage):
+    TITLE = "Code Languages"; NOTE = ("The languages AI Coding works out from your questions. Each has its own setup: how you write it (style, libraries "
+                                      "and versions, things to avoid), its own library it looks things up in, and a checker that compiles its code before "
+                                      "you see it. Switch off the ones you don't use and it never picks them.")
+    def build(self):
+        top = _frame(self.body); top.pack(anchor="w", pady=(2, 6))
+        T.Button(top, "Look for checkers again", lambda: (__import__("code_helpers").rescan(), self._cl_list()), width=24).pack(side="left")
+        self.cl_rows = _frame(self.body); self.cl_rows.pack(anchor="w", fill="x"); self._cl_list()
+
+    def _cl_list(self):
+        import code_helpers as CH
+        for w in self.cl_rows.winfo_children(): w.destroy()
+        have = CH.available()
+        for lang in CH.LANGS:
+            r = _frame(self.cl_rows); r.pack(fill="x", anchor="w", pady=2)
+            v = tk.BooleanVar(value=CH.enabled(lang))
+            T.Toggle(r, v, command=lambda l=lang, v=v: CH.set_enabled(l, v.get())).pack(side="left", padx=(0, 6))
+            T.Text(r, lang.upper(), font=T.f(9), width=14, anchor="w").pack(side="left")
+            T.Button(r, "How I write it", lambda l=lang: self._cl_profile(l), width=14).pack(side="left", padx=4)
+            try: n = len([f for _, _, fs in os.walk(os.path.join(CH.folder(lang), "library")) for f in fs])
+            except Exception: n = 0
+            how = have.get(lang, ""); how = "the app itself" if how == "built in" else how
+            T.Text(r, (f"checked with {how}" if how else "no checker on this PC") + (f"   ·   {n} files in its library" if n else ""),
+                   muted=True, font=T.f(8)).pack(side="left", padx=8)
+
+    def _cl_profile(self, lang):
+        import code_helpers as CH, workspace_page as WP
+        f = CH.profile_file(lang)
+        def save(text):
+            with open(f, "w", encoding="utf-8") as fh: fh.write(text)
+        WP.Editor(self.app, f"How you write {lang}", f"Your {lang} style, the libraries and versions you use, and what it must never do. "
+                  f"In every {lang} request, in every project.", CH.profile(lang), save)
+
+
 # ---------------------------------------------------------------- Updates
 REPO = "StevenCLewis111/Instant-Easel"
 class UpdatesPage(SettingsPage):
