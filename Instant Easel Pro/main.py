@@ -1112,7 +1112,11 @@ class Splash:
         self.root = root; s = self.win = tk.Toplevel(root); s.withdraw(); s.overrideredirect(True); s.configure(bg=T.PALETTE["border"])
         inner = tk.Frame(s, bg=T.PALETTE["panel"], padx=24, pady=18); inner.pack(padx=3, pady=3)
         try:
-            lg = Image.open(paths.ui("Splash", "logo-easel.png")); lg.thumbnail((460, 310)); s.ph = ImageTk.PhotoImage(lg)
+            lg = Image.open(paths.ui("Splash", "logo-easel.png")).convert("RGBA"); lg.thumbnail((460, 310))
+            badge = T.paint_words("PRO", max(12, int(lg.height * 0.2)), (255, 214, 0))                       # this is Instant Easel Pro (as in the header)
+            big = Image.new("RGBA", (lg.width + badge.width // 4, lg.height + badge.height // 3)); big.alpha_composite(lg)
+            big.alpha_composite(badge, (big.width - badge.width, big.height - badge.height)); lg = big
+            s.ph = ImageTk.PhotoImage(lg)
             tk.Label(inner, image=s.ph, bg=T.PALETTE["panel"]).pack()
         except Exception: tk.Label(inner, text=APP_NAME, font=T.f(22), fg=T.PALETTE["title"], bg=T.PALETTE["panel"]).pack()
         self.bar = tk.Canvas(inner, width=300, height=10, bg=T.PALETTE["field"], highlightthickness=0); self.bar.pack(pady=(12, 4))
