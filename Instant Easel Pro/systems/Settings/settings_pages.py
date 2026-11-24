@@ -54,8 +54,31 @@ class SettingsPage(tk.Frame):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
         T.Title(self, self.TITLE).pack(anchor="w", pady=(0, 4))
         if self.NOTE: n = T.Text(self, self.NOTE, muted=True); n.configure(wraplength=820); n.pack(anchor="w", pady=(0, 10))
-        self.body = _frame(self); self.body.pack(fill="both", expand=True, anchor="w"); self.build()
+        # the page's rows scroll when they don't fit: the app's scroll bar on the right, a border line to its left, only while needed
+        holder = _frame(self); holder.pack(fill="both", expand=True, anchor="w")
+        cv = self._cv = tk.Canvas(holder, bd=0, highlightthickness=0, width=10, height=10, bg=self["bg"])
+        cv.pack(side="left", fill="both", expand=True); T.on_change(lambda: cv.configure(bg=self["bg"]))
+        self._sb = T.Scrollbar(holder, "vertical", command=cv.yview); cv.configure(yscrollcommand=self._sb.set)
+        self._sbline = T.Line(holder, vertical=True)
+        self.body = _frame(cv); self._win = cv.create_window(0, 0, window=self.body, anchor="nw"); self._fjob = None
+        for w in (self.body, cv): w.bind("<Configure>", lambda e: self._fit_soon(), add="+")
+        T.wheel_area(holder, lambda n: self._sb.winfo_manager() and cv.yview_scroll(n, "units"))
+        self.build()
     def build(self): pass
+    def _fit_soon(self):
+        if self._fjob is None: self._fjob = self.after(15, self._fit)
+    def _fit(self):
+        """the rows as wide as the page; taller than it, and the scroll bar shows"""
+        self._fjob = None; cv = self._cv
+        try: W, H, need = cv.winfo_width(), cv.winfo_height(), self.body.winfo_reqheight()
+        except tk.TclError: return
+        if W < 20 or H < 20: return
+        over = need > H + 1
+        if over and not self._sb.winfo_manager():
+            self._sb.pack(side="right", fill="y", padx=(6, 0), before=cv); self._sbline.pack(side="right", fill="y", padx=(8, 0), before=cv); return
+        if not over and self._sb.winfo_manager():
+            self._sb.pack_forget(); self._sbline.pack_forget(); cv.yview_moveto(0); return
+        h = max(need, H); cv.itemconfigure(self._win, width=W, height=h); cv.configure(scrollregion=(0, 0, W, h))
 
     # ---- row helpers: label on the left, control on the right, an optional note underneath
     def row(self, label, note=""):
