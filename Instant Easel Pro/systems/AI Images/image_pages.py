@@ -501,8 +501,11 @@ class ImagePage(tk.Frame):
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         self.leave_out = self.var("leave_out", imaging.NEGATIVE)
         self.lo_row = _frame(host)                                                   # LEAVE OUT, right under the words box (Stable Diffusion only; hidden for the others)
-        T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 6))
-        T.Entry(self.lo_row, self.leave_out, width=10).pack(side="left", fill="x", expand=True)
+        T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 6))          # (centred up and down beside its box)
+        self.lo_box = T.Field(self.lo_row, height=2, scroll=True, width=10)                   # two lines, with its own scroll bar
+        self.lo_box.pack(side="left", fill="x", expand=True); self.lo_box.insert("1.0", self.leave_out.get())
+        def _lo_sync(*_a): self.leave_out.set(" ".join(self.lo_box.get("1.0", "end").split()))
+        for ev in ("<KeyRelease>", "<FocusOut>", "<<Paste>>"): self.lo_box.bind(ev, lambda e: self.after_idle(_lo_sync), add="+")
         self.lo_row.pack(fill="x", pady=(8, 0), after=self.prompt._outer)
         # the settings, laid out in a tidy grid (2 across beside the viewer, 3 across otherwise)
         if self.VIEWER:                                                              # beside the viewer: in a bordered area that scrolls if it must
