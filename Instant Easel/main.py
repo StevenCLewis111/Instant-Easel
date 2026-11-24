@@ -761,8 +761,14 @@ class Section(tk.Frame):
         self.content = themed_frame(self); self.content.pack(side="left", fill="both", expand=True)
         self.pages, self.buttons, self.rows = {}, {}, []
         T.Title(side, menu).pack(pady=(12, 0))                                                   # the tab's name, gold and underlined, level with the page's own title
-        mf = self.menu = themed_frame(side)                                                      # the buttons, centred up and down between the title and that divider
-        mf.pack(fill="y", expand=True, padx=30, pady=12)                                        # spread out evenly down to the bottom; the same gap both sides
+        holder = themed_frame(side); holder.pack(fill="both", expand=True, pady=12)            # the buttons spread evenly down to the bottom; when there are
+        cv = self._mcv = tk.Canvas(holder, bd=0, highlightthickness=0, width=10, height=10)     # more than fit, the column scrolls (wheel, or its scroll bar)
+        cv.pack(side="left", fill="both", expand=True); cv.configure(bg=holder["bg"]); T.on_change(lambda: cv.configure(bg=holder["bg"]))
+        self._msb = T.Scrollbar(holder, "vertical", command=cv.yview); cv.configure(yscrollcommand=self._msb.set)
+        mf = self.menu = themed_frame(cv); self._mwin = cv.create_window(30, 0, window=mf, anchor="nw")   # (30px each side of the buttons)
+        self._mjob = None
+        for w in (mf, cv): w.bind("<Configure>", lambda e: self._menu_soon(), add="+")
+        T.wheel_area(holder, lambda n: self._msb.winfo_manager() and cv.yview_scroll(n, "units"))
         for f in tools:                                                                          # (30px each side of the buttons; the status dot sits in the right-hand space)
             row = themed_frame(mf); row.pack(fill="x", pady=0, expand=True); self.rows.append(row)
             b = skin.button(T.Button(row, f["name"], lambda n=f["name"]: self.select(n), width=20)); b.pack(side="left", fill="x"); self.buttons[f["name"]] = b
@@ -774,6 +780,21 @@ class Section(tk.Frame):
         self.whole = len(tools) == 1 and getattr(self.pages[tools[0]["name"]], "WHOLE", False)
         if self.whole:                                                                           # one page that is the whole tab (Draw): no side menu
             for w in (side, self.winfo_children()[1]): w.pack_forget()
+
+    def _menu_soon(self):
+        if self._mjob is None: self._mjob = self.after(15, self._fit_menu)
+
+    def _fit_menu(self):
+        """the side column: as wide as the buttons (+30 each side); the buttons spread over its height, or scroll when they don't fit"""
+        self._mjob = None; cv, mf = self._mcv, self.menu
+        try:
+            need_w, need_h, H = mf.winfo_reqwidth(), mf.winfo_reqheight(), cv.winfo_height()
+        except tk.TclError: return
+        if int(cv.cget("width")) != need_w + 60: cv.configure(width=need_w + 60)
+        over = need_h > H + 1 and H > 20; h = need_h if over else max(H, 1)
+        cv.itemconfigure(self._mwin, width=need_w, height=h); cv.configure(scrollregion=(0, 0, need_w + 60, h))
+        if over and not self._msb.winfo_manager(): self._msb.pack(side="left", fill="y")
+        elif not over and self._msb.winfo_manager(): self._msb.pack_forget(); cv.yview_moveto(0)
 
     def _gaps(self):
         """every tab: the buttons spread evenly from the title down to the divider (equal gaps, resized with the window)"""
