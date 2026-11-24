@@ -29,7 +29,7 @@ DEFAULTS = {
     # AI models
     "use_gpu": True, "models_folder": "", "text_model": "auto",
     # Updates
-    "check_updates_on_start": False,
+    "check_updates_on_start": True,
 }
 SIZES = {"edit_preview": {"Fast": 700, "Normal": 1000, "Sharp": 1400}, "i2i_size": {"Fast": 1200, "Standard": 1600, "Large": 2400},
          "text_size": {"Small": 0.9, "Normal": 1.0, "Large": 1.15}}

@@ -1,7 +1,7 @@
 """
 settings_pages.py: Instant Easel's Settings pages. Every value lives in prefs.py (instant_easel_settings.json next to the app).
 """
-import os, zipfile, tkinter as tk
+import os, zipfile, threading, tkinter as tk
 from tkinter import filedialog
 import theme as T, prefs, skin
 
@@ -242,6 +242,87 @@ class DrawingAIPage(SettingsPage):
         except Exception as e: T.banner(self.app, f"COULDN'T ADD IT — {e}", "error")
         self._da_list()
 
+
+class UpdatesPage(SettingsPage):
+    TITLE = "Updates"; NOTE = ("Updates in place: the app checks GitHub for a newer build, downloads it, and on restart puts the new program in. "
+                               "Your settings, pictures, models and everything else beside the app stay as they are.")
+    def build(self):
+        import updater as U, main
+        me = U.current()
+        T.Text(self.body, f"THIS BUILD: {me.get('sha', '')[:7] or main.VERSION}" + (f"  ·  made {me['built']}" if me.get("built") else
+               ("  ·  running from the source (updates come with git pull)" if not U.FROZEN else "")), font=T.f(11)).pack(anchor="w", pady=(0, 8))
+        self.toggle("Check for updates when the app opens", "check_updates_on_start", "When there's a newer build it asks before downloading anything.")
+        r = _frame(self.body); r.pack(anchor="w", pady=(6, 4))
+        T.Button(r, "Check now", self.check, width=12).pack(side="left")
+        self.get_btn = T.Button(r, "Download and update", self.get, width=22)
+        self.go_btn = skin.button(T.Button(r, "Restart to update", self.restart, width=20))
+        self.msg = T.Text(self.body, "", font=T.f(10)); self.msg.configure(wraplength=800, justify="left"); self.msg.pack(anchor="w", pady=(4, 0))
+        self.new = None
+        if U.ready(): self._show_ready()
+
+    def _show_ready(self):
+        import updater as U
+        n = U.ready() or {}
+        self.msg.configure(text=f"THE UPDATE IS DOWNLOADED ({n.get('sha', '')[:7]}, made {n.get('built', '')}). RESTART TO PUT IT IN.")
+        if self.get_btn.winfo_manager(): self.get_btn.pack_forget()
+        if not self.go_btn.winfo_manager(): self.go_btn.pack(side="left", padx=8)
+
+    def check(self, startup=False):
+        import updater as U
+        if not startup: self.msg.configure(text="CHECKING…")
+        def work():
+            try: new = U.check(); err = None
+            except Exception as e: new, err = None, e
+            def show():
+                if not self.winfo_exists(): return
+                self.new = new
+                if err is not None:
+                    if not startup:
+                        self.msg.configure(text=f"COULDN'T CHECK ({err.__class__.__name__}: {str(err)[:120]}). CHECK YOUR CONNECTION.")
+                        T.banner(self.app, "CAN'T CHECK FOR UPDATES — couldn't reach GitHub")
+                    return
+                if U.ready(): return self._show_ready()
+                if not new:
+                    if not startup:
+                        self.msg.configure(text="YOU HAVE THE NEWEST BUILD." if U.FROZEN else "RUNNING FROM THE SOURCE: UPDATE WITH GIT PULL.")
+                        T.banner(self.app, "UP TO DATE", "success")
+                    return
+                self.msg.configure(text=f"A NEWER BUILD IS READY: {new['sha'][:7]}, made {new['built']} ({new['size'] / 1e6:.0f} MB).")
+                if not self.get_btn.winfo_manager(): self.get_btn.pack(side="left", padx=8)
+                if startup:
+                    a = T.popup(self.app, "AN UPDATE IS READY", f"A newer build of the app is on GitHub (made {new['built']}). Download it now? "
+                                "It downloads in the background; then restart to put it in.", (("Update", "normal"), ("Later", "danger")))
+                    if a == "Update": self.get()
+                else: T.banner(self.app, "AN UPDATE IS READY — press Download and update", "success")
+            self.app.q.put(show)
+        threading.Thread(target=work, daemon=True, name="update check").start()
+
+    def get(self):
+        import updater as U
+        if not self.new: return self.check()
+        q = self.app.q; new = self.new
+        def work():
+            try:
+                U.download(new, report=lambda t, f: q.put(lambda t=t: self.winfo_exists() and self.msg.configure(text=t.upper())))
+                def done():
+                    if self.winfo_exists(): self._show_ready()
+                    a = T.popup(self.app, "UPDATE DOWNLOADED", "Restart now to put it in? The app closes and opens again in a few seconds.",
+                                (("Restart now", "normal"), ("Later", "danger")))
+                    if a == "Restart now": self.restart()
+                    else: T.banner(self.app, "UPDATE READY — it goes in when you press Restart to update (Settings > Updates)", "success")
+                q.put(done)
+            except Exception as e: q.put(lambda e=e: (self.winfo_exists() and self.msg.configure(text=f"THE DOWNLOAD DIDN'T FINISH — {e}"), T.banner(self.app, f"UPDATE DIDN'T DOWNLOAD — {e}", "error")))
+        threading.Thread(target=work, daemon=True, name="update download").start()
+        self.msg.configure(text="DOWNLOADING THE UPDATE…")
+        if self.get_btn.winfo_manager(): self.get_btn.pack_forget()
+
+    def restart(self):
+        import updater as U
+        try:
+            try: self.app.save_state() if hasattr(self.app, "save_state") else None
+            except Exception: pass
+            U.restart_into_update(self.app)
+        except Exception as e: T.banner(self.app, f"COULDN'T UPDATE — {e}", "error")
 
 class PenPage(SettingsPage):
     TITLE = "Pen & Tablet"; NOTE = ("A drawing tablet or pen screen (Wacom, XP-Pen, Huion, Surface Pen...) draws with its real pressure: press lightly "

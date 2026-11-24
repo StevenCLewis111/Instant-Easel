@@ -24,6 +24,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt pyinstaller onnx          # (onnx: the app turns the upscaler into ONNX on your PC)
+      - name: Stamp the build with its commit (the app's updater compares it with the newest build)
+        shell: bash
+        run: echo "{\"sha\": \"$GITHUB_SHA\", \"built\": \"$(date -u +'%Y-%m-%d %H:%M') UTC\"}" > build.json
       - run: python -m PyInstaller --noconfirm --distpath dist PaintEngine.spec
       - name: Zip the app folder (InstantEasel.exe + _internal) for the Releases page
         run: 7z a -tzip -mx=5 "InstantEasel-windows.zip" ".\dist\InstantEasel\*"
@@ -47,4 +50,4 @@ jobs:
 
           The cut-out AI (Select Subject, Object Selection, Quick Selection, Remove Background) is built in: nothing else to download.
 
-          In the repo: double-click *Set up automatic exe updates.bat* once, and every GitHub Desktop pull fetches the newest build into EXE Build."
+          Already have it? The app updates itself: Settings > Updates (it checks when it opens)."

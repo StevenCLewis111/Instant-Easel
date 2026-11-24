@@ -35,6 +35,7 @@ MENUS = [
    dict(name="Theme", status="built", order=0, desc="Border colour, background colour, panel opacity, one-colour themes.", options=[]),
    dict(name="General", status="built", order=0, desc="Saving pictures, quitting, desktop shortcut.", options=[]),
    dict(name="Display", status="built", order=0, desc="Window mode, text size, splash.", options=[]),
+   dict(name="Updates", status="built", order=0, desc="Updates in place: checks GitHub, downloads the newer build, restarts into it.", options=["Check when the app opens", "Download and update", "Restart to update"]),
    dict(name="Drawing AI", status="built", order=0, desc="Download the Drawing tab's AI models (any or all), remove them, or add your own.", options=[]),
    dict(name="Pen & Tablet", status="built", order=0, desc="A drawing tablet's pen pressure: on / off, how it feels, its eraser end; a tester.", options=[]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=[]),

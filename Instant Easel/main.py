@@ -240,7 +240,7 @@ class InstantEasel(tk.Tk):
         self.after_idle(lambda: self.body.bind("<Configure>", lambda e: T.defer(self, "mascots", 60, self._size_mascots), add="+"))   # the line under the header moved: stand on it again
 
         built = {"Draw": draw_studio.DrawStudio, "Theme": ThemePage, "About": AboutPage, "General": SP.GeneralPage, "Display": SP.DisplayPage,
-                 "Drawing AI": SP.DrawingAIPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage, **EP.page_classes()}
+                 "Drawing AI": SP.DrawingAIPage, "Updates": SP.UpdatesPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage, **EP.page_classes()}
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
         for i, (m, _, tools) in enumerate(features.MENUS):
@@ -249,6 +249,7 @@ class InstantEasel(tk.Tk):
         st = prefs.get("start_tab"); st = prefs.get("last_tab") if st == "Last used" else st
         st = features.OLD_TAB_NAMES.get(st, st)                                                 # settings saved with the old tab names still work
         self.show(st if st in self.pages else "Drawing"); self.tabs.active = st if st in self.pages else "Drawing"; self.tabs._style()
+        if prefs.get("check_updates_on_start"): self.after(4000, lambda: self.pages["Settings"].pages["Updates"].check(startup=True))
 
     def _size_mascots(self):
         """the logo a little wider than its own shape, centred over the tabs; the guy and girl stand on the line under the header"""

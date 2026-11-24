@@ -32,7 +32,7 @@ DEFAULTS = {
     "image_sharper": True, "image_auto_upscale": "Off", "image_improve_words": True, "image_stall_minutes": 10,   # "": not chosen yet (the best downloaded / best for this PC)
     "use_gpu": True, "models_folder": "",
     # Updates
-    "check_updates_on_start": False,
+    "check_updates_on_start": True,
 }
 SIZES = {"edit_preview": {"Fast": 700, "Normal": 1000, "Sharp": 1400},
          "text_size": {"Small": 0.9, "Normal": 1.0, "Large": 1.15}}

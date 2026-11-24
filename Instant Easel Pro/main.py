@@ -264,7 +264,7 @@ class InstantEasel(tk.Tk):
         st = prefs.get("start_tab"); st = prefs.get("last_tab") if st == "Last used" else st
         st = features.OLD_TAB_NAMES.get(st, st)                                                 # settings saved with the old tab names still work
         self.show(st if st in self.pages else "AI Images"); self.tabs.active = st if st in self.pages else "AI Images"; self.tabs._style()
-        if prefs.get("check_updates_on_start"): self.after(4000, lambda: self.pages["Settings"].pages["Updates"].check())
+        if prefs.get("check_updates_on_start"): self.after(4000, lambda: self.pages["Settings"].pages["Updates"].check(startup=True))
         import jobs; self.jobs_pill = jobs.Pill(self)                                          # the AI jobs line: '1 RUNNING · 2 WAITING', click for the list
         self.after(5000, self._rescan_pc)
 

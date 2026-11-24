@@ -12,6 +12,7 @@ a = Analysis(['main.py'], pathex=['.'] + SYSTEMS,
                        'scipy.interpolate', 'scipy.integrate', 'scipy.odr', 'scipy.cluster', 'scipy.datasets', 'scipy.differentiate',
                        'onnxruntime.transformers', 'onnxruntime.quantization', 'onnxruntime.tools', 'onnxruntime.training', 'onnxruntime.datasets'])
 # ---- no AI models are built in: every one is downloaded from Settings (or when its tool is first used)
+a.datas += [('build.json', 'build.json', 'DATA')] if os.path.exists('build.json') else []   # (which commit this build is: for updates)
 pyz = PYZ(a.pure)
 # a folder build (dist/InstantEasel/: InstantEasel.exe + _internal/): it starts at once - a one-file .exe this big would unpack itself
 # (300 MB+) every time before the app could even show its splash
