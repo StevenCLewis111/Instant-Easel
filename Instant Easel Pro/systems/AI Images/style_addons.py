@@ -1,6 +1,6 @@
 """
-style_addons.py: ready-made style add-ons (LoRAs) made by other people for Z-Image Turbo, one per style, downloaded from Hugging
-Face when you ask (Settings > AI Images > Style add-ons). When a style has its add-on and Z-Image paints, the add-on is switched
+style_addons.py: Templates — ready-made styles (LoRAs) made by other people for an image or video model, one per style, downloaded from Hugging
+Face when you ask (Settings > Templates). When a style has its add-on and Z-Image paints, the add-on is switched
 on with its trigger words; otherwise the style's own words do the job, as before. Your own can be added from a Hugging Face link.
 
     import style_addons as SA
@@ -12,7 +12,7 @@ on with its trigger words; otherwise the style's own words do the job, as before
 
 Each add-on is made for one picture model (its "base"): the built-in ones for Z-Image Turbo; yours can be for any of BASES (from
 Hugging Face or a Civitai link, where the base is read from the page). An add-on is only used when its own model paints, and only when
-it's switched on (Settings > Style Add-ons: SA.enabled / SA.set_enabled).
+it's switched on (Settings > Templates: SA.enabled / SA.set_enabled).
 """
 import os, re, json, threading
 

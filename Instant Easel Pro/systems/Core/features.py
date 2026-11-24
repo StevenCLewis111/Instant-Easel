@@ -146,7 +146,7 @@ MENUS = [
    dict(name="AI Storage", status="built", order=0, desc="Give the AI its own drive; each AI gets its own portion.",
         options=["Choose the AI drive (everything moves there)", "Each AI's portion with used / budget", "Adding stops politely when a portion is full"]),
    dict(name="Download Everything", status="built", order=0, desc="One download of every engine, model (every size, even ones for a bigger PC), add-on, the video model and the code checkers.", options=[]),
-   dict(name="Style Add-ons", status="built", order=0, desc="Ready-made style add-ons, each switched on or off, and your own from a link, for any picture model.", options=[]),
+   dict(name="Templates", status="built", order=0, desc="Templates: ready-made styles, each switched on or off, and your own from a link, for any image or video model.", options=[]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
    dict(name="Code Languages", status="built", order=0, desc="Switch AI Coding's languages on or off; each one's profile, library and checker.", options=[]),
    dict(name="Drawing AI", status="built", order=0, desc="Download the Drawing tab's AI models (any or all), remove them, or add your own.", options=[]),

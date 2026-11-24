@@ -255,7 +255,7 @@ class InstantEasel(tk.Tk):
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), **WP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  **EP.page_classes(), **VP.page_classes(), "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
-                 "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Style Add-ons": SP.StyleAddonsPage, "Download Everything": SP.DownloadEverythingPage, "Code Languages": SP.CodeLanguagesPage, "Updates": SP.UpdatesPage, "Drawing AI": SP.DrawingAIPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Templates": SP.StyleAddonsPage, "Download Everything": SP.DownloadEverythingPage, "Code Languages": SP.CodeLanguagesPage, "Updates": SP.UpdatesPage, "Drawing AI": SP.DrawingAIPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
         for i, (m, _, tools) in enumerate(self.menus):
@@ -793,6 +793,9 @@ def status_dot(master, status, size):
     return skin.dot(master, DOT_FILL[status], size) if UA.load("skin/dot_ring") is not None else _dot(master, DOT[status], size)
 LA.DOT = status_dot                                                                              # the learning areas use the same dots
 
+MAIN_PAGE = {"AI Images": "Text to Image", "AI Videos": "Text to Video"}   # each make-tab's main page; its other pages are listed under MODEL OPTIONS
+
+
 class Section(tk.Frame):
     """one top tab: a side menu of its tools and the selected tool's page (which tools are finished is kept in docs/ROADMAP.md, not shown).
     Everything is laid out by pack, so nothing is measured or re-placed: the side column is [title] / [buttons, spread evenly to the bottom],
@@ -808,7 +811,11 @@ class Section(tk.Frame):
         T.Title(side, menu).pack(pady=(12, 0))                                                   # the tab's name, gold and underlined, level with the page's own title
         mf = self.menu = themed_frame(side)                                                      # the buttons, centred up and down between the title and that divider
         mf.pack(fill="y", expand=True, padx=30, pady=12)                                        # spread out evenly down to the bottom; the same gap both sides
+        first = MAIN_PAGE.get(menu)
         for f in tools:                                                                          # (30px each side of the buttons; the status dot sits in the right-hand space)
+            if first and f["name"] != first and not f.get("hidden") and not getattr(self, "_opts_head", None):
+                self._opts_head = h = themed_frame(mf); h.pack(fill="x", expand=True); self.rows.append(h)   # the rest of this tab: its MODEL OPTIONS
+                T.Line(h, vertical=False).pack(fill="x", pady=(0, 4)); T.Text(h, "MODEL OPTIONS", font=T.f(10)).pack()
             if f.get("hidden"):
                 self.pages[f["name"]] = built[f["name"]](self.content, app) if f["name"] in built else PlannedPage(self.content, app, f); continue
             row = themed_frame(mf); row.pack(fill="x", pady=0, expand=True); self.rows.append(row)

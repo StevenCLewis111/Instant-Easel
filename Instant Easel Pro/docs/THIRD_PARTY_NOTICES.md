@@ -10,7 +10,7 @@ Instant Easel Pro uses these parts made by other people; thank you to their auth
 - ❓ **Unknown**: its page doesn't state a licence. Treat it as not shareable until you've checked.
 
 **Nothing here ships with the app** except the libraries in the first table. Every model, engine and tool is downloaded onto
-your AI drive when you ask (Settings > Download Everything, Drawing AI, AI Models, Style Add-ons, or the tool's own Download
+your AI drive when you ask (Settings > Download Everything, Drawing AI, AI Models, Templates, or the tool's own Download
 button), and each can be swapped for a file of your own. Sharing the app doesn't share any of them.
 
 ## Included in the app
@@ -62,10 +62,10 @@ Most are fetched from the [rembg](https://github.com/danielgatis/rembg) project'
 | [Wan 2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) (Wan team, Alibaba); GGUF and decoder by QuantStack (decoder also from Comfy-Org) | AI Videos | Apache-2.0 | ✅ |
 | umt5-xxl text encoder (Google, as shipped with Wan); GGUF by [city96](https://huggingface.co/city96/umt5-xxl-encoder-gguf) | AI Videos' text reader | Apache-2.0 | ✅ |
 
-## Style add-ons (Settings > Style Add-ons)
+## Templates (Settings > Templates)
 Made by other people for Z-Image Turbo. Each is its own work with its own licence.
 
-| Add-on | Made by | Licence | Share? |
+| Template | Made by | Licence | Share? |
 |---|---|---|---|
 | Anime ([ANIME-REDMOND-ZIMAGE](https://huggingface.co/artificialguybr/ANIME-REDMOND-ZIMAGE)) | artificialguybr | Apache-2.0 | ✅ |
 | Line art / colouring page ([COLORINGBOOK-REDMOND-ZIMAGE](https://huggingface.co/artificialguybr/COLORINGBOOK-REDMOND-ZIMAGE)) | artificialguybr | Apache-2.0 | ✅ |
@@ -76,7 +76,7 @@ Made by other people for Z-Image Turbo. Each is its own work with its own licenc
 | Minimal / flat ([zimage-flat-color-v2-1](https://huggingface.co/oshi-pog/zimage-flat-color-v2-1)) | motimalu | see its page | ❓ |
 | Oil painting, Digital painting ([Z-Image-LoRAs](https://huggingface.co/Zuellni/Z-Image-LoRAs)) | Zuellni | see its page | ❓ |
 | Realistic photo ([Z-Image-Turbo-Realism-LoRA](https://huggingface.co/suayptalha/Z-Image-Turbo-Realism-LoRA)) | suayptalha | see its page | ❓ |
-| **Add-ons you add yourself** | whoever made them | whatever its page says | ❓ check each |
+| **Templates you add yourself** | whoever made them | whatever its page says | ❓ check each |
 
 ## Code checkers (Download Everything, Windows; kept in the AI drive's Code Tools folder)
 | Tool | Checks | Licence | Share? |

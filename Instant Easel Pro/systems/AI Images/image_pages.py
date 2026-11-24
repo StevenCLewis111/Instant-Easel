@@ -25,6 +25,8 @@ QUALITY = {"Fast": 12, "Normal": 20, "Best": 30}
 REMOVE_WORDS = "the surrounding background continuing naturally, seamless, nothing there"
 BRUSH = {"Small": 8, "Medium": 18, "Large": 36}
 UPSCALE = ["Off", "2x", "4x"]
+RESOLUTION = {"Low": 0.75, "Medium": 1.0, "High": 1.25}                  # x the model's own size, each way (Low is quicker, High sharper)
+STRENGTH = {"zimage": "strong", "klein": "strong", "sdxl": "medium", "sd15": "weak", "file": "yours"}   # the image models, weak to strong
 GUIDE_STRENGTH = {"Loosely": 0.6, "Normal": 0.85, "Exactly": 1.0}
 PIC_TYPES = [("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")]
 
@@ -209,7 +211,7 @@ class MaskPad(tk.Canvas):
     def _style(self): self.configure(bg=T.PALETTE["field"], highlightbackground=T.PALETTE["border"])
     def _empty(self):
         self.delete("all"); self.create_text(self.winfo_width() / 2, self.winfo_height() / 2, fill=T.PALETTE["muted"], font=T.f(10),
-                                             text="CHOOSE A PICTURE, THEN BRUSH OVER WHAT TO CHANGE")
+                                             text="CHOOSE A PICTURE,\nTHEN BRUSH OVER WHAT TO CHANGE")
     def set_picture(self, im, mask=None):
         from PIL import Image
         self.pic = im.convert("RGB"); self.mask = mask if mask is not None else Image.new("L", im.size, 0); self._fit()
@@ -451,13 +453,13 @@ class Viewer(tk.Frame):
 
 # ---------------------------------------------------------------- the page
 class ImagePage(tk.Frame):
-    TITLE = "Text to Image"; INTRO = "Type what you want and pick a style. The core text model can write a fuller description first."
+    TITLE = "Text to Image"; INTRO = "Type what you want and pick a template. The core text model can write a fuller description first."
     WORDS = "WHAT YOU WANT"; WORDS_NEEDED = True
     SPLIT = False                     # a picture area on the left, the settings on the right
     MODEL = "paint"                   # "paint": the picture model chosen in Settings; "klein": FLUX.2 Klein; "guide": SD 1.5 + a guide
     SIZE = True; COUNT = True; IMPROVE = False; UPSCALE_AFTER = True; SHOW_FOLLOW = True
     AMOUNT = None; AMOUNT_LABEL = "change"; AMOUNT_DEFAULT = None
-    VIEWER = False                    # the picture shown large on the right, with its buttons underneath (Text to Image)
+    VIEWER = True                     # every section: the picture shown large on the right with its buttons; the section's own inputs top-left
     def __init__(self, master, app):
         super().__init__(master, bg=master["bg"]); self.app = app; T.on_change(lambda: self.configure(bg=self.master["bg"]))
         import imaging, styles; self.imaging = imaging; self.styles = styles
@@ -482,6 +484,18 @@ class ImagePage(tk.Frame):
         self.host = host
         if self.SPLIT: self.build_left(self.left)
         else: self.build_top(host)
+        # 1 the image model (the downloaded ones, weak to strong), 2 the template (styles that fit it): then 3, the words
+        self.pick_row = _frame(host); self.pick_row.pack(fill="x", pady=(4, 2))
+        self.model = self.var("model", "")
+        self.model_choice = ListChoice(self.pick_row, "image model", self._model_names() or ["(none yet)"], self.model)
+        self.model_choice.pack(side="left", padx=(0, 10))
+        if not self._own_model_pick():                                         # (this option needs one model: shown, not chosen)
+            for ev in ("<Button-1>", "<Button-3>", "<Return>"): self.model_choice.unbind(ev)
+            self.model_choice.configure(cursor="arrow")
+        self.style = self.var("style", prefs.get("image_default_style") or "None")
+        self.style_choice = ListChoice(self.pick_row, "template", self.styles.names(), self.style); self.style_choice.pack(side="left")
+        self._sync_model_pick()
+        self.model.trace_add("write", lambda *a: self._model_picked())
         if self.VIEWER:
             self._words_label = head_row(host); _HeadTitle(self._words_label, self.WORDS).place(relx=0.5, rely=1.0, anchor="s")
         else: self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
@@ -499,12 +513,13 @@ class ImagePage(tk.Frame):
         ob = self.optbox
         self._opts = []
         def add(w, span=1): self._opts.append((w, span)); return w
-        self.style = self.var("style", prefs.get("image_default_style") or "None")
-        self.style_choice = add(ListChoice(ob, "style", styles.names(), self.style))
         if self.SIZE:
             self.size = self.var("size", prefs.get("image_default_size") or imaging.SIZES[0])
             if self.size.get() not in imaging.SIZES: self.size.set(imaging.SIZES[0])
             add(ListChoice(ob, "size", imaging.SIZES, self.size))
+            self.resolution = self.var("resolution", "Medium")
+            if self.resolution.get() not in RESOLUTION: self.resolution.set("Medium")
+            add(T.Choice(ob, "resolution", list(RESOLUTION), self.resolution))
         self.count = self.var("count", "1")
         if self.COUNT: add(T.Choice(ob, "how many", ["1", "2", "4"], self.count))
         else: self.count.set("1")
@@ -566,7 +581,7 @@ class ImagePage(tk.Frame):
         if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
         self.style.trace_add("write", lambda *a: self._model_changed()); self.bind("<Map>", lambda e: e.widget is self and self.refresh(), add="+")
         if self.viewer is not None:                                                  # the picture box shows the shape and number of pictures to come
-            for v in (self.size, self.count): v.trace_add("write", lambda *a: self.viewer.clear())
+            for v in ((self.size,) if self.SIZE else ()) + (self.count,): v.trace_add("write", lambda *a: self.viewer.clear())
         self._model_changed(); self._tick()
 
     def _layout_opts(self):
@@ -613,10 +628,64 @@ class ImagePage(tk.Frame):
     def build_left(self, left): pass
     def build_extra(self, row): pass
     def model_key(self):
-        """the picture model this request will use"""
+        """the picture model this request will use: the one picked at the top (when this option lets you pick)"""
         if self.MODEL == "klein": return "klein"
         if self.MODEL == "guide": return "sd15"
-        return self.imaging.choice()
+        k = self._picked_key()
+        return k if k else self.imaging.choice()
+
+    # ---- the image model picker: the downloaded image models, weak to strong
+    def _own_model_pick(self):
+        """does this option let you pick the model? (some need one model: Prompt to Edit needs FLUX.2 Klein, the guides SD 1.5)"""
+        return self.MODEL == "paint" and type(self).model_key is ImagePage.model_key
+
+    def _downloaded(self):
+        im = self.imaging; out = []
+        for k in ("zimage", "klein", "sdxl", "sd15", "file"):
+            try:
+                if k == "file": here = any(f.lower().endswith((".safetensors", ".ckpt", ".gguf")) and f != im.SD15["file"] and "xl" not in f.lower()
+                                           for f in os.listdir(im.IMAGE)) if os.path.isdir(im.IMAGE) else False
+                elif k == "sdxl": here = os.path.exists(os.path.join(im.IMAGE, getattr(im, "SDXL", {}).get("file", "-")))
+                else: here = im.have(k)
+            except Exception: here = False
+            if here: out.append(k)
+        return out
+
+    def _label(self, k):
+        name = {"file": "Your own model"}.get(k) or self.imaging.MODELS.get(k, {}).get("label", k)
+        return f"{name} · {STRENGTH.get(k, '')}".strip(" ·")
+
+    def _model_names(self):
+        if not self._own_model_pick():
+            k = self.model_key(); return [self._label(k)]
+        return [self._label(k) for k in self._downloaded()]
+
+    def _picked_key(self):
+        v = self.model.get() if hasattr(self, "model") else ""
+        for k in ("zimage", "klein", "sdxl", "sd15", "file"):
+            if v.startswith(self._label(k).split(" · ")[0]) and k in self._downloaded(): return k
+        return ""
+
+    def _sync_model_pick(self):
+        names = self._model_names() or ["(none yet — Settings > Download Everything)"]
+        self.model_choice.choices = names
+        if self.model.get() not in names:
+            cur = self._label(self.model_key()) if self._own_model_pick() else names[0]
+            self.model.set(cur if cur in names else names[0])
+        self._fit_templates()
+
+    def _fit_templates(self):
+        """the templates that fit the picked model: the built-in style words fit every model; a trained template only its own"""
+        try:
+            import style_addons as SA
+            kind = self.imaging.kind(self.model_key()); entries = SA.entries()
+            names = [n for n in self.styles.names() if n not in entries or n in self.styles.BUILT_IN or SA.base_of(entries[n]) == kind]
+        except Exception: names = self.styles.names()
+        self.style_choice.choices = names
+        if self.style.get() not in names: self.style.set("None")
+
+    def _model_picked(self):
+        self._fit_templates(); self._model_changed()
     def needs(self):
         """[(download key, what it is)] this section still needs"""
         out = []; im = self.imaging; key = self.model_key()
@@ -634,8 +703,7 @@ class ImagePage(tk.Frame):
         return dict(size=self.size.get() if self.SIZE else "Square 1:1")
 
     def refresh(self):
-        self.style_choice.choices = self.styles.names()
-        if self.style.get() not in self.style_choice.choices: self.style.set("None")
+        self._sync_model_pick()
     def _model_changed(self):
         """LEAVE OUT and FOLLOW MY WORDS only matter for Stable Diffusion (Z-Image and FLUX.2 ignore them): hidden for the others"""
         try: dit = self.imaging.spec(self.model_key())["dit"]
@@ -718,7 +786,8 @@ class ImagePage(tk.Frame):
     def _remember(self, text):
         keep = dict(words=text, leave_out=self.leave_out.get(), count=self.count.get(), quality=self.quality.get(), follow=self.follow.get(),
                     seed=self.seed.get(), improve=bool(self.improve.get()), style=self.style.get(), upscale=self.upscale.get())
-        if self.SIZE: keep["size"] = self.size.get()
+        if self.SIZE: keep["size"] = self.size.get(); keep["resolution"] = self.resolution.get()
+        keep["model"] = self.model.get()
         if self.AMOUNT: keep["amount"] = self.amount.get()
         keep.update(self.remember_extra()); prefs.set(f"image_page:{self.TITLE}", keep)
     def remember_extra(self): return {}
@@ -734,6 +803,9 @@ class ImagePage(tk.Frame):
         except Problem as e: return T.banner(self.app, str(e))
         self._remember(text)
         key = kw.pop("model", None) or self.model_key()
+        if self.SIZE and isinstance(kw.get("size"), str) and RESOLUTION.get(self.resolution.get(), 1.0) != 1.0:   # Low / High: the model's size scaled
+            w, h = self.imaging.pixels(kw["size"], key); k = RESOLUTION[self.resolution.get()]
+            kw["size"] = (max(256, round(w * k / 64) * 64), max(256, round(h * k / 64) * 64))
         sty = self.styles.resolve(self.style.get(), kw.pop("words", text), key, editing=kw.pop("editing", False),
                                   use_refs=kw.pop("style_refs", True), allow_switch=kw.pop("allow_switch", self.MODEL != "guide"))
         refs = (list(kw.pop("refs", []) or []) + sty["refs"])[:4]; key = sty["model"]      # your own style model may bring FLUX.2 Klein + its pictures
@@ -898,15 +970,15 @@ def send_to(app, title, path):
 
 # ---------------------------------------------------------------- the sections
 class TextPage(ImagePage):
-    TITLE = "Text to Image"; IMPROVE = True; VIEWER = True
-    INTRO = "Type what you want and pick a style (Realistic photo, Cartoon, Anime, Black & white... or your own models from AI Training)."
+    TITLE = "Text to Image"; IMPROVE = True
+    INTRO = "Type what you want and pick a template (Realistic photo, Cartoon, Anime, Black & white... or your own models from AI Training)."
     def request(self, words): return dict(size=self.size.get())
 
 class OnePicture(ImagePage):
     """a section that starts from one picture"""
     SPLIT = True; SIZE = False; PIC_LABEL = "START PICTURE"
     def build_left(self, left):
-        self.slot = PicSlot(left, self.PIC_LABEL, w=260, h=230); self.slot.pack()
+        self.slot = PicSlot(left, self.PIC_LABEL, w=200, h=120); self.slot.pack()
         if self._mem.get("picture") and os.path.exists(self._mem["picture"]): self.after_idle(lambda: self.slot.set(self._mem["picture"]))
     def remember_extra(self): return dict(picture=self.slot.path or "")
     def receive(self, path): self.slot.set(path)
@@ -915,7 +987,7 @@ class OnePicture(ImagePage):
         return self.slot.image
 
 class PicturePage(OnePicture):
-    TITLE = "Image to Image"; WORDS = "WHAT TO CHANGE (optional with a style)"; WORDS_NEEDED = True
+    TITLE = "Image to Image"; WORDS = "WHAT TO CHANGE (optional with a template)"; WORDS_NEEDED = True
     INTRO = "Repaint a picture: say what to change and how much. 'Vary a little' makes close variations of it."
     AMOUNT = {"Vary a little": 0.3, "Some": 0.5, "A lot": 0.7, "Almost new": 0.85}; AMOUNT_DEFAULT = "Some"
     def request(self, words):
@@ -939,7 +1011,7 @@ class FusionPage(ImagePage):
     def build_left(self, left):
         g = _frame(left); g.pack(); self.slots = []
         for i in range(4):
-            s = PicSlot(g, f"PICTURE {i + 1}", w=130, h=100, latest=False, clear=True); s.grid(row=i // 2, column=i % 2, padx=4, pady=3); self.slots.append(s)
+            s = PicSlot(g, f"PICTURE {i + 1}", w=110, h=80, latest=False, clear=True); s.grid(row=0, column=i, padx=3, pady=2); self.slots.append(s)
     def receive(self, path):
         for s in self.slots:
             if s.image is None: return s.set(path)
@@ -957,12 +1029,12 @@ class CharacterPage(ImagePage):
     def build_left(self, left):
         r = _frame(left); r.pack()
         names = char_names() or ["—"]; self.char = tk.StringVar(value=self._mem.get("character") if self._mem.get("character") in names else names[0])
-        self.char_choice = ListChoice(r, "character", names, self.char); self.char_choice.pack(side="left")
-        r2 = _frame(left); r2.pack(pady=3)
+        self.char_choice = ListChoice(r, "character", names, self.char); self.char_choice.pack(side="left", padx=(0, 6))
+        r2 = r
         for text, cmd, kind in (("+ New", self.new_char, "normal"), ("Add a picture", self.add_pic, "normal"), ("Delete", self.del_char, "danger")):
             T.Button(r2, text, cmd, kind=kind, width=11).pack(side="left", padx=2)
         T.Text(left, "WHAT THEY LOOK LIKE (keeps them the same)", font=T.f(8), muted=True).pack(pady=(4, 0))
-        self.desc = T.Field(left, height=3, width=34); self.desc.pack()
+        self.desc = T.Field(left, height=2, width=50); self.desc.pack()
         self.desc.bind("<FocusOut>", lambda e: self._save_desc())
         self.thumbs = _frame(left); self.thumbs.pack(pady=4); self._tph = []
         self.char.trace_add("write", lambda *a: self._show_char()); self.after_idle(self._show_char)
@@ -1048,7 +1120,8 @@ class SketchPage(OnePicture):
     PIC_LABEL = "YOUR DRAWING"
     AMOUNT = {"Follow my lines exactly": "guide", "Keep my lines": 0.55, "Balanced": 0.7, "Free": 0.85}; AMOUNT_LABEL = "drawing"; AMOUNT_DEFAULT = "Keep my lines"
     def build_left(self, left):
-        super().build_left(left); T.Button(left, "Use my latest drawing", lambda: self.slot.latest(), width=22).pack(pady=4)
+        box = _frame(left); box.pack(); super().build_left(box); self.slot.pack_configure(side="left")
+        T.Button(box, "Use my latest drawing", lambda: self.slot.latest(), width=22).pack(side="left", padx=(10, 0))
     def model_key(self): return "sd15" if getattr(self, "amount", None) is not None and self.AMOUNT.get(self.amount.get()) == "guide" else self.imaging.choice()
     def needs(self):
         out = super().needs()
@@ -1067,10 +1140,11 @@ class PosePage(ImagePage):
     TITLE = "Pose to Image"; MODEL = "guide"; SPLIT = True; WORDS = "WHO AND WHERE: 'a knight in shining armour in a castle courtyard'"
     INTRO = "Pose the stick figure (pick a pose, drag the joints; right-drag moves it, the mouse wheel sizes it), then say who it is. Uses the pose guide."
     def build_left(self, left):
-        self.pad = PosePad(left); self.pad.pack()
-        r = _frame(left); r.pack(pady=3)
-        self.pose_name = tk.StringVar(value=self._mem.get("pose", "Standing")); ListChoice(r, "pose", list(POSES), self.pose_name).pack(side="left", padx=2)
-        T.Button(r, "Mirror", self.pad.mirror, width=7).pack(side="left", padx=2)
+        box = _frame(left); box.pack()                                       # the figure, its pose controls beside it
+        self.pad = PosePad(box, w=160, h=190); self.pad.pack(side="left")
+        r = _frame(box); r.pack(side="left", padx=(10, 0), anchor="n")
+        self.pose_name = tk.StringVar(value=self._mem.get("pose", "Standing")); ListChoice(r, "pose", list(POSES), self.pose_name).pack(anchor="w", pady=2)
+        T.Button(r, "Mirror", self.pad.mirror, width=7).pack(anchor="w", pady=2)
         self.pose_name.trace_add("write", lambda *a: self.pad.set_pose(self.pose_name.get()))
         if self._mem.get("pose_points") and len(self._mem["pose_points"]) == 18: self.pad.pts = [tuple(p) for p in self._mem["pose_points"]]
     def build_extra(self, row):
@@ -1090,16 +1164,17 @@ class InpaintPage(ImagePage):
     INTRO = "Brush over part of a picture and say what goes there (or nothing, to remove it). Extend the picture to paint past its edges."
     AMOUNT = {"Blend in": 0.75, "Repaint": 0.9, "Fully new": 1.0}; AMOUNT_LABEL = "new part"; AMOUNT_DEFAULT = "Repaint"
     def build_left(self, left):
-        self.pad = MaskPad(left); self.pad.pack()
-        r = _frame(left); r.pack(pady=(4, 0))
-        T.Button(r, "Choose a picture", self.choose, width=16).pack(side="left", padx=2)
-        T.Choice(r, "brush", list(BRUSH), self.pad.brush).pack(side="left", padx=2)
-        T.Button(r, "Clear brushing", lambda: self.pad.clear(), width=14).pack(side="left", padx=2)
-        r2 = _frame(left); r2.pack(pady=(3, 0)); T.Text(r2, "EXTEND:", font=T.f(8)).pack(side="left", padx=(0, 4))
-        for side in ("left", "right", "top", "bottom"):
-            T.Button(r2, side.capitalize(), lambda s=side: self._extend([s]), width=7).pack(side="left", padx=1)
-        T.Button(r2, "All", lambda: self._extend(["left", "right", "top", "bottom"]), width=5).pack(side="left", padx=1)
-        T.Text(left, "Left-drag: brush over what to change.   Right-drag: rub out.", muted=True, font=T.f(8)).pack()
+        box = _frame(left); box.pack()                                       # the brush pad, its controls beside it
+        self.pad = MaskPad(box, w=360, h=200); self.pad.pack(side="left")
+        r = _frame(box); r.pack(side="left", padx=(10, 0), anchor="n")
+        T.Button(r, "Choose a picture", self.choose, width=16).pack(anchor="w", pady=1)
+        T.Choice(r, "brush", list(BRUSH), self.pad.brush).pack(anchor="w", pady=1)
+        T.Button(r, "Clear brushing", lambda: self.pad.clear(), width=16).pack(anchor="w", pady=1)
+        e1 = _frame(r); e1.pack(anchor="w", pady=(4, 0)); e2 = _frame(r); e2.pack(anchor="w", pady=(2, 0))
+        T.Text(e1, "EXTEND", font=T.f(8)).pack(side="left", padx=(0, 4))
+        for i, (side, lab) in enumerate((("left", "Left"), ("right", "Right"), ("top", "Top"), ("bottom", "Bottom"))):
+            T.Button(e1 if i < 2 else e2, lab, lambda s=side: self._extend([s]), width=6).pack(side="left", padx=1)
+        T.Button(e2, "All", lambda: self._extend(["left", "right", "top", "bottom"]), width=4).pack(side="left", padx=1)
         self.orig = None
     def build_extra(self, row):
         self.detail = self.var("detail", "Brushed part only (sharper)")
@@ -1138,6 +1213,7 @@ class InpaintPage(ImagePage):
         self._progress_done()
         if saved:                                                                # the result goes back into the pad: keep fixing it
             self.receive(saved[-1]); self.msg.configure(text="DONE — BRUSH AGAIN TO KEEP FIXING IT")
+            if self.viewer is not None: self.viewer.show_results(saved)
             return T.banner(self.app, "PAINTED — saved to your Images folder; it's in the brush pad to keep fixing", "success")
         super()._show(saved)
 
@@ -1150,7 +1226,7 @@ class PromptRefPage(ImagePage):
     def build_left(self, left):
         g = _frame(left); g.pack(); self.slots = []
         for i in range(4):
-            s = PicSlot(g, f"REFERENCE {i + 1}", w=130, h=100, latest=False, clear=True); s.grid(row=i // 2, column=i % 2, padx=4, pady=3); self.slots.append(s)
+            s = PicSlot(g, f"REFERENCE {i + 1}", w=110, h=80, latest=False, clear=True); s.grid(row=0, column=i, padx=3, pady=2); self.slots.append(s)
     def build_extra(self, row):
         self.take = self.var("take", "Style and feel"); T.Choice(row, "take", list(self.TAKE), self.take).pack(side="left", padx=3)
     def remember_extra(self): return dict(take=self.take.get())

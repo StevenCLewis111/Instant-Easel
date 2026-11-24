@@ -107,7 +107,7 @@ AREAS = {
   steps=[
    ("Goal", [C("What is this image model for?", "built", "Saved with the model. A focused model (only cartoons, only shoes) learns faster and better.",
                "focus", ["Cartoons", "Fashion", "Nature", "Portraits", "Animals", "Products", "Architecture", "Anything"], "Anything"),
-             I("Image model it trains on top of", "built", "Chosen in Settings > AI Models. Train add-ons for Z-Image Turbo (on a rented graphics card) so they work with the Style Add-ons.", "base")]),
+             I("Image model it trains on top of", "built", "Chosen in Settings > AI Models. Train add-ons for Z-Image Turbo (on a rented graphics card) so they work as Templates.", "base")]),
    ("Collect", [B("The things it learns", "built", "One entry per thing: its name, category, subcategory and what it looks like. Look it up fills them in; Search finds its pictures.", "subjects"),
                 B("Search Google Images", "built", "Type the word; every picture found is labelled with that word.", "scraper"),
                 B("Add my own pictures", "built", "Your own photos or art. Your files are never changed or moved.", "add_pictures"),

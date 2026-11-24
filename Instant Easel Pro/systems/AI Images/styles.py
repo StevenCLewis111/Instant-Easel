@@ -82,7 +82,7 @@ BUILT_IN = {
 YOURS = "Your model: "
 
 def _addon_styles():
-    """styles you added an add-on for under a new name (Settings > AI Images > Style add-ons)"""
+    """styles you added an add-on for under a new name (Settings > Templates)"""
     try:
         import style_addons as SA; return [s for s in SA.entries() if s not in BUILT_IN]
     except Exception: return []

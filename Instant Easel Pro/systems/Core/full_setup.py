@@ -6,7 +6,7 @@ full_setup.py: Download Everything. One download that puts every part of Pro on 
     text models        every core model and every coding model, in every size: the ones this PC runs now, the smaller ones, and the
                        big ones for a bigger graphics card later (the app picks the size that suits the PC it's on)
     picture models     Z-Image Turbo and FLUX.2 Klein in every size, Stable Diffusion 1.5 and XL
-    picture add-ons    the upscalers and the guides (pose, outline, depth, scribble), and every style add-on
+    picture add-ons    the upscalers and the guides (pose, outline, depth, scribble), and every template
     the video model    Wan 2.2 5B for the AI Videos tab
     code checkers      Node.js, TypeScript, GCC (C / C++), Java and Go, so AI Coding can check its code (Windows)
 
@@ -169,7 +169,7 @@ def items():
         add("Picture add-ons", a["label"][0].upper() + a["label"][1:], a["size"], lambda k=key: imaging.addon(k),
             lambda r, u=url, a=a: imaging._get(u, os.path.join(imaging.ADDONS, a["file"]), a["label"], a["size"], r))
     for style in style_addons.CATALOG:
-        add("Style add-ons", f"{style} style", 0.17, lambda s=style: style_addons.installed(s), lambda r, s=style: style_addons.fetch(s, r))
+        add("Templates", f"{style} template", 0.17, lambda s=style: style_addons.installed(s), lambda r, s=style: style_addons.fetch(s, r))
 
     for quant in ("Q8_0", "Q4_K_M"):
         add("Video model", f"Wan 2.2 5B ({quant})", imaging.WAN["sizes"][quant], lambda q=quant: imaging.have_file(imaging.VDIR, "wan2.2", q),

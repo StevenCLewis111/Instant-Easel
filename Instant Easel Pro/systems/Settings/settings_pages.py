@@ -185,30 +185,30 @@ class AIModelsPage(SettingsPage):
         self.pc_note = T.Text(self.body, warn + f"Checked {pc.get('when', '')}. "
                               + ("" if catalog.can("AI Videos") else "Making videos needs a 6 GB+ graphics card with 24 GB of PC memory (or 32 GB of PC memory), so the AI Videos tab is hidden."),
                               muted=True, font=T.f(9)); self.pc_note.configure(wraplength=900); self.pc_note.pack(anchor="w", padx=(30, 0))
-        head("CORE TEXT MODEL  (every AI tab uses it)")
+        head("BASE MODEL  (the language brain: every tab uses it to understand you — it isn't picked in the tabs)")
         cores = self._choices("core", custom=("custom-core", "Your own model file (core)"))
         cur = brain.core_key() if brain.core_key() in cores else self._default("core", cores)
-        self._row_with("CORE", "built", "core_model", cores, cur, download=self._dl_text, add=lambda: self._add_text("custom-core", "core_model"), speed="speed_text")
+        self._row_with("BASE", "built", "core_model", cores, cur, download=self._dl_text, add=lambda: self._add_text("custom-core", "core_model"), speed="speed_text")
         r = _frame(self.body); r.pack(anchor="w", padx=(30, 0), pady=(2, 0))
         T.Button(r, "Start", self._start, width=7).pack(side="left", padx=(0, 4)); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
         self.state = T.Text(r, "", font=T.f(10)); self.state.pack(side="left", padx=10)
         bars = _frame(self.body); bars.pack(anchor="w", padx=(30, 0))                          # real bars while the models download
         self.text_bar = T.ProgressBar(bars, width=420); self.img_bar = T.ProgressBar(bars, width=420, color="#335bb0")
-        head("EACH TAB'S MODEL")
+        head("EACH AREA'S MODELS  (the tabs pick between the downloaded ones, weak to strong)")
         chat = {"core": ("Core text model (recommended)", "AI Chat talks to the core model.")}
         if brain.model_file("custom-AI_Chat"): chat["custom-AI_Chat"] = ("Your own model file", "A .gguf text model you added with Add manually.")
         self._row_with("AI CHAT", "built", "model_AI_Chat", chat, prefs.get("model_AI_Chat") if prefs.get("model_AI_Chat") in chat else "core",
                        download=lambda k: self._dl_text(brain.core_key()), add=lambda: self._add_text("custom-AI_Chat", "model_AI_Chat"))
         coding = self._choices("AI Coding", custom=("custom-AI_Coding", "Your own model file"))
         coding["core"] = ("Core text model", "The core model writes and explains code too.")
-        self._row_with("AI CODING", "built", "model_AI_Coding", coding, prefs.get("model_AI_Coding") if prefs.get("model_AI_Coding") in coding else self._default("AI Coding", coding),
+        self._row_with("CODING", "built", "model_AI_Coding", coding, prefs.get("model_AI_Coding") if prefs.get("model_AI_Coding") in coding else self._default("AI Coding", coding),
                        download=lambda k: self._dl_text(brain.core_key() if k == "core" else k), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"))
         images = self._choices("AI Images", custom=("file", "Your own model file"))
-        self._row_with("AI IMAGES", "built", "model_AI_Images", images, imaging.choice() if imaging.choice() in images else self._default("AI Images", images),
+        self._row_with("IMAGE", "built", "model_AI_Images", images, imaging.choice() if imaging.choice() in images else self._default("AI Images", images),
                        download=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image")
         edits = self._choices("Image edits")
         if edits:
-            self._row_with("IMAGE EDITS", "built", "model_image_edits", edits, next(iter(edits)), download=self._dl_images, add=self._add_image, folder=imaging.KDIR)
+            self._row_with("EDITS", "built", "model_image_edits", edits, next(iter(edits)), download=self._dl_images, add=self._add_image, folder=imaging.KDIR)
         else: T.Text(self.body, "IMAGE EDITS: FLUX.2 Klein needs 16 GB of PC memory, so Prompt to Edit and the reference sections can't run on this PC.", muted=True, font=T.f(9)).pack(anchor="w")
         T.Text(self.body, "SPEED: Fast puts everything on the graphics card. Balanced lets the engine fit the model to the card's free memory. Safe keeps "
                "more in PC memory: slower, but big models fit. Before every run the app checks the free memory and steps down by itself (Fast → "
@@ -216,7 +216,7 @@ class AIModelsPage(SettingsPage):
                wraplength=900).pack(anchor="w", pady=(8, 0))
         if catalog.can("AI Videos"):
             videos = self._choices("AI Videos", custom=("file", "Your own model file"))
-            self._row_with("AI VIDEOS", "built", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
+            self._row_with("VIDEO", "built", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
                            download=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
         self._tick()
 
@@ -224,7 +224,9 @@ class AIModelsPage(SettingsPage):
     def _choices(self, area, custom=None):
         out = {}; best = self.cat.best(area)
         for e in self.cat.options(area):
-            tag = " (best for your PC)" if best and e["key"] == best["key"] else ""
+            lad = [x["key"] for x in self.cat.ladder(area)]; i = lad.index(e["key"]) if e["key"] in lad else 0
+            power = " · strong" if i == 0 else (" · weak" if i == len(lad) - 1 and len(lad) > 1 else " · medium")
+            tag = power + (" (best for your PC)" if best and e["key"] == best["key"] else "")
             _, size = self.cat.variant(e)
             how = "Add it with Add manually. " if e.get("manual") else f"About {size:g} GB to download. "
             out[e["key"]] = (e["label"] + tag, how + self.cat.describe_fit(e)[0].upper() + self.cat.describe_fit(e)[1:] + ". " + e["note"])
@@ -408,10 +410,10 @@ class AIImagesPage(SettingsPage):
         self._addons(); T.banner(self.app, "REMOVED", "success")
 
 
-# ---------------------------------------------------------------- Style Add-ons
+# ---------------------------------------------------------------- Templates (style add-ons)
 class DownloadEverythingPage(SettingsPage):
     TITLE = "Download Everything"; NOTE = ("One download that puts every part of Pro on your AI drive: both engines, every text and coding model in every size, "
-                                           "every picture model, the upscalers, guides and style add-ons, the video model, and the code checkers for AI Coding. "
+                                           "every picture model, the upscalers, guides and templates, the video and audio models, and the code checkers for AI Coding. "
                                            "Models too big for this PC are included, ready for when you upgrade; the app always runs the size that suits the PC "
                                            "it's on. What's already here is skipped, and a stopped download carries on where it left off.")
     def build(self):
@@ -488,7 +490,7 @@ class DownloadEverythingPage(SettingsPage):
 
 
 class StyleAddonsPage(SettingsPage):
-    TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained, one per style. Each is made for one picture model and is used "
+    TITLE = "Templates"; NOTE = ("Templates: ready-made styles other people trained, one per style. Each is made for one image or video model and is used "
                                      "whenever that model paints in its style, while it's switched on; without one, the style's own words do the job. "
                                      "Add your own (a character, a thing, a look) from a link, for any model Pro runs: it shows up as a style everywhere.")
     def build(self):
@@ -509,7 +511,7 @@ class StyleAddonsPage(SettingsPage):
                        font=T.f(10)).pack(anchor="w", pady=(4, 2))
             r = _frame(self.sa_rows); r.pack(fill="x", anchor="w", pady=2); here = SA.installed(style)
             v = tk.BooleanVar(value=SA.enabled(style))
-            T.Toggle(r, v, command=lambda s=style, v=v: (SA.set_enabled(s, v.get()), T.banner(self.app, f"{s.upper()} ADD-ON {'ON' if v.get() else 'OFF'}", "success"))).pack(side="left", padx=(0, 6))
+            T.Toggle(r, v, command=lambda s=style, v=v: (SA.set_enabled(s, v.get()), T.banner(self.app, f"{s.upper()} TEMPLATE {'ON' if v.get() else 'OFF'}", "success"))).pack(side="left", padx=(0, 6))
             T.Text(r, ("✓ " if here else "   ") + style.upper(), font=T.f(9), width=30, anchor="w").pack(side="left")
             if here: T.Button(r, "Remove", lambda s=style: (SA.remove(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
             else: T.Button(r, "Download", lambda s=style: self._sa_get(s), width=10).pack(side="left", padx=4)
@@ -517,31 +519,31 @@ class StyleAddonsPage(SettingsPage):
             T.Text(r, e.get("note", ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
     def _sa_get(self, style, quiet=False):
         import style_addons as SA; q = self.app.q
-        def done(ok, m): q.put(lambda: (T.banner(self.app, ("ADD-ON READY — " if ok else "ADD-ON DOWNLOAD FAILED — ") + m, "success" if ok else "error"),
+        def done(ok, m): q.put(lambda: (T.banner(self.app, ("TEMPLATE READY — " if ok else "TEMPLATE DOWNLOAD FAILED — ") + m, "success" if ok else "error"),
                                         self.winfo_exists() and self._sa_list(), self._sa_next()))
         SA.download(style, on_done=done)
-        if not quiet: T.banner(self.app, f"DOWNLOADING THE {style.upper()} ADD-ON", "success")
+        if not quiet: T.banner(self.app, f"DOWNLOADING THE {style.upper()} TEMPLATE", "success")
     def _sa_all(self):
         import style_addons as SA
         self._sa_queue = [s for s in SA.entries() if not SA.installed(s)]
         if not self._sa_queue: return T.banner(self.app, "YOU HAVE THEM ALL", "success")
-        T.banner(self.app, f"DOWNLOADING {len(self._sa_queue)} STYLE ADD-ONS — one after another", "success"); self._sa_next()
+        T.banner(self.app, f"DOWNLOADING {len(self._sa_queue)} TEMPLATES — one after another", "success"); self._sa_next()
     def _sa_next(self):
         if getattr(self, "_sa_queue", None): self._sa_get(self._sa_queue.pop(0), quiet=True)
     def _sa_add(self):
         """your own pick: a Hugging Face link, which style it's for, its trigger words"""
         import style_addons as SA, styles
-        win = tk.Toplevel(self.app); win.title("Add a style add-on"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
+        win = tk.Toplevel(self.app); win.title("Add a template"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
         f = _frame(win); f.pack(padx=16, pady=14)
         vals = {}
-        for key, label, default in (("link", "Link to the add-on", ""), ("style", "Style name (an existing one, or a new one)", ""),
+        for key, label, default in (("link", "Link to the template (a LoRA)", ""), ("style", "Style name (an existing one, or a new one)", ""),
                                     ("trigger", "Trigger words (from its page; blank if none)", ""), ("weight", "Strength (0.6 gentle - 1.0 strong)", "0.9")):
             T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(6, 2)); v = tk.StringVar(value=default); vals[key] = v
             tk.Entry(f, textvariable=v, width=52, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat").pack(anchor="w")
         T.Text(f, "MADE FOR", font=T.f(9)).pack(anchor="w", pady=(8, 2))
         names = ["Read it from the page"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
         T.Choice(f, "", names, base).pack(anchor="w")
-        T.Text(f, "An add-on only works with the model it was made for: its page says which ('base model'). When the page says it, "
+        T.Text(f, "A template only works with the model it was made for: its page says which ('base model'). When the page says it, "
                   "that's read for you; otherwise pick it (Z-Image Turbo if you don't).", muted=True, font=T.f(8), wraplength=420, justify="left").pack(anchor="w", pady=(4, 0))
         T.Text(f, "SITE KEY  (only for files that need you signed in: an API key from your account settings on that site)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
         key = tk.StringVar(value=prefs.get("civitai_key") or "")
