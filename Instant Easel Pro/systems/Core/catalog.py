@@ -43,7 +43,8 @@ LADDERS = {
   dict(key="coder7b", label="Qwen2.5 Coder 7B", repo="bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", size=4.7, layers=99,
        runs=[dict(vram=6), dict(vram=4, ram=16), dict(ram=16)], variants=[(10, "Q8_0", 8.1), (0, "Q4_K_M", 4.7)], note="Made for code."),
   dict(key="coder3b", label="Qwen2.5 Coder 3B", repo="bartowski/Qwen2.5-Coder-3B-Instruct-GGUF", size=1.9, layers=99,
-       runs=[dict(vram=3), dict(ram=8)], variants=[(6, "Q8_0", 3.3), (0, "Q4_K_M", 1.9)], note="A small coding model for smaller PCs."),
+       runs=[dict(vram=3), dict(ram=8)], variants=[(6, "Q8_0", 3.3), (0, "Q4_K_M", 1.9)], note="A small coding model for smaller PCs. Licence: non-commercial only (Qwen Research License) - fine for personal use, not for selling.",
+       licence="non-commercial"),
  ],
  "AI Images": [
   dict(key="zimage", label="Z-Image Turbo", kind="zimage", size=8.0, runs=[dict(vram=10, ram=16), dict(vram=4, ram=16)],

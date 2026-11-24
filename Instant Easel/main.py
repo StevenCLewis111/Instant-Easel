@@ -240,7 +240,7 @@ class InstantEasel(tk.Tk):
         self.after_idle(lambda: self.body.bind("<Configure>", lambda e: T.defer(self, "mascots", 60, self._size_mascots), add="+"))   # the line under the header moved: stand on it again
 
         built = {"Draw": draw_studio.DrawStudio, "Theme": ThemePage, "About": AboutPage, "General": SP.GeneralPage, "Display": SP.DisplayPage,
-                 "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage, **EP.page_classes()}
+                 "Drawing AI": SP.DrawingAIPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage, **EP.page_classes()}
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
         for i, (m, _, tools) in enumerate(features.MENUS):

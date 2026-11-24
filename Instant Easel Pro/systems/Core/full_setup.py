@@ -1,6 +1,7 @@
 """
 full_setup.py: Download Everything. One download that puts every part of Pro on the AI drive (Settings > AI Storage):
 
+    drawing AI         the Drawing tab's smart tools (Select Subject, Object Selection, Magic Remove, AI Upscale)
     the engines        llama.cpp (text) and stable-diffusion.cpp (pictures)
     text models        every core model and every coding model, in every size: the ones this PC runs now, the smaller ones, and the
                        big ones for a bigger graphics card later (the app picks the size that suits the PC it's on)
@@ -125,6 +126,10 @@ def items():
     import brain, catalog, imaging, style_addons
     out = []
     add = lambda *a, **k: out.append(Item(*a, **k))
+    import ai_cutout as AI
+    for kind, (name, _) in AI.KINDS.items():
+        size = sum((AI.MODELS[k][1] or AI.MODELS[k][5]) for k in AI.NEEDS[kind]) / 1e9
+        add("Drawing AI", name, size, lambda k=kind: AI.have(k), lambda r, k=kind, n=name: AI.ensure(k, lambda d, t: r(f"Downloading the {n} model", d / t if t else 0)))
     add("Engines", "Text engine (llama.cpp)", 0.1, brain.server_exe, lambda r: brain._install_runtime(report=r))
     add("Engines", "Picture engine (stable-diffusion.cpp)", 0.1, imaging.engine_exe, lambda r: imaging._install_runtime(report=r))
 
@@ -132,7 +137,8 @@ def items():
         for e in catalog.LADDERS[area]:
             for min_v, quant, gb in e.get("variants", []):
                 add(group, f"{e['label']} ({quant})", gb, lambda k=e["key"], q=quant: brain.have_variant(k, q),
-                    lambda r, k=e["key"], q=quant: brain._install_model(k, q, report=r, strict=True), note=_note(e, min_v))
+                    lambda r, k=e["key"], q=quant: brain._install_model(k, q, report=r, strict=True),
+                    note="; ".join(x for x in (_note(e, min_v), "non-commercial licence" if e.get("licence") == "non-commercial" else "") if x))
 
     for key, folder, prefix, plan_of, cfg in (("zimage", imaging.ZDIR, "z_image", imaging.zimage_download_plan, imaging.ZIMAGE),
                                               ("klein", imaging.KDIR, "flux2-klein", imaging.klein_download_plan, imaging.KLEIN)):

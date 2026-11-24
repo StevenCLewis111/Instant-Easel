@@ -149,6 +149,7 @@ MENUS = [
    dict(name="Style Add-ons", status="built", order=0, desc="Ready-made style add-ons, each switched on or off, and your own from a link, for any picture model.", options=[]),
    dict(name="Updates", status="built", order=0, desc="Check GitHub for a newer version; opt-in check at startup.", options=["Version", "Check now", "Check when the app opens (off by default)"]),
    dict(name="Code Languages", status="built", order=0, desc="Switch AI Coding's languages on or off; each one's profile, library and checker.", options=[]),
+   dict(name="Drawing AI", status="built", order=0, desc="Download the Drawing tab's AI models (any or all), remove them, or add your own.", options=[]),
    dict(name="Pen & Tablet", status="built", order=0, desc="A drawing tablet's pen pressure: on / off, how it feels, its eraser end; a tester.", options=[]),
    dict(name="Shortcuts", status="built", order=0, desc="Every keyboard shortcut.", options=["Anywhere", "Text to Image", "Image to Image", "Draw studio", "Editing"]),
    dict(name="Backup & Reset", status="built", order=0, desc="Export / import settings, theme, words and learned style; reset all settings.", options=["Export backup", "Import backup", "Reset all settings"]),

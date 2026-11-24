@@ -41,14 +41,15 @@ _dir = None
 
 
 def model_dir():
-    """the models built into the app if they're there; otherwise my-models/cutout next to the app (downloaded ones)"""
+    """where the downloaded models are kept: my-models/cutout (Pro: on the AI drive). Nothing ships with the app: each is downloaded
+    from Settings > Drawing AI, or when its tool is first used, or you add your own file"""
     global _dir
     if _dir is None:
         try:
             import paths
-            inside = os.path.join(paths.APP, "my-models", "cutout")             # (packed inside the .exe by the build)
+            inside = os.path.join(paths.APP, "my-models", "cutout")             # (an older build had them packed inside the program)
             if all(os.path.exists(os.path.join(inside, MODELS[k][0])) for k in MODELS): _dir = inside; return _dir
-            _dir = paths.data("my-models", "cutout")                            # (with the app's other downloaded models; never uploaded)
+            _dir = paths.ai("my-models", "cutout") if hasattr(paths, "ai") else paths.data("my-models", "cutout")   # (Pro: on the AI drive)
         except Exception: _dir = os.path.join(os.path.expanduser("~"), ".instant_easel_models")
     os.makedirs(_dir, exist_ok=True); return _dir
 
@@ -62,7 +63,7 @@ def _path(key): return os.path.join(model_dir(), MODELS[key][0])
 
 def _ok(k):
     p = _path(k)
-    return os.path.exists(p) and (os.path.getsize(p) == MODELS[k][1] if MODELS[k][1] else os.path.getsize(p) > 1000)
+    return os.path.exists(p) and os.path.getsize(p) > 1000
 
 
 def have(kind):
@@ -102,6 +103,35 @@ def ensure(kind, progress=None, cancel=None):
             import esr_convert
             esr_convert.build(esr_convert.load_pth(part), dst + ".tmp"); os.replace(dst + ".tmp", dst); os.remove(part)
         else: os.replace(part, dst)
+
+
+# what each one is, for Settings > Drawing AI
+KINDS = {"subject": ("Select Subject / Remove Background", "ISNet: finds the main subject (Apache-2.0)"),
+         "sam": ("Object and Quick Selection", "Segment Anything ViT-B: outlines what you click (Apache-2.0)"),
+         "remove": ("Magic Remove / Expand", "LaMa: fills in where something was removed (Apache-2.0)"),
+         "upscale": ("AI Upscale", "Real-ESRGAN general x4v3: sharper bigger pictures (BSD-3-Clause)")}
+
+
+def remove(kind):
+    """delete this tool's downloaded files (they can be downloaded again)"""
+    for k in NEEDS[kind]:
+        _sessions.pop(k, None)
+        try: os.remove(_path(k))
+        except OSError: pass
+
+
+def file_names(kind): return [MODELS[k][0] for k in NEEDS[kind]]
+
+
+def add_own(kind, files):
+    """use your own model file(s) for this tool: they're copied in under the names the tool looks for (ONNX models that take
+    the same inputs). Segment Anything needs its encoder and decoder, in that order"""
+    import shutil
+    keys = NEEDS[kind]
+    if len(files) != len(keys): raise RuntimeError(f"this needs {len(keys)} file(s): " + ", ".join(MODELS[k][0] for k in keys))
+    for k, f in zip(keys, files):
+        if not f.lower().endswith(".onnx"): raise RuntimeError(f"{os.path.basename(f)} isn't an .onnx model")
+        _sessions.pop(k, None); shutil.copy(f, _path(k))
 
 
 _sessions = {}

@@ -183,6 +183,66 @@ class BackupPage(SettingsPage):
 
 
 # ---------------------------------------------------------------- Pen & Tablet
+class DrawingAIPage(SettingsPage):
+    TITLE = "Drawing AI"; NOTE = ("The AI models the Drawing tab's smart tools use. None come with the app: download any of them here (or all at once), "
+                                  "or the tool asks the first time you use it. Add your own uses an ONNX model file of yours instead. "
+                                  "They run on your PC only: no picture is ever sent anywhere.")
+    def build(self):
+        import threading
+        top = _frame(self.body); top.pack(anchor="w", pady=(2, 8))
+        T.Button(top, "Download all", self._da_all, width=14).pack(side="left")
+        if hasattr(T, "ProgressBar"): self.da_bar = T.ProgressBar(self.body, width=600, height=20)
+        else:                                                                    # (no bar widget here: a line that says how far it is)
+            self.da_bar = T.Text(self.body, "", font=T.f(9))
+            self.da_bar.set = lambda frac, text: self.da_bar.configure(text=text.upper() + (f"  {frac * 100:.0f}%" if frac else ""))
+        self.da_rows = _frame(self.body); self.da_rows.pack(anchor="w", fill="x"); self._da_list()
+
+    def _da_list(self):
+        import ai_cutout as AI
+        for w in self.da_rows.winfo_children(): w.destroy()
+        for kind, (name, what) in AI.KINDS.items():
+            r = _frame(self.da_rows); r.pack(fill="x", anchor="w", pady=3); here = AI.have(kind)
+            T.Text(r, ("✓ " if here else "   ") + name.upper(), font=T.f(9), width=38, anchor="w").pack(side="left")
+            if here: T.Button(r, "Remove", lambda k=kind: (AI.remove(k), self._da_list()), kind="danger", width=8).pack(side="left", padx=4)
+            else: T.Button(r, f"Download ({AI.download_size(kind) / 1e6:.0f} MB)", lambda k=kind: self._da_get([k]), width=18).pack(side="left", padx=4)
+            T.Button(r, "Add your own…", lambda k=kind: self._da_own(k), width=14).pack(side="left", padx=4)
+            T.Text(r, what, muted=True, font=T.f(8)).pack(side="left", padx=6)
+
+    def _da_all(self):
+        import ai_cutout as AI
+        todo = [k for k in AI.KINDS if not AI.have(k)]
+        if not todo: return T.banner(self.app, "YOU HAVE THEM ALL", "success")
+        self._da_get(todo)
+
+    def _da_get(self, kinds):
+        import ai_cutout as AI, threading
+        q = self.app.q; self.da_bar.pack(before=self.da_rows, anchor="w", pady=(0, 6))
+        def work():
+            done = []
+            for k in kinds:
+                name = AI.KINDS[k][0]
+                try:
+                    AI.ensure(k, lambda d, t, n=name: q.put(lambda: self.da_bar.winfo_exists() and self.da_bar.set(d / t if t else None, f"Downloading the {n} model…")))
+                    done.append(name)
+                except Exception as e: q.put(lambda e=e, n=name: T.banner(self.app, f"{n.upper()} DIDN'T DOWNLOAD — {e}", "error"))
+            def end():
+                if self.winfo_exists(): self.da_bar.pack_forget(); self._da_list()
+                if done: T.banner(self.app, "READY — " + ", ".join(done), "success")
+            q.put(end)
+        threading.Thread(target=work, daemon=True, name="drawing ai download").start()
+
+    def _da_own(self, kind):
+        import ai_cutout as AI
+        names = AI.file_names(kind); files = []
+        for n in names:
+            f = filedialog.askopenfilename(parent=self.app, title=f"Your model to use as {n}", filetypes=[("ONNX models", "*.onnx"), ("All files", "*.*")])
+            if not f: return
+            files.append(f)
+        try: AI.add_own(kind, files); T.banner(self.app, f"ADDED — {AI.KINDS[kind][0]} uses your model now", "success")
+        except Exception as e: T.banner(self.app, f"COULDN'T ADD IT — {e}", "error")
+        self._da_list()
+
+
 class PenPage(SettingsPage):
     TITLE = "Pen & Tablet"; NOTE = ("A drawing tablet or pen screen (Wacom, XP-Pen, Huion, Surface Pen...) draws with its real pressure: press lightly "
                                     "for thin, light lines, harder for full ones (each brush's Pr. Size / Pr. Opac say how much). A mouse is left alone; "

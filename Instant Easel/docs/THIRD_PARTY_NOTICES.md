@@ -8,8 +8,10 @@ Instant Easel is free. It uses these open-source parts; thank you to their autho
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) (Microsoft) | runs the cut-out AI models on your PC | MIT |
 | [NumPy](https://numpy.org), [SciPy](https://scipy.org) | the painting engine's maths | BSD-3-Clause |
 | [Pillow](https://python-pillow.org) | opening and saving pictures | MIT-CMU (HPND) |
+| [ONNX](https://github.com/onnx/onnx) | turns the upscaler's download into the model it runs | Apache-2.0 |
 
-## Downloaded the first time a cut-out tool needs them (not included in the app)
+## AI models: downloaded from Settings > Drawing AI, or the first time a tool needs them (none ship with the app)
+All of these allow sharing (Apache-2.0 and BSD-3-Clause), and each can be swapped for a model file of your own.
 They're fetched from the [rembg](https://github.com/danielgatis/rembg) project's release files (MIT), checked against a
 SHA-256 hash, and kept in `my-models/cutout/` on your PC. They run on your PC only: no picture is ever sent anywhere.
 
