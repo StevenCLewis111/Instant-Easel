@@ -393,6 +393,84 @@ class AIImagesPage(SettingsPage):
 
 
 # ---------------------------------------------------------------- Style Add-ons
+class DownloadEverythingPage(SettingsPage):
+    TITLE = "Download Everything"; NOTE = ("One download that puts every part of Pro on your AI drive: both engines, every text and coding model in every size, "
+                                           "every picture model, the upscalers, guides and style add-ons, the video model, and the code checkers for AI Coding. "
+                                           "Models too big for this PC are included, ready for when you upgrade; the app always runs the size that suits the PC "
+                                           "it's on. What's already here is skipped, and a stopped download carries on where it left off.")
+    def build(self):
+        top = _frame(self.body); top.pack(fill="x", anchor="w", pady=(2, 6))
+        self.go = skin.button(T.Button(top, "Download Everything", self._de_start, width=22)); self.go.pack(side="left")
+        self.halt = T.Button(top, "Stop", self._de_stop, kind="danger", width=8); self.halt.pack(side="left", padx=8)
+        T.Button(top, "Check again", self._de_list, width=12).pack(side="left")
+        self.sum = T.Text(self.body, "", font=T.f(10)); self.sum.pack(anchor="w", pady=(2, 2))
+        self.bar = T.ProgressBar(self.body, width=820, height=22); self.bar.pack(anchor="w", fill="x", pady=(2, 2))
+        self.now = T.Text(self.body, "", muted=True, font=T.f(8)); self.now.pack(anchor="w")
+        box = T.ScrollBox(self.body); box.pack(fill="both", expand=True, pady=(8, 0))
+        self.list = tk.Text(box.body, wrap="none", relief="flat", font=T.f(9), padx=10, pady=6, highlightthickness=0, cursor="arrow", height=18)
+        box.attach(self.list); self.list.pack(side="left", fill="both", expand=True)
+        self.list.bind("<Key>", lambda e: None if (e.state & 4 and e.keysym.lower() in ("c", "a")) else "break")
+        self._de_style(); T.on_change(self._de_style)
+        self.after(150, self._de_list); self._de_tick()
+
+    def _de_style(self):
+        self.list.configure(bg=T.PALETTE["field"], fg="white")
+        self.list.tag_configure("group", foreground=T.PALETTE["title"], font=T.f(10)); self.list.tag_configure("muted", foreground=T.PALETTE["muted"])
+        self.list.tag_configure("ok", foreground="#5cd65c"); self.list.tag_configure("bad", foreground="#ff6b6b")
+
+    def _de_list(self):
+        """what's here and what isn't, by group (worked out in the background: it looks at a lot of files)"""
+        import full_setup as FS, storage
+        q = self.app.q
+        def work():
+            try:
+                its = FS.items(); rows = [(i.group, i.label, i.gb, i.here(), i.note) for i in its]
+                free, _ = storage.drive_free()
+                q.put(lambda: self.winfo_exists() and self._de_show(rows, free))
+            except Exception as e: q.put(lambda e=e: self.winfo_exists() and self.sum.configure(text=f"Couldn't read the list: {e}"))
+        threading.Thread(target=work, daemon=True, name="download everything list").start()
+
+    def _de_show(self, rows, free):
+        import full_setup as FS
+        failed = dict(FS.state.get("failed") or [])
+        self.list.delete("1.0", "end"); group = None
+        for g, label, gb, here, note in rows:
+            if g != group:
+                group = g; self.list.insert("end", ("\n" if self.list.index("end-1c") != "1.0" else "") + g.upper() + "\n", "group")
+            mark, tag = ("✓ ", "ok") if here else (("✗ ", "bad") if label in failed else ("· ", "muted"))
+            self.list.insert("end", "  " + mark, tag); self.list.insert("end", f"{label:<46}")
+            self.list.insert("end", f"{gb:6.1f} GB" + (f"   {note}" if note else "") + ("   " + failed[label][:90] if label in failed and not here else "") + "\n", "muted")
+        left = sum(r[2] for r in rows if not r[3]); total = sum(r[2] for r in rows); n = sum(1 for r in rows if not r[3])
+        self.sum.configure(text=(f"{n} to download: {left:.0f} GB of {total:.0f} GB in all" if n else f"Everything is here ({total:.0f} GB)")
+                                + (f"   ·   the AI drive has {free / 1e9:.0f} GB free" if free else ""))
+
+    def _de_start(self):
+        import full_setup as FS
+        q = self.app.q
+        def done(finished, failed):
+            def show():
+                msg = f"DOWNLOAD EVERYTHING — {len(finished)} downloaded" + (f", {len(failed)} didn't work (listed in red; tried again next time)" if failed else "")
+                T.banner(self.app, msg, "error" if failed and not finished else "success")
+                if self.winfo_exists(): self._de_list()
+            q.put(show)
+        if FS.start(on_done=done): T.banner(self.app, "DOWNLOADING EVERYTHING — one thing at a time; you can keep using the app", "success")
+        else: T.banner(self.app, "IT'S ALREADY DOWNLOADING")
+
+    def _de_stop(self):
+        import full_setup as FS
+        if FS.state["running"]: FS.stop(); T.banner(self.app, "STOPPING — the file in progress carries on from there next time")
+
+    def _de_tick(self):
+        if not self.winfo_exists(): return
+        import full_setup as FS
+        st = FS.state
+        if st["running"]:
+            self.bar.set(st["fraction"] or None, st["text"][:90]); self.now.configure(text=st["item"])
+        elif st["total"] or st["failed"]:
+            self.bar.set(1.0 if not st["stop"] else st["fraction"], st["text"]); self.now.configure(text=f"{st['done']} of {st['total']} done")
+        self.after(500, self._de_tick)
+
+
 class StyleAddonsPage(SettingsPage):
     TITLE = "Style Add-ons"; NOTE = ("Ready-made style add-ons other people trained for Z-Image Turbo, one per style. With one here, that style uses it "
                                      "whenever Z-Image paints; without one, the style's own words do the job. Each is about 100-300 MB. "

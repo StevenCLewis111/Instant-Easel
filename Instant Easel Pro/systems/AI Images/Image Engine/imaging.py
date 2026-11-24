@@ -94,18 +94,42 @@ def choice():
     except Exception: pass
     return "sd15"
 
-def _parts(folder, want):
-    """{part: path} when every part is there (want: part -> (name start, endings)), else None"""
+def _quant_in(f, q): return bool(re.search(rf"[-_.]{re.escape(q.lower())}(_[ms])?\.gguf$", f.lower()))
+
+def _prefer(hits, quants):
+    """of several sizes of one part, the first wanted size that's here (else the first file)"""
+    for q in quants or ():
+        got = [h for h in hits if _quant_in(h, q)]
+        if got: return got[0]
+    return hits[0]
+
+def _parts(folder, want, prefer=None):
+    """{part: path} when every part is there (want: part -> (name start, endings)), else None. prefer: part -> [sizes, best first]
+    (Download Everything keeps every size side by side; this picks the one that suits this PC)"""
     if not os.path.isdir(folder): return None
     fs = sorted(os.listdir(folder)); out = {}
     for part, (start, ends) in want.items():
         hit = [f for f in fs if f.lower().startswith(start) and f.lower().endswith(ends)]
         if not hit: return None
-        out[part] = os.path.join(folder, hit[0])
+        out[part] = os.path.join(folder, _prefer(hit, (prefer or {}).get(part)))
     return out
 
-def zimage_parts(): return _parts(ZDIR, {"diffusion": ("z_image", (".gguf",)), "llm": ("qwen3", (".gguf",)), "vae": ("ae", (".safetensors", ".sft"))})
-def klein_parts(): return _parts(KDIR, {"diffusion": ("flux2-klein", (".gguf",)), "llm": ("qwen3", (".gguf",)), "vae": ("flux2-vae", (".safetensors",))})
+def _size_order(key):
+    """this model's sizes for this PC: the suited one, then smaller, then bigger"""
+    try:
+        import catalog
+        e = catalog.entry("AI Images", key) or catalog.entry("Image edits", key)
+        order = [q for _, q, _ in e.get("variants", [])]; want = catalog.variant(e)[0]
+        i = order.index(want) if want in order else 0
+        return order[i:] + order[:i][::-1]
+    except Exception: return []
+
+def _prefs_for(key):
+    order = _size_order(key); llm = ["Q8_0", "Q4_K_M"] if order[:1] == ["Q8_0"] else ["Q4_K_M", "Q8_0"]
+    return {"diffusion": order, "llm": llm}
+
+def zimage_parts(): return _parts(ZDIR, {"diffusion": ("z_image", (".gguf",)), "llm": ("qwen3", (".gguf",)), "vae": ("ae", (".safetensors", ".sft"))}, _prefs_for("zimage"))
+def klein_parts(): return _parts(KDIR, {"diffusion": ("flux2-klein", (".gguf",)), "llm": ("qwen3", (".gguf",)), "vae": ("flux2-vae", (".safetensors",))}, _prefs_for("klein"))
 
 def model_file(key=None):
     """the Stable Diffusion model file for key (sd15 / sdxl / file; the chosen one by default)"""
@@ -190,10 +214,10 @@ def _runtime_asset():
     else: wants = ("Linux-Ubuntu-24.04-x86_64-vulkan", "Linux-Ubuntu-24.04-x86_64.zip", "Linux")
     return brain.github_files("leejet/stable-diffusion.cpp", [(wants, True)])[0]
 
-def _install_runtime():
+def _install_runtime(report=None):
     import brain
     name, url, size = _runtime_asset(); os.makedirs(os.path.dirname(RUNTIME), exist_ok=True); arc = os.path.join(os.path.dirname(RUNTIME), name)
-    brain._fetch(url, arc, "the image engine", size, report=lambda t, f: _set("downloading", t, f))
+    brain._fetch(url, arc, "the image engine", size, report=report or (lambda t, f: _set("downloading", t, f)))
     new = RUNTIME + ".new"; shutil.rmtree(new, ignore_errors=True); os.makedirs(new)
     if name.endswith(".zip"):
         with zipfile.ZipFile(arc) as z: z.extractall(new)
@@ -204,11 +228,11 @@ def _install_runtime():
     if not exe: raise RuntimeError("the image engine downloaded but sd-cli wasn't in it")
     if sys.platform != "win32": os.chmod(exe, 0o755)
 
-def _get(url, dest, label, size_gb):
+def _get(url, dest, label, size_gb, report=None):
     import brain
     if os.path.exists(dest): return
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    brain._fetch(url, dest, label, size_gb * 1e9, report=lambda t, f: _set("downloading", t, f))
+    brain._fetch(url, dest, label, size_gb * 1e9, report=report or (lambda t, f: _set("downloading", t, f)))
 
 def _hf_files(repo):
     import brain
@@ -223,24 +247,26 @@ def _hf_pick(repo, quant, files=None):
         if hit: return hit[0]
     raise RuntimeError(f"{repo} has no {quant} file")
 
-def _variant(key):
+def _variant(key, quant=None):
     import catalog
-    e = catalog.entry("AI Images", key) or catalog.entry("Image edits", key); return catalog.variant(e)
+    e = catalog.entry("AI Images", key) or catalog.entry("Image edits", key)
+    if quant: return next(((q, g) for _, q, g in e.get("variants", []) if q == quant), (quant, e.get("size", 0)))
+    return catalog.variant(e)
 
-def zimage_download_plan():
-    """[(label, repo, size, local name, GB)] for this PC: the picture model's size suits the card"""
-    quant, total = _variant("zimage"); llm_q = "Q8_0" if quant == "Q8_0" else "Q4_K_M"
+def zimage_download_plan(quant=None):
+    """[(label, repo, size, local name, GB)] for this PC (the picture model's size suits the card), or for the size given"""
+    quant, total = _variant("zimage", quant); llm_q = "Q8_0" if quant == "Q8_0" else "Q4_K_M"
     return [("Z-Image Turbo", ZIMAGE["repo"], quant, None, total - (4.3 if llm_q == "Q8_0" else 2.5) - 0.33),
             ("its text reader (Qwen3 4B)", ZIMAGE["llm_repo"], llm_q, None, 4.3 if llm_q == "Q8_0" else 2.5),
             ("its picture decoder", ZIMAGE["vae_repo"], None, "ae.safetensors", 0.33)]
 
-def klein_download_plan():
-    quant, total = _variant("klein"); llm_q = "Q8_0" if quant == "Q8_0" else "Q4_K_M"
+def klein_download_plan(quant=None):
+    quant, total = _variant("klein", quant); llm_q = "Q8_0" if quant == "Q8_0" else "Q4_K_M"
     return [("FLUX.2 Klein 4B", KLEIN["repos"], quant, None, total - (4.3 if llm_q == "Q8_0" else 2.5) - 0.34),
             ("its text reader (Qwen3 4B)", KLEIN["llm_repo"], llm_q, None, 4.3 if llm_q == "Q8_0" else 2.5),
             ("its picture decoder", KLEIN["vae_repo"], None, "flux2-vae.safetensors", 0.34)]
 
-def _install_parts(folder, plan, vae_file, llm_repo, model_prefix):
+def _install_parts(folder, plan, vae_file, llm_repo, model_prefix, report=None):
     os.makedirs(folder, exist_ok=True)
     for label, repo, quant, local, size in plan:
         if quant:
@@ -253,7 +279,43 @@ def _install_parts(folder, plan, vae_file, llm_repo, model_prefix):
         name = local or os.path.basename(f)
         if repo == llm_repo: name = name if name.lower().startswith("qwen3") else "qwen3-" + name               # found by its name later
         elif quant and not name.lower().startswith(model_prefix): name = model_prefix + "-" + name
-        _get(f"https://huggingface.co/{repo}/resolve/main/{f}", os.path.join(folder, name), label, size)
+        _get(f"https://huggingface.co/{repo}/resolve/main/{f}", os.path.join(folder, name), label, size, report)
+
+SDXL = dict(label="Stable Diffusion XL", repo="stabilityai/stable-diffusion-xl-base-1.0", file="sd_xl_base_1.0.safetensors", size=6.94)
+VDIR = os.path.join(ROOT, "video", "wan22")
+WAN = dict(label="Wan 2.2 5B (video)", repo="QuantStack/Wan2.2-TI2V-5B-GGUF", t5_repo="city96/umt5-xxl-encoder-gguf",
+           sizes={"Q8_0": 5.4, "Q4_K_M": 3.4}, t5_sizes={"Q8_0": 6.0, "Q4_K_M": 3.7}, vae_size=1.4)
+
+def install_sdxl(report=None):
+    _get(f"https://huggingface.co/{SDXL['repo']}/resolve/main/{SDXL['file']}", os.path.join(IMAGE, SDXL["file"]), SDXL["label"], SDXL["size"], report)
+
+def video_parts():
+    """{part: path} of the video model's files (Wan 2.2: its video model, text reader and decoder), or None. Video making is
+    still being built; these are ready for it"""
+    q = ["Q8_0", "Q4_K_M"] if _vram() >= 16 else ["Q4_K_M", "Q8_0"]
+    return _parts(VDIR, {"diffusion": ("wan2.2", (".gguf",)), "t5": ("umt5", (".gguf",)), "vae": ("wan2.2_vae", (".safetensors",))},
+                  {"diffusion": q, "t5": q})
+
+def _vram():
+    try: import hardware; return float(hardware.pc().get("vram_gb") or 0)
+    except Exception: return 0
+
+def install_video_part(part, quant=None, report=None):
+    """one of the video model's files: 'diffusion' / 't5' (in a size) or 'vae'"""
+    os.makedirs(VDIR, exist_ok=True)
+    if part == "vae":
+        if any(f.lower().startswith("wan2.2_vae") for f in os.listdir(VDIR)): return
+        f = next(x for x in _hf_files(WAN["repo"]) if "vae" in x.lower() and x.lower().endswith(".safetensors"))
+        return _get(f"https://huggingface.co/{WAN['repo']}/resolve/main/{f}", os.path.join(VDIR, "wan2.2_vae.safetensors"), "the video decoder", WAN["vae_size"], report)
+    repo = WAN["repo"] if part == "diffusion" else WAN["t5_repo"]; f = _hf_pick(repo, quant)
+    name = os.path.basename(f); name = name if name.lower().startswith(("wan2.2", "umt5")) else ("wan2.2-" if part == "diffusion" else "umt5-") + name
+    size = (WAN["sizes"] if part == "diffusion" else WAN["t5_sizes"]).get(quant, 4)
+    _get(f"https://huggingface.co/{repo}/resolve/main/{f}", os.path.join(VDIR, name), f"{WAN['label']} {'' if part == 'diffusion' else 'text reader '}({quant})", size, report)
+
+def have_file(folder, start, quant=None, ends=(".gguf",)):
+    """is a file of this part (in this size) in folder?"""
+    if not os.path.isdir(folder): return False
+    return any(f.lower().startswith(start) and f.lower().endswith(ends) and (not quant or _quant_in(f, quant)) for f in os.listdir(folder))
 
 def download_size(key=None):
     key = key or choice()

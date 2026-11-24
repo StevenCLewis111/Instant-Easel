@@ -77,12 +77,29 @@ def tab_model(tab):
 # ---------------------------------------------------------------- what's on disk
 def _model_dir(key): return os.path.join(TEXT, key)
 
-def model_file(key):
-    d = _model_dir(key)
+def _quant_of(f):
+    m = re.search(r"[-_.]((?:IQ|Q)\d[\w]*?|F16|BF16)\.gguf$", f, re.I); return m.group(1).upper() if m else ""
+
+def model_files(key):
+    """{quant: path} of every size of this model that's downloaded (Download Everything keeps them all)"""
+    d = _model_dir(key); out = {}
     if os.path.isdir(d):
         for f in sorted(os.listdir(d)):
-            if f.lower().endswith(".gguf") and "mmproj" not in f.lower(): return os.path.join(d, f)
-    return None
+            if f.lower().endswith(".gguf") and "mmproj" not in f.lower(): out.setdefault(_quant_of(f) or f, os.path.join(d, f))
+    return out
+
+def model_file(key):
+    """the file this PC should run: the size that suits its card (catalog.variant), else the next smaller one here, else any"""
+    fs = model_files(key)
+    if not fs: return None
+    if len(fs) == 1: return next(iter(fs.values()))
+    e = catalog.entry("core", key) or catalog.entry("AI Coding", key)
+    if e and e.get("variants"):
+        order = [q for _, q, _ in e["variants"]]; want = catalog.variant(e)[0]
+        i = order.index(want) if want in order else 0
+        for q in order[i:] + order[:i][::-1]:                                  # the suited one, then smaller, then bigger
+            if q and q.upper() in fs: return fs[q.upper()]
+    return fs[sorted(fs)[0]]
 
 def server_exe():
     if not os.path.isdir(RUNTIME): return None
@@ -204,12 +221,12 @@ def unpack(arc, dest):
     else:
         with tarfile.open(arc) as t: t.extractall(dest, filter="data")
 
-def _install_runtime():
+def _install_runtime(report=None):
     files = _runtime_files(); os.makedirs(os.path.join(ROOT, "runtime"), exist_ok=True)
     new = RUNTIME + ".new"; shutil.rmtree(new, ignore_errors=True); os.makedirs(new)
     for i, (name, url, size) in enumerate(files):
         arc = os.path.join(ROOT, "runtime", name)
-        _fetch(url, arc, f"the engine (llama.cpp){f', part {i + 1} of {len(files)}' if len(files) > 1 else ''}", size)
+        _fetch(url, arc, f"the engine (llama.cpp){f', part {i + 1} of {len(files)}' if len(files) > 1 else ''}", size, report=report)
         unpack(arc, new); os.remove(arc)
     exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
     if not any(exe_name in fs for _, _, fs in os.walk(new)):
@@ -237,15 +254,18 @@ def download_size(key):
     e = catalog.entry("core", key) or catalog.entry("AI Coding", key)
     return catalog.variant(e)[1] * 1e9 if e else (spec(key) or {}).get("size", 0)
 
-def _install_model(key):
+def have_variant(key, quant): return quant.upper() in model_files(key)
+
+def _install_model(key, quant=None, report=None, strict=False):
     s = spec(key); e = catalog.entry("core", key) or catalog.entry("AI Coding", key)
-    quant = s.get("quant") or (catalog.variant(e)[0] if e else "Q4_K_M")
+    quant = quant or s.get("quant") or (catalog.variant(e)[0] if e else "Q4_K_M")
     try: f = _pick_file(s["repo"], quant)
     except RuntimeError:
-        if quant == "Q4_K_M": raise
+        if quant == "Q4_K_M" or strict: raise
         f = _pick_file(s["repo"], "Q4_K_M")                                    # that size isn't there: the usual one
     d = _model_dir(key); os.makedirs(d, exist_ok=True)
-    _fetch(f"https://huggingface.co/{s['repo']}/resolve/main/{f}", os.path.join(d, os.path.basename(f)), s["label"], download_size(key))
+    size = next((g for _, q, g in (e or {}).get("variants", []) if q == quant), 0) * 1e9 or download_size(key)
+    _fetch(f"https://huggingface.co/{s['repo']}/resolve/main/{f}", os.path.join(d, os.path.basename(f)), f"{s['label']} ({quant})", size, report=report)
     with open(os.path.join(d, "source.json"), "w") as fh: json.dump(dict(repo=s["repo"], file=f, when=datetime.datetime.now().isoformat(timespec="seconds")), fh)
 
 def download(on_done=None, key=None):

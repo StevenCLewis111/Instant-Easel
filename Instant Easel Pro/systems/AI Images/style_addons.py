@@ -95,6 +95,16 @@ def _repo_of(link):
     raise RuntimeError("that isn't a Hugging Face link or 'owner/name'")
 
 
+def fetch(style, report=None):
+    """fetch this style's add-on now (on this thread)"""
+    import imaging
+    e = entries().get(style)
+    if not e: raise RuntimeError(f"no add-on is listed for {style}")
+    name, size = _pick_file(e["repo"], e.get("hint", ""))
+    dest = os.path.join(folder(), slug(style) + ".safetensors")
+    imaging._get(f"https://huggingface.co/{e['repo']}/resolve/main/{name}", dest, f"the {style} add-on", max(size, 5e7) / 1e9, report)
+
+
 def download(style, on_done=None):
     """fetch this style's add-on in the background; on_done(ok, message)"""
     import imaging
@@ -102,11 +112,7 @@ def download(style, on_done=None):
     if not e: on_done and on_done(False, f"no add-on is listed for {style}"); return
     def work():
         try:
-            name, size = _pick_file(e["repo"], e.get("hint", ""))
-            dest = os.path.join(folder(), slug(style) + ".safetensors")
-            url = f"https://huggingface.co/{e['repo']}/resolve/main/{name}"
-            imaging._get(url, dest, f"the {style} add-on", max(size, 5e7) / 1e9)
-            imaging._set(None, ""); on_done and on_done(True, f"the {style} add-on is ready — it switches on when Z-Image paints in {style}")
+            fetch(style); imaging._set(None, ""); on_done and on_done(True, f"the {style} add-on is ready — it switches on when Z-Image paints in {style}")
         except Exception as ex:
             imaging._set(None, ""); on_done and on_done(False, str(ex))
     threading.Thread(target=work, daemon=True, name="style add-on " + style).start()

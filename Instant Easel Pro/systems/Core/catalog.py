@@ -55,7 +55,7 @@ LADDERS = {
        note="The editor: changes pictures from words and uses up to 4 reference pictures (people, things, style). Also paints, "
             "very fast (4 steps). Your own style models use it with their pictures."),
   dict(key="sdxl", label="Stable Diffusion XL", kind="sd", size=6.9, manual=True, runs=[dict(vram=8)],
-       note="Sharper than 1.5. Add the model file with Add manually."),
+       note="Sharper than 1.5. Add the model file with Add manually, or get it with Settings > Download Everything."),
   dict(key="sd15", label="Stable Diffusion 1.5", kind="sd", size=2.1, runs=[dict(vram=2), dict(ram=8)],
        note="Quick, small and the base your own image models (Cartoon, Fashion...) train on."),
  ],

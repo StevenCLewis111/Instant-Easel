@@ -131,6 +131,10 @@ def _places():
     installers put them"""
     import glob
     out = [os.path.join(paths.ai_root(), "Code Tools")]
+    for d, subs, fs in os.walk(out[0]) if os.path.isdir(out[0]) else ():      # (each tool unpacks into its own folder there)
+        if d.count(os.sep) - out[0].count(os.sep) >= 3: subs[:] = []
+        subs[:] = [x for x in subs if x not in ("node_modules", "include", "lib", "share", "doc", "src")]
+        if os.path.basename(d).lower() == "bin" or any(f.lower() in ("node.exe", "node") for f in fs): out.append(d)
     if sys.platform == "win32":
         env = os.environ.get
         pf = [env("ProgramFiles", r"C:\Program Files"), env("ProgramFiles(x86)", r"C:\Program Files (x86)")]
@@ -186,8 +190,12 @@ def checker(lang):
     c = LANGS.get(lang, {}).get("check")
     if c in ("python", "json"): return c
     for cmd in c or []:
-        if _which(cmd[0]): return cmd
+        if _which(cmd[0]) and all(os.path.exists(_tools(x)) for x in cmd[1:] if "{tools}" in x): return cmd
     return None
+
+
+def tools_dir(): return os.path.join(paths.ai_root(), "Code Tools")
+def _tools(x): return x.replace("{tools}", tools_dir()).replace("/", os.sep) if "{tools}" in x else x
 
 
 def check(code, lang):
@@ -210,7 +218,7 @@ def check(code, lang):
             m = re.search(r"public\s+(?:final\s+)?class\s+(\w+)", code); name = (m.group(1) if m else "Answer") + ".java"
         f = os.path.join(d, name)
         with open(f, "w", encoding="utf-8") as fh: fh.write(code)
-        cmd = [_which(how[0])] + [x.replace("{f}", f).replace("{d}", d) for x in how[1:]]
+        cmd = [_which(how[0])] + [_tools(x).replace("{f}", f).replace("{d}", d) for x in how[1:]]
         kw = dict(capture_output=True, text=True, timeout=30, cwd=d)
         if sys.platform == "win32": kw["creationflags"] = 0x08000000                    # (no console window flashing up)
         r = subprocess.run(cmd, **kw)
