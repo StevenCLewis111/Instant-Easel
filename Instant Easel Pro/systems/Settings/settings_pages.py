@@ -183,7 +183,7 @@ class AIModelsPage(SettingsPage):
         T.Button(r, "Check again", self._rescan, width=12).pack(side="left", padx=10)
         pc = hardware.pc(); warn = f"Held back right now: {pc['throttled']}. AI runs slower until it's plugged in / on a full-power plan. " if pc.get("throttled") else ""
         self.pc_note = T.Text(self.body, warn + f"Checked {pc.get('when', '')}. "
-                              + ("" if catalog.can("AI Videos") else "Making videos needs a graphics card with 16 GB or more, so the AI Videos tab is hidden."),
+                              + ("" if catalog.can("AI Videos") else "Making videos needs a 6 GB+ graphics card with 24 GB of PC memory (or 32 GB of PC memory), so the AI Videos tab is hidden."),
                               muted=True, font=T.f(9)); self.pc_note.configure(wraplength=900); self.pc_note.pack(anchor="w", padx=(30, 0))
         head("CORE TEXT MODEL  (every AI tab uses it)")
         cores = self._choices("core", custom=("custom-core", "Your own model file (core)"))
@@ -216,7 +216,7 @@ class AIModelsPage(SettingsPage):
                wraplength=900).pack(anchor="w", pady=(8, 0))
         if catalog.can("AI Videos"):
             videos = self._choices("AI Videos", custom=("file", "Your own model file"))
-            self._row_with("AI VIDEOS", "planned", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
+            self._row_with("AI VIDEOS", "built", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
                            download=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
         self._tick()
 
@@ -322,13 +322,25 @@ class AIModelsPage(SettingsPage):
         if not LA.fits(self.app, "Shared models", [p]): return
         self.imaging.add_file(p, on_done=self._done("INSTALLED")); self._select("model_AI_Images", "file")
     def _dl_video(self, key):
-        T.popup(self.app, "VIDEO MAKING ISN'T BUILT YET", "Your PC can run the video model, but making videos is still being built.\n"
-                "Nothing was downloaded. When it's ready, this button will install it.", (("OK", "normal"),))
+        import video_engine as V
+        q = self.app.q
+        def work():
+            try:
+                V.download()
+                q.put(lambda: T.banner(self.app, "VIDEO MODEL READY — make videos in the AI Videos tab", "success"))
+            except Exception as e: q.put(lambda e=e: T.banner(self.app, f"VIDEO DOWNLOAD DIDN'T FINISH — {e}", "error"))
+        threading.Thread(target=work, daemon=True, name="video download").start()
+        T.banner(self.app, "DOWNLOADING THE VIDEO MODEL — in the size that suits this PC", "success")
     def _add_video(self):
-        p = filedialog.askopenfilename(parent=self.app, title="Choose a video model file", filetypes=[("Video models", "*.safetensors *.gguf"), ("All files", "*.*")])
+        import imaging
+        p = filedialog.askopenfilename(parent=self.app, title="Choose a Wan 2.2 5B file (model .gguf, umt5 text reader .gguf or wan2.2_vae)",
+                                       filetypes=[("Video model files", "*.safetensors *.gguf"), ("All files", "*.*")])
         if not p: return
-        d = os.path.join(self.brain.ROOT, "video"); os.makedirs(d, exist_ok=True); shutil.copy(p, d); self._select("model_AI_Videos", "file")
-        T.banner(self.app, f"KEPT — {os.path.basename(p)} is ready for when video making is built", "success")
+        os.makedirs(imaging.VDIR, exist_ok=True); n = os.path.basename(p); low = n.lower()
+        if not low.startswith(("wan2.2", "umt5")): n = ("umt5-" if "umt5" in low or "t5" in low else "wan2.2_vae-" if "vae" in low else "wan2.2-") + n
+        if "vae" in low and low.endswith(".safetensors"): n = "wan2.2_vae.safetensors"
+        shutil.copy(p, os.path.join(imaging.VDIR, n)); self._select("model_AI_Videos", "wan22")
+        T.banner(self.app, f"ADDED — {n}", "success")
 
     def _switch(self, key):
         prefs.set("core_model", key)

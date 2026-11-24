@@ -6,7 +6,7 @@ full_setup.py: Download Everything. One download that puts every part of Pro on 
                        big ones for a bigger graphics card later (the app picks the size that suits the PC it's on)
     picture models     Z-Image Turbo and FLUX.2 Klein in every size, Stable Diffusion 1.5 and XL
     picture add-ons    the upscalers and the guides (pose, outline, depth, scribble), and every style add-on
-    the video model    Wan 2.2 5B (video making is still being built: these are ready for it)
+    the video model    Wan 2.2 5B for the AI Videos tab
     code checkers      Node.js, TypeScript, GCC (C / C++), Java and Go, so AI Coding can check its code (Windows)
 
 What's already here is skipped. A file that stops halfway carries on from where it stopped next time. One thing failing doesn't stop
@@ -167,7 +167,7 @@ def items():
 
     for quant in ("Q8_0", "Q4_K_M"):
         add("Video model", f"Wan 2.2 5B ({quant})", imaging.WAN["sizes"][quant], lambda q=quant: imaging.have_file(imaging.VDIR, "wan2.2", q),
-            lambda r, q=quant: imaging.install_video_part("diffusion", q, r), note="for a 16 GB+ card; video making is still being built")
+            lambda r, q=quant: imaging.install_video_part("diffusion", q, r), note=("for Fast on a 16 GB+ card" if quant == "Q8_0" else ""))
         add("Video model", f"Wan 2.2: text reader ({quant})", imaging.WAN["t5_sizes"][quant], lambda q=quant: imaging.have_file(imaging.VDIR, "umt5", q),
             lambda r, q=quant: imaging.install_video_part("t5", q, r))
     add("Video model", "Wan 2.2: video decoder", imaging.WAN["vae_size"],

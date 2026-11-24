@@ -290,8 +290,7 @@ def install_sdxl(report=None):
     _get(f"https://huggingface.co/{SDXL['repo']}/resolve/main/{SDXL['file']}", os.path.join(IMAGE, SDXL["file"]), SDXL["label"], SDXL["size"], report)
 
 def video_parts():
-    """{part: path} of the video model's files (Wan 2.2: its video model, text reader and decoder), or None. Video making is
-    still being built; these are ready for it"""
+    """{part: path} of the video model's files (Wan 2.2: its video model, text reader and decoder), or None (AI Videos uses them)"""
     q = ["Q8_0", "Q4_K_M"] if _vram() >= 16 else ["Q4_K_M", "Q8_0"]
     return _parts(VDIR, {"diffusion": ("wan2.2", (".gguf",)), "t5": ("umt5", (".gguf",)), "vae": ("wan2.2_vae", (".safetensors",))},
                   {"diffusion": q, "t5": q})
@@ -305,8 +304,9 @@ def install_video_part(part, quant=None, report=None):
     os.makedirs(VDIR, exist_ok=True)
     if part == "vae":
         if any(f.lower().startswith("wan2.2_vae") for f in os.listdir(VDIR)): return
-        f = next(x for x in _hf_files(WAN["repo"]) if "vae" in x.lower() and x.lower().endswith(".safetensors"))
-        return _get(f"https://huggingface.co/{WAN['repo']}/resolve/main/{f}", os.path.join(VDIR, "wan2.2_vae.safetensors"), "the video decoder", WAN["vae_size"], report)
+        try: url = f"https://huggingface.co/{WAN['repo']}/resolve/main/" + next(x for x in _hf_files(WAN["repo"]) if "vae" in x.lower() and x.lower().endswith(".safetensors"))
+        except Exception: url = "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors"
+        return _get(url, os.path.join(VDIR, "wan2.2_vae.safetensors"), "the video decoder", WAN["vae_size"], report)
     repo = WAN["repo"] if part == "diffusion" else WAN["t5_repo"]; f = _hf_pick(repo, quant)
     name = os.path.basename(f); name = name if name.lower().startswith(("wan2.2", "umt5")) else ("wan2.2-" if part == "diffusion" else "umt5-") + name
     size = (WAN["sizes"] if part == "diffusion" else WAN["t5_sizes"]).get(quant, 4)

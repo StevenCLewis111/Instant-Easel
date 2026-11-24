@@ -66,8 +66,9 @@ LADDERS = {
             "very fast (4 steps). Your own style models use it with their pictures."),
  ],
  "AI Videos": [
-  dict(key="wan22", label="Wan 2.2 5B", kind="video", size=10.0, manual=True, runs=[dict(vram=16, ram=32)],
-       note="The best free video model that fits a home PC. Video making is still being built."),
+  dict(key="wan22", label="Wan 2.2 5B", kind="video", size=10.0, runs=[dict(vram=16, ram=32), dict(vram=6, ram=24), dict(ram=32)],
+       variants=[(16, "Q8_0", 12.8), (0, "Q4_K_M", 8.5)],
+       note="The best free video model that fits a home PC. Fast on a 16 GB+ card; Slow on smaller cards (the model waits in PC memory)."),
  ],
 }
 TABS = {"AI Images": "AI Images", "Image edits": "Image edits", "AI Videos": "AI Videos", "AI Coding": "AI Coding", "AI Chat": "core", "core": "core"}

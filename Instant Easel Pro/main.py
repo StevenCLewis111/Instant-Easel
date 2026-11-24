@@ -18,7 +18,7 @@ import paths
 from PIL import Image, ImageTk
 import theme as T
 import paint_window, features, edit as E, edit_pages as EP, draw_studio, prefs, settings_pages as SP
-import crash, skin, ui_art as UA, learning_areas as LA, image_pages as IP, workspace_page as WP
+import crash, skin, ui_art as UA, learning_areas as LA, image_pages as IP, workspace_page as WP, video_pages as VP
 
 APP_NAME = "Instant Easel Pro"
 DESIGN = (1560, 920)
@@ -253,7 +253,7 @@ class InstantEasel(tk.Tk):
         self.after_idle(lambda: self.body.bind("<Configure>", lambda e: T.defer(self, "mascots", 60, self._size_mascots), add="+"))   # the line under the header moved: stand on it again
 
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), **WP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
-                 **EP.page_classes(), "About": AboutPage,
+                 **EP.page_classes(), **VP.page_classes(), "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
                  "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Style Add-ons": SP.StyleAddonsPage, "Download Everything": SP.DownloadEverythingPage, "Code Languages": SP.CodeLanguagesPage, "Updates": SP.UpdatesPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))

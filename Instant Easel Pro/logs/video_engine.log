@@ -1,0 +1,158 @@
+
+=== 2026-11-24T09:52:29 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpzeehf3zq/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpzeehf3zq/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpzeehf3zq/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "a fox runs through snow" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 25 --steps 12 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 576656756 -o /tmp/tmpzeehf3zq/my-models/runtime/video-work/20261124-095229/video.avi --fps 24 --diffusion-fa -t 8
+  |====| 1/12 - 1.00s/it
+  |====| 2/12 - 1.00s/it
+  |====| 3/12 - 1.00s/it
+  |====| 4/12 - 1.00s/it
+  |====| 5/12 - 1.00s/it
+  |====| 6/12 - 1.00s/it
+  |====| 7/12 - 1.00s/it
+  |====| 8/12 - 1.00s/it
+  |====| 9/12 - 1.00s/it
+  |====| 10/12 - 1.00s/it
+  |====| 11/12 - 1.00s/it
+  |====| 12/12 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:52:31 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpzeehf3zq/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpzeehf3zq/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpzeehf3zq/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "waves roll in" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 49 --steps 20 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 2126648150 -o /tmp/tmpzeehf3zq/my-models/runtime/video-work/20261124-095231/video.avi --fps 24 -i /tmp/tmpzeehf3zq/my-models/runtime/video-work/20261124-095231/start.png --diffusion-fa -t 8
+ggml_vulkan: Device memory allocation failed: out of memory
+
+=== 2026-11-24T09:52:31 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpzeehf3zq/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpzeehf3zq/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpzeehf3zq/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "waves roll in" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 49 --steps 20 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 2126648150 -o /tmp/tmpzeehf3zq/my-models/runtime/video-work/20261124-095231/video.avi --fps 24 -i /tmp/tmpzeehf3zq/my-models/runtime/video-work/20261124-095231/start.png --diffusion-fa --offload-to-cpu --clip-on-cpu --vae-conv-direct -t 8
+  |====| 1/20 - 1.00s/it
+  |====| 2/20 - 1.00s/it
+  |====| 3/20 - 1.00s/it
+  |====| 4/20 - 1.00s/it
+  |====| 5/20 - 1.00s/it
+  |====| 6/20 - 1.00s/it
+  |====| 7/20 - 1.00s/it
+  |====| 8/20 - 1.00s/it
+  |====| 9/20 - 1.00s/it
+  |====| 10/20 - 1.00s/it
+  |====| 11/20 - 1.00s/it
+  |====| 12/20 - 1.00s/it
+  |====| 13/20 - 1.00s/it
+  |====| 14/20 - 1.00s/it
+  |====| 15/20 - 1.00s/it
+  |====| 16/20 - 1.00s/it
+  |====| 17/20 - 1.00s/it
+  |====| 18/20 - 1.00s/it
+  |====| 19/20 - 1.00s/it
+  |====| 20/20 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:54:20 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpsovtd5ha/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpsovtd5ha/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpsovtd5ha/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "a fox runs through snow" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 25 --steps 12 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 1812262077 -o /tmp/tmpsovtd5ha/my-models/runtime/video-work/20261124-095420/video.avi --fps 24 --diffusion-fa --offload-to-cpu --clip-on-cpu --vae-conv-direct -t 8
+  |====| 1/12 - 1.00s/it
+  |====| 2/12 - 1.00s/it
+  |====| 3/12 - 1.00s/it
+  |====| 4/12 - 1.00s/it
+  |====| 5/12 - 1.00s/it
+  |====| 6/12 - 1.00s/it
+  |====| 7/12 - 1.00s/it
+  |====| 8/12 - 1.00s/it
+  |====| 9/12 - 1.00s/it
+  |====| 10/12 - 1.00s/it
+  |====| 11/12 - 1.00s/it
+  |====| 12/12 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:54:21 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpsovtd5ha/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpsovtd5ha/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpsovtd5ha/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "waves roll in" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 49 --steps 20 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 544387787 -o /tmp/tmpsovtd5ha/my-models/runtime/video-work/20261124-095421/video.avi --fps 24 -i /tmp/tmpsovtd5ha/my-models/runtime/video-work/20261124-095421/start.png --diffusion-fa --offload-to-cpu --clip-on-cpu --vae-conv-direct -t 8
+  |====| 1/20 - 1.00s/it
+  |====| 2/20 - 1.00s/it
+  |====| 3/20 - 1.00s/it
+  |====| 4/20 - 1.00s/it
+  |====| 5/20 - 1.00s/it
+  |====| 6/20 - 1.00s/it
+  |====| 7/20 - 1.00s/it
+  |====| 8/20 - 1.00s/it
+  |====| 9/20 - 1.00s/it
+  |====| 10/20 - 1.00s/it
+  |====| 11/20 - 1.00s/it
+  |====| 12/20 - 1.00s/it
+  |====| 13/20 - 1.00s/it
+  |====| 14/20 - 1.00s/it
+  |====| 15/20 - 1.00s/it
+  |====| 16/20 - 1.00s/it
+  |====| 17/20 - 1.00s/it
+  |====| 18/20 - 1.00s/it
+  |====| 19/20 - 1.00s/it
+  |====| 20/20 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:55:30 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpe0jo_zvh/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpe0jo_zvh/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpe0jo_zvh/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "a fox runs through snow" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 25 --steps 12 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 518221498 -o /tmp/tmpe0jo_zvh/my-models/runtime/video-work/20261124-095530/video.avi --fps 24 --diffusion-fa --offload-to-cpu --clip-on-cpu --vae-conv-direct -t 8
+  |====| 1/12 - 1.00s/it
+  |====| 2/12 - 1.00s/it
+  |====| 3/12 - 1.00s/it
+  |====| 4/12 - 1.00s/it
+  |====| 5/12 - 1.00s/it
+  |====| 6/12 - 1.00s/it
+  |====| 7/12 - 1.00s/it
+  |====| 8/12 - 1.00s/it
+  |====| 9/12 - 1.00s/it
+  |====| 10/12 - 1.00s/it
+  |====| 11/12 - 1.00s/it
+  |====| 12/12 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:55:31 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpe0jo_zvh/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpe0jo_zvh/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpe0jo_zvh/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "waves roll in" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 49 --steps 20 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 1408120720 -o /tmp/tmpe0jo_zvh/my-models/runtime/video-work/20261124-095531/video.avi --fps 24 -i /tmp/tmpe0jo_zvh/my-models/runtime/video-work/20261124-095531/start.png --diffusion-fa --offload-to-cpu --clip-on-cpu --vae-conv-direct -t 8
+  |====| 1/20 - 1.00s/it
+  |====| 2/20 - 1.00s/it
+  |====| 3/20 - 1.00s/it
+  |====| 4/20 - 1.00s/it
+  |====| 5/20 - 1.00s/it
+  |====| 6/20 - 1.00s/it
+  |====| 7/20 - 1.00s/it
+  |====| 8/20 - 1.00s/it
+  |====| 9/20 - 1.00s/it
+  |====| 10/20 - 1.00s/it
+  |====| 11/20 - 1.00s/it
+  |====| 12/20 - 1.00s/it
+  |====| 13/20 - 1.00s/it
+  |====| 14/20 - 1.00s/it
+  |====| 15/20 - 1.00s/it
+  |====| 16/20 - 1.00s/it
+  |====| 17/20 - 1.00s/it
+  |====| 18/20 - 1.00s/it
+  |====| 19/20 - 1.00s/it
+  |====| 20/20 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:55:39 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpn183_ie6/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpn183_ie6/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpn183_ie6/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "a fox runs through snow" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 25 --steps 12 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 1336960953 -o /tmp/tmpn183_ie6/my-models/runtime/video-work/20261124-095539/video.avi --fps 24 --diffusion-fa -t 8
+  |====| 1/12 - 1.00s/it
+  |====| 2/12 - 1.00s/it
+  |====| 3/12 - 1.00s/it
+  |====| 4/12 - 1.00s/it
+  |====| 5/12 - 1.00s/it
+  |====| 6/12 - 1.00s/it
+  |====| 7/12 - 1.00s/it
+  |====| 8/12 - 1.00s/it
+  |====| 9/12 - 1.00s/it
+  |====| 10/12 - 1.00s/it
+  |====| 11/12 - 1.00s/it
+  |====| 12/12 - 1.00s/it
+decoding vae
+
+=== 2026-11-24T09:55:40 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpn183_ie6/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpn183_ie6/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpn183_ie6/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "waves roll in" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 49 --steps 20 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 494620127 -o /tmp/tmpn183_ie6/my-models/runtime/video-work/20261124-095540/video.avi --fps 24 -i /tmp/tmpn183_ie6/my-models/runtime/video-work/20261124-095540/start.png --diffusion-fa -t 8
+ggml_vulkan: Device memory allocation failed: out of memory
+
+=== 2026-11-24T09:55:40 /tmp/ct/fakeeng/sd-cli -M vid_gen --diffusion-model /tmp/tmpn183_ie6/my-models/video/wan22/Wan2.2-TI2V-5B-Q4_K_M.gguf --vae /tmp/tmpn183_ie6/my-models/video/wan22/wan2.2_vae.safetensors --t5xxl /tmp/tmpn183_ie6/my-models/video/wan22/umt5-xxl-encoder-Q4_K_M.gguf -p "waves roll in" -n 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走 -W 832 -H 480 --video-frames 49 --steps 20 --cfg-scale 5 --sampling-method euler --flow-shift 3 -s 494620127 -o /tmp/tmpn183_ie6/my-models/runtime/video-work/20261124-095540/video.avi --fps 24 -i /tmp/tmpn183_ie6/my-models/runtime/video-work/20261124-095540/start.png --diffusion-fa --offload-to-cpu --clip-on-cpu --vae-conv-direct -t 8
+  |====| 1/20 - 1.00s/it
+  |====| 2/20 - 1.00s/it
+  |====| 3/20 - 1.00s/it
+  |====| 4/20 - 1.00s/it
+  |====| 5/20 - 1.00s/it
+  |====| 6/20 - 1.00s/it
+  |====| 7/20 - 1.00s/it
+  |====| 8/20 - 1.00s/it
+  |====| 9/20 - 1.00s/it
+  |====| 10/20 - 1.00s/it
+  |====| 11/20 - 1.00s/it
+  |====| 12/20 - 1.00s/it
+  |====| 13/20 - 1.00s/it
+  |====| 14/20 - 1.00s/it
+  |====| 15/20 - 1.00s/it
+  |====| 16/20 - 1.00s/it
+  |====| 17/20 - 1.00s/it
+  |====| 18/20 - 1.00s/it
+  |====| 19/20 - 1.00s/it
+  |====| 20/20 - 1.00s/it
+decoding vae

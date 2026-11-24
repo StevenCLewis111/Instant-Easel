@@ -39,13 +39,13 @@ MENUS = [
    dict(name="Image Prompting", status="built", order=12, desc="Carry the style and feel (or subject) of reference pictures into a new picture.",
         options=["1-4 reference pictures", "Take: style and feel, subject, or both", "Uses FLUX.2 Klein 4B"]),
  ]),
- ("AI Videos", "Make moving pictures (future)", [
-   dict(name="Text to Video", status="planned", order=20, desc="Type a scene; it paints it and brings it to life.",
+ ("AI Videos", "Make short videos with Wan 2.2", [
+   dict(name="Text to Video", status="built", order=20, desc="Type a scene and what moves; Wan 2.2 5B makes it. Fast or Slow (for smaller cards).",
         options=["Same prompt language as Text to Image", "Animated sky: clouds drift, the sun sets or the moon rises, light changes",
                  "Moving layers: far mountains, near mountains, ground and figures move at different speeds (depth)",
                  "Camera moves: slow push in, pan, rise", "Uses the shared Video settings (length, frame rate, aspect, style)"],
         notes="The engine paints scenes in layers, so it can animate its own scenes. New motion (people walking, creatures flying) needs animated subject painters or an optional AI video add-on."),
-   dict(name="Image to Video", status="planned", order=21, desc="Bring any picture to life.",
+   dict(name="Image to Video", status="built", order=21, desc="Bring any picture to life: it's the first frame, your words say what moves.",
         options=["Gentle camera moves: zoom, pan, tilt", "Moving sky or water (brush the area that moves)", "Parallax depth from estimated near/far layers", "Motion strength"]),
    dict(name="Motion Effects", status="planned", order=22, desc="Classic motion tricks.",
         options=["Pan and zoom (Ken Burns)", "Parallax layers", "Cinemagraph: one area moves, the rest stays still", "Light flicker, glow pulse, falling snow or rain, drifting stars"]),
@@ -139,7 +139,7 @@ MENUS = [
         options=["Works offline statement", "Keep training copies (default off)", "Storage used by category", "Open data folder", "Clear learned data", "Reset taught words", "Local error log"]),
    dict(name="AI Models", status="built", order=1, desc="This PC's check, and each AI's model: the best that fits first, never one too big.",
         options=["Your PC: processor, cores / threads, memory, graphics card, power", "Core text model and each tab's model", "AI Images: Z-Image Turbo / FLUX.2 Klein / SD 1.5 / XL / your file",
-                 "Image edits: FLUX.2 Klein 4B", "AI Videos: shown only with a 16 GB+ graphics card"]),
+                 "Image edits: FLUX.2 Klein 4B", "AI Videos: Wan 2.2 5B (Fast on 16 GB+ cards, Slow on 6 GB+ with 24 GB PC memory)"]),
    dict(name="AI Images", status="built", order=1, desc="How the image generator works: defaults, preview, speed, add-ons.",
         options=["Default style and size", "Live preview", "Speed boost", "Sharper Stable Diffusion (second pass)", "Upscale every picture",
                  "Fuller descriptions", "Stop a stuck run after N minutes", "Add-ons: upscalers and guides (download / remove)"]),
@@ -179,7 +179,7 @@ through llama.cpp, which reaches Intel Arc, AMD and NVIDIA cards through Vulkan.
 - AI Chat: the core model.
 - AI Coding: the core model, or a coding model (Qwen2.5 Coder 7B).
 - AI Images: an image model (Stable Diffusion 1.5 for a 6 GB card). Your words go through the core model first.
-- AI Videos: a video model (needs a 16 GB+ card).
+- AI Videos: Wan 2.2 5B; Fast on a 16 GB+ card, Slow (model in PC memory) on smaller ones.
 
 **Training** has a side button per area (Image, Video, Chat, Coding), each with the steps that suit it.
 - Image Learning has one more layer: your own image models (Cartoon, Fashion, Nature...). Each is trained on its own pictures, as a
