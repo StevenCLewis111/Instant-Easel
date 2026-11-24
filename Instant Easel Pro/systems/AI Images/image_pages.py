@@ -496,7 +496,7 @@ class ImagePage(tk.Frame):
         if self.VIEWER:
             self._words_label = head_row(host); _HeadTitle(self._words_label, self.WORDS).place(relx=0.5, rely=1.0, anchor="s")
         else: self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
-        self.prompt = T.Field(host, height=2, scroll=True, **({"width": 10} if self.VIEWER else {}))   # (a fixed two lines: the settings box gets the rest)
+        self.prompt = T.Field(host, height=3, scroll=True, **({"width": 10} if self.VIEWER else {}))   # (a fixed three lines: the settings box gets the rest)
         self.prompt.pack(fill="x")
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
         self.leave_out = self.var("leave_out", imaging.NEGATIVE)

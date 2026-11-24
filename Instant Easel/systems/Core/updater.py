@@ -174,4 +174,22 @@ def handle_args():
                 except FileNotFoundError: return
                 except OSError: pass
         threading.Thread(target=tidy, daemon=True, name="update tidy").start()
-    return False
+        return False
+    return _apply_waiting()
+
+
+def _apply_waiting():
+    """an update downloaded but not put in (the app was quit instead of restarted, or the restart didn't take): it goes in now,
+    before the window opens. True when the new copy has taken over (this run then quits). Three tries at most per update."""
+    if not FROZEN or sys.platform != "win32" or os.path.basename(paths.HOME).lower() == "new": return False
+    n = ready()
+    if not n or (n.get("sha") and n["sha"][:7] == (current().get("sha") or "")[:7]): return False
+    exe = os.path.join(folder(), "new", EXE); tries = os.path.join(folder(), "new", "_tries")
+    try: count = int(open(tries).read().strip() or 0)
+    except Exception: count = 0
+    if count >= 3 or not os.path.exists(exe): return False
+    try:
+        with open(tries, "w") as f: f.write(str(count + 1))
+        _log(f"putting in the waiting update at start-up (try {count + 1})")
+        _launch(exe, "--finish-update", str(os.getpid())); return True
+    except Exception as e: _log(f"couldn't start the waiting update: {e!r}"); return False

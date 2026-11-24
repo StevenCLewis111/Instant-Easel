@@ -1081,7 +1081,7 @@ class ScraperPage(Page):
 # ---------------------------------------------------------------- Paint
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.6 (Nov 24, 2026)"
+VERSION = "0.9.7 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
@@ -1203,7 +1203,7 @@ def _cant_start(err_text):
 
 def run_app():
     import single, updater
-    if updater.handle_args(): return                                    # this run only finished an update (the updated app opens next)
+    if updater.handle_args(): return                                    # this run only finished an update, or handed over to a waiting one (the updated app opens next)
     holder = {}
     if not single.claim(on_show=lambda: holder.get("app") and holder["app"].q.put(holder["app"].bring_to_front)):
         return                                                           # already open: that copy comes to the front instead

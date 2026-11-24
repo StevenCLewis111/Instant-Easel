@@ -906,7 +906,7 @@ class PlannedPage(tk.Frame):
 
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.6 (Nov 24, 2026)"
+VERSION = "0.9.7 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
@@ -1024,7 +1024,7 @@ def _cant_start(err_text):
 
 def run_app():
     import updater
-    if updater.handle_args(): return                                    # this run only finished an update (the updated app opens next)
+    if updater.handle_args(): return                                    # this run only finished an update, or handed over to a waiting one (the updated app opens next)
     info = crash.start(home_dir(), prefs.log_error)                   # crash log, thread errors, freeze watchdog, last-session check
     if info["safe_mode"]:                                             # failed to start twice in a row: the settings most likely to blame go back to defaults
         for k in ("window_mode", "start_tab", "show_splash", "check_updates_on_start", "text_size"): prefs.set(k, prefs.DEFAULTS[k])
