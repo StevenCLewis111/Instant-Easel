@@ -1,12 +1,48 @@
 """
 settings_pages.py: Instant Easel Pro's Settings pages. Every value lives in prefs.py (instant_easel_settings.json next to the app).
 """
-import os, sys, json, glob, shutil, zipfile, platform, subprocess, threading, tkinter as tk
+import os, sys, time, json, glob, shutil, zipfile, platform, subprocess, threading, tkinter as tk
 from tkinter import filedialog
 import theme as T, prefs, skin
 
 def _frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
+
+BUSY = set()   # the downloads running now (by name): their buttons say Downloading… and a second press doesn't start another
+
+def _dl_button(parent, app, have, get, busy=None, width=12, label="Download"):
+    """green Download until it's here, then a red Downloaded that doesn't download it again. It looks again every 1.5 s, so it
+    turns red by itself when the download finishes; while one runs it says Downloading… and pressing it doesn't start another"""
+    b = T.Button(parent, label, None, kind="go", width=width); st = {"shown": None, "asked": 0.0}
+    def check(f):
+        try: return bool(f())
+        except Exception: return False
+    def running(): return check(busy) if busy else (time.time() - st["asked"] < 4)
+    def click():
+        if check(have): return T.banner(app, "ALREADY DOWNLOADED — nothing to get", "success")
+        if st["asked"] and running(): return T.banner(app, "STILL DOWNLOADING — it carries on in the background", "busy")
+        st["asked"] = time.time(); get(); look(again=False)
+    def look(again=True):
+        try:
+            if not b.winfo_exists(): return
+            if again and not b.winfo_viewable(): b.after(1500, look); return
+        except tk.TclError: return
+        here = check(have); now = "here" if here else ("busy" if st["asked"] and running() else "get")
+        if here: st["asked"] = 0.0
+        if now != st["shown"]:
+            st["shown"] = now; b.kind = "done" if here else "go"
+            b.configure(text={"here": "Downloaded", "busy": "Downloading…", "get": label}[now]); b._style()
+        if again: b.after(1500, look)
+    b.command = click; b.after(10, look); return b
+
+
+def _bg(name, work):
+    """run a download on its own thread, marked busy (BUSY) while it runs"""
+    def run():
+        BUSY.add(name)
+        try: work()
+        finally: BUSY.discard(name)
+    threading.Thread(target=run, daemon=True, name=name).start()
 
 def _rule(parent):
     """the border line above a section's title"""
@@ -188,7 +224,8 @@ class AIModelsPage(SettingsPage):
         head("BASE MODEL  (the language brain: every tab uses it to understand you — it isn't picked in the tabs)")
         cores = self._choices("core", custom=("custom-core", "Your own model file (core)"))
         cur = brain.core_key() if brain.core_key() in cores else self._default("core", cores)
-        self._row_with("BASE", "built", "core_model", cores, cur, download=self._dl_text, add=lambda: self._add_text("custom-core", "core_model"), speed="speed_text")
+        self._row_with("BASE", "built", "core_model", cores, cur, download=self._dl_text, add=lambda: self._add_text("custom-core", "core_model"), speed="speed_text",
+                       have=self._have_text, busy=self._text_busy)
         r = _frame(self.body); r.pack(anchor="w", padx=(30, 0), pady=(2, 0))
         T.Button(r, "Start", self._start, width=7).pack(side="left", padx=(0, 4)); T.Button(r, "Stop", self._stop, kind="danger", width=6).pack(side="left", padx=4)
         self.state = T.Text(r, "", font=T.f(10)); self.state.pack(side="left", padx=10)
@@ -198,17 +235,20 @@ class AIModelsPage(SettingsPage):
         chat = {"core": ("Core text model (recommended)", "AI Chat talks to the core model.")}
         if brain.model_file("custom-AI_Chat"): chat["custom-AI_Chat"] = ("Your own model file", "A .gguf text model you added with Add manually.")
         self._row_with("AI CHAT", "built", "model_AI_Chat", chat, prefs.get("model_AI_Chat") if prefs.get("model_AI_Chat") in chat else "core",
-                       download=lambda k: self._dl_text(brain.core_key()), add=lambda: self._add_text("custom-AI_Chat", "model_AI_Chat"))
+                       download=lambda k: self._dl_text(brain.core_key()), add=lambda: self._add_text("custom-AI_Chat", "model_AI_Chat"),
+                       have=lambda k: self._have_text(brain.core_key() if k == "core" else k), busy=self._text_busy)
         coding = self._choices("AI Coding", custom=("custom-AI_Coding", "Your own model file"))
         coding["core"] = ("Core text model", "The core model writes and explains code too.")
         self._row_with("CODING", "built", "model_AI_Coding", coding, prefs.get("model_AI_Coding") if prefs.get("model_AI_Coding") in coding else self._default("AI Coding", coding),
-                       download=lambda k: self._dl_text(brain.core_key() if k == "core" else k), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"))
+                       download=lambda k: self._dl_text(brain.core_key() if k == "core" else k), add=lambda: self._add_text("custom-AI_Coding", "model_AI_Coding"),
+                       have=lambda k: self._have_text(brain.core_key() if k == "core" else k), busy=self._text_busy)
         images = self._choices("AI Images", custom=("file", "Your own model file"))
         self._row_with("IMAGE", "built", "model_AI_Images", images, imaging.choice() if imaging.choice() in images else self._default("AI Images", images),
-                       download=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image")
+                       download=self._dl_images, add=self._add_image, folder=imaging.IMAGE, speed="speed_image",
+                       have=self._have_image, busy=lambda: imaging.downloading())
         edits = self._choices("Image edits")
         if edits:
-            self._row_with("EDITS", "built", "model_image_edits", edits, next(iter(edits)), download=self._dl_images, add=self._add_image, folder=imaging.KDIR)
+            self._row_with("EDITS", "built", "model_image_edits", edits, next(iter(edits)), download=self._dl_images, add=self._add_image, folder=imaging.KDIR, have=self._have_image, busy=lambda: imaging.downloading())
         else: T.Text(self.body, "IMAGE EDITS: FLUX.2 Klein needs 16 GB of PC memory, so Prompt to Edit and the reference sections can't run on this PC.", muted=True, font=T.f(9)).pack(anchor="w")
         T.Text(self.body, "SPEED: Fast puts everything on the graphics card. Balanced lets the engine fit the model to the card's free memory. Safe keeps "
                "more in PC memory: slower, but big models fit. Before every run the app checks the free memory and steps down by itself (Fast → "
@@ -217,7 +257,8 @@ class AIModelsPage(SettingsPage):
         if catalog.can("AI Videos"):
             videos = self._choices("AI Videos", custom=("file", "Your own model file"))
             self._row_with("VIDEO", "built", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
-                           download=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
+                           download=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"),
+                           have=self._have_video, busy=lambda: "video download" in BUSY)
         self._audio_rows(head)
         self._tick()
 
@@ -230,7 +271,8 @@ class AIModelsPage(SettingsPage):
                                  ("effects", "EFFECTS", "MMAudio on PyTorch: sound that matches what happens. Non-commercial weights (CC-BY-NC).")):
             r = self._row(name, "built"); v = tk.StringVar(value="Strong" if A.have(kind, "strong") else "Weak")
             T.Choice(r, "size", ["Weak", "Strong"], v).pack(side="left", padx=(0, 6))
-            T.Button(r, "Download", lambda k=kind, v=v: self._aud_get(k, v.get().lower()), width=10).pack(side="left", padx=3)
+            _dl_button(r, self.app, lambda k=kind, v=v: A.have(k, v.get().lower()), lambda k=kind, v=v: self._aud_get(k, v.get().lower()),
+                       busy=lambda k=kind: f"audio download {k}" in BUSY).pack(side="left", padx=3)
             T.Button(r, "Remove", lambda k=kind, v=v: (A.remove(k, v.get().lower() if k == "voices" else None), self._aud_show()), kind="danger", width=8).pack(side="left", padx=3)
             st = T.Text(r, "", font=T.f(8), muted=True); st.pack(side="left", padx=8); self._aud[kind] = (v, st)
             v.trace_add("write", lambda *a: self._aud_show())
@@ -252,7 +294,8 @@ class AIModelsPage(SettingsPage):
                 A.install(kind, power, report=lambda t, f: q.put(lambda t=t: self.winfo_exists() and self._aud[kind][1].configure(text=t[:90])))
                 q.put(lambda: (self._aud_show(), T.banner(self.app, f"AUDIO MODEL READY — {kind} ({power})", "success")))
             except Exception as e: q.put(lambda e=e: (self._aud_show(), T.banner(self.app, f"AUDIO DOWNLOAD DIDN'T FINISH — {e}", "error")))
-        threading.Thread(target=work, daemon=True, name="audio download").start()
+        if f"audio download {kind}" in BUSY: return T.banner(self.app, "STILL DOWNLOADING — it carries on in the background", "busy")
+        _bg(f"audio download {kind}", work)
         T.banner(self.app, f"DOWNLOADING THE AUDIO MODEL ({kind}, {power})", "success")
 
     # ---- what's offered: the models that fit this PC (best first), plus any you already downloaded
@@ -279,6 +322,13 @@ class AIModelsPage(SettingsPage):
             if key == "file": return any(f != self.imaging.SD15["file"] for f in os.listdir(self.imaging.IMAGE)) if os.path.isdir(self.imaging.IMAGE) else False
         return False
 
+    def _have_text(self, k): return str(k).startswith("custom") and bool(self.brain.model_file(k)) or (k != "file" and bool(self.brain.model_file(k)))
+    def _text_busy(self): return self.brain.status().get("state") == "downloading"
+    def _have_image(self, k): return self._downloaded("AI Images", "file") if k == "file" else bool(self.imaging.have(k))
+    def _have_video(self, k):
+        import video_engine as V
+        return k in V.downloaded_models()
+
     def _default(self, area, choices):
         """not chosen yet: the best one already downloaded, else the best one for this PC"""
         for k in choices:
@@ -298,7 +348,7 @@ class AIModelsPage(SettingsPage):
             if restart and self.brain.ready(): self.brain.stop(); T.banner(self.app, f"SPEED: {v.get().upper()} — the model starts that way next time it's used", "success")
         v.trace_add("write", changed)
 
-    def _row_with(self, tab, status, key, choices, cur, download, add, folder=None, speed=None):
+    def _row_with(self, tab, status, key, choices, cur, download, add, folder=None, speed=None, have=None, busy=None):
         """one AI: its model choice (what fits this PC), Download (the chosen one), Add manually, and its speed"""
         r = self._row(tab, status)
         v = tk.StringVar(value=choices[cur][0]); ch = T.Choice(r, "", [c[0] for c in choices.values()], v); ch.pack(side="left", padx=(8, 8))
@@ -309,7 +359,7 @@ class AIModelsPage(SettingsPage):
             if key == "core_model": self._switch(k)
             else: prefs.set(key, k)
         v.trace_add("write", changed); self.slot_vars[key] = (v, choices)
-        T.Button(r, "Download", lambda: download(chosen()), width=10).pack(side="left", padx=4)
+        _dl_button(r, self.app, (lambda: have(chosen())) if have else (lambda: False), lambda: download(chosen()), busy=busy).pack(side="left", padx=4)
         T.Button(r, "Add manually", add, width=13).pack(side="left", padx=4)
         if folder: skin.file_button(T.Button(r, "Open folder", lambda: prefs.open_folder(folder))).pack(side="left", padx=4)
         if speed: self._speed(r, speed, restart=(speed == "speed_text"))
@@ -333,6 +383,8 @@ class AIModelsPage(SettingsPage):
     # ---- text models (core, chat, coding)
     def _dl_text(self, key):
         if key in ("file",) or str(key).startswith("custom"): return T.banner(self.app, "THAT'S YOUR OWN FILE — use Add manually to choose it", "busy")
+        if self._have_text(key): return T.banner(self.app, "ALREADY DOWNLOADED — nothing to get", "success")
+        if self._text_busy(): return T.banner(self.app, "STILL DOWNLOADING — it carries on in the background", "busy")
         self.brain.download(on_done=self._done("INSTALLED"), key=key)
         T.banner(self.app, f"DOWNLOADING {self.brain.spec(key)['label'].upper()} — about {self.brain.download_size(key) / 1e9:.1f} GB; it's set up when it finishes (progress below)", "success")
         self._tick(once=True)
@@ -347,6 +399,8 @@ class AIModelsPage(SettingsPage):
     def _dl_images(self, key):
         e = self.cat.entry("AI Images", key) or self.cat.entry("Image edits", key)
         if key == "file" or (e and e.get("manual")): return T.banner(self.app, "ADD THIS ONE WITH ADD MANUALLY — choose its model file (.safetensors)", "busy")
+        if self._have_image(key) and self.imaging.engine_exe(): return T.banner(self.app, "ALREADY DOWNLOADED — nothing to get", "success")
+        if self.imaging.downloading(): return T.banner(self.app, "STILL DOWNLOADING — it carries on in the background", "busy")
         if self.cat.entry("AI Images", key) and key != "klein": self._select("model_AI_Images", key)
         self.imaging.download(on_done=self._done("INSTALLED"), key=key)
         quant, _ = self.cat.variant(e)
@@ -361,12 +415,15 @@ class AIModelsPage(SettingsPage):
     def _dl_video(self, key):
         import video_engine as V
         q = self.app.q
+        if key == "file": return T.banner(self.app, "THAT'S YOUR OWN FILE — use Add manually to choose it", "busy")
+        if "video download" in BUSY: return T.banner(self.app, "STILL DOWNLOADING — it carries on in the background", "busy")
         def work():
             try:
-                V.download()
+                if key == "ltx2": V.install_ltx()
+                else: V.download()
                 q.put(lambda: T.banner(self.app, "VIDEO MODEL READY — make videos in the AI Videos tab", "success"))
             except Exception as e: q.put(lambda e=e: T.banner(self.app, f"VIDEO DOWNLOAD DIDN'T FINISH — {e}", "error"))
-        threading.Thread(target=work, daemon=True, name="video download").start()
+        _bg("video download", work)
         T.banner(self.app, "DOWNLOADING THE VIDEO MODEL — in the size that suits this PC", "success")
     def _add_video(self):
         import imaging
@@ -432,11 +489,13 @@ class AIImagesPage(SettingsPage):
             r = _frame(self.rows); r.pack(fill="x", anchor="w", pady=2); here = self.im.addon(k); name = a["label"][4:] if a["label"].startswith("the ") else a["label"]
             T.Text(r, ("✓ " if here else "   ") + name.upper(), font=T.f(9), width=40, anchor="w").pack(side="left")
             T.Text(r, f"{a['size'] * 1000:.0f} MB" if a["size"] < 1 else f"{a['size']:.1f} GB", font=T.f(9), muted=True, width=8).pack(side="left")
+            _dl_button(r, self.app, lambda k=k: self.im.addon(k), lambda k=k: self._get(k), busy=lambda: self.im.downloading()).pack(side="left", padx=4)
             if here: T.Button(r, "Remove", lambda k=k: self._remove(k), kind="danger", width=8).pack(side="left", padx=4)
-            else: T.Button(r, "Download", lambda k=k: self._get(k), width=10).pack(side="left", padx=4)
             T.Text(r, info.get(k, ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
     def _get(self, k):
         q = self.app.q
+        if self.im.addon(k): return T.banner(self.app, "ALREADY DOWNLOADED — nothing to get", "success")
+        if self.im.downloading(): return T.banner(self.app, "STILL DOWNLOADING — it carries on in the background", "busy")
         def done(ok, m): q.put(lambda: (T.banner(self.app, ("DOWNLOADED — " if ok else "DOWNLOAD FAILED — ") + m, "success" if ok else "error"), self.winfo_exists() and self._addons()))
         self.im.download(on_done=done, key=k); T.banner(self.app, f"DOWNLOADING — {self.im.ADDON_FILES[k]['label']}", "success")
     def _remove(self, k):
@@ -548,13 +607,15 @@ class StyleAddonsPage(SettingsPage):
             v = tk.BooleanVar(value=SA.enabled(style))
             T.Toggle(r, v, command=lambda s=style, v=v: (SA.set_enabled(s, v.get()), T.banner(self.app, f"{s.upper()} TEMPLATE {'ON' if v.get() else 'OFF'}", "success"))).pack(side="left", padx=(0, 6))
             T.Text(r, ("✓ " if here else "   ") + style.upper(), font=T.f(9), width=30, anchor="w").pack(side="left")
+            _dl_button(r, self.app, lambda s=style: SA.installed(s), lambda s=style: self._sa_get(s), busy=lambda s=style: f"template {s}" in BUSY).pack(side="left", padx=4)
             if here: T.Button(r, "Remove", lambda s=style: (SA.remove(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
-            else: T.Button(r, "Download", lambda s=style: self._sa_get(s), width=10).pack(side="left", padx=4)
             if e.get("own"): T.Button(r, "Forget", lambda s=style: (SA.forget_own(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
             T.Text(r, e.get("note", ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
     def _sa_get(self, style, quiet=False):
         import style_addons as SA; q = self.app.q
-        def done(ok, m): q.put(lambda: (T.banner(self.app, ("TEMPLATE READY — " if ok else "TEMPLATE DOWNLOAD FAILED — ") + m, "success" if ok else "error"),
+        if SA.installed(style) or f"template {style}" in BUSY: return self._sa_next()           # (never twice)
+        BUSY.add(f"template {style}")
+        def done(ok, m): BUSY.discard(f"template {style}"); q.put(lambda: (T.banner(self.app, ("TEMPLATE READY — " if ok else "TEMPLATE DOWNLOAD FAILED — ") + m, "success" if ok else "error"),
                                         self.winfo_exists() and self._sa_list(), self._sa_next()))
         SA.download(style, on_done=done)
         if not quiet: T.banner(self.app, f"DOWNLOADING THE {style.upper()} TEMPLATE", "success")
@@ -857,9 +918,10 @@ class DrawingAIPage(SettingsPage):
         for kind, (name, what) in AI.KINDS.items():
             r = _frame(self.da_rows); r.pack(fill="x", anchor="w", pady=3); here = AI.have(kind)
             T.Text(r, ("✓ " if here else "   ") + name.upper(), font=T.f(9), width=38, anchor="w").pack(side="left")
-            if here: T.Button(r, "Remove", lambda k=kind: (AI.remove(k), self._da_list()), kind="danger", width=8).pack(side="left", padx=4)
-            else: T.Button(r, f"Download ({AI.download_size(kind) / 1e6:.0f} MB)", lambda k=kind: self._da_get([k]), width=18).pack(side="left", padx=4)
+            _dl_button(r, self.app, lambda k=kind: AI.have(k), lambda k=kind: self._da_get([k]), busy=lambda k=kind: f"drawing ai {k}" in BUSY,
+                       width=18, label=f"Download ({AI.download_size(kind) / 1e6:.0f} MB)").pack(side="left", padx=4)
             T.Button(r, "Add your own…", lambda k=kind: self._da_own(k), width=14).pack(side="left", padx=4)
+            if here: T.Button(r, "Remove", lambda k=kind: (AI.remove(k), self._da_list()), kind="danger", width=8).pack(side="left", padx=4)
             T.Text(r, what, muted=True, font=T.f(8)).pack(side="left", padx=6)
 
     def _da_all(self):
@@ -871,6 +933,9 @@ class DrawingAIPage(SettingsPage):
     def _da_get(self, kinds):
         import ai_cutout as AI, threading
         q = self.app.q; self.da_bar.pack(before=self.da_rows, anchor="w", pady=(0, 6))
+        kinds = [k for k in kinds if not AI.have(k) and f"drawing ai {k}" not in BUSY]          # (never one that's here or on its way)
+        if not kinds: self.da_bar.pack_forget(); return T.banner(self.app, "ALREADY DOWNLOADED — nothing to get", "success")
+        for k in kinds: BUSY.add(f"drawing ai {k}")
         def work():
             done = []
             for k in kinds:
@@ -879,6 +944,7 @@ class DrawingAIPage(SettingsPage):
                     AI.ensure(k, lambda d, t, n=name: q.put(lambda: self.da_bar.winfo_exists() and self.da_bar.set(d / t if t else None, f"Downloading the {n} model…")))
                     done.append(name)
                 except Exception as e: q.put(lambda e=e, n=name: T.banner(self.app, f"{n.upper()} DIDN'T DOWNLOAD — {e}", "error"))
+            for k in kinds: BUSY.discard(f"drawing ai {k}")
             def end():
                 if self.winfo_exists(): self.da_bar.pack_forget(); self._da_list()
                 if done: T.banner(self.app, "READY — " + ", ".join(done), "success")

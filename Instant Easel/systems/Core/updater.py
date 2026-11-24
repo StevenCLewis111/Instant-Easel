@@ -84,11 +84,32 @@ def download(new, report=None, stop=None):
     return out
 
 
+def _when(stamp): return str((stamp or {}).get("built") or "")[:16]       # "2026-11-24 21:49": sorts by time
+
+
 def ready():
-    """an update that's downloaded and waiting for a restart (dict), or None"""
+    """an update that's downloaded and waiting for a restart (dict), or None. Only one NEWER than this copy: a download left over from
+    before (say this copy was put in by hand since) is older or the same, and is cleared away instead of put back over the newer one"""
     try:
-        with open(os.path.join(folder(), "new", "_ready.json")) as f: return json.load(f)
+        with open(os.path.join(folder(), "new", "_ready.json")) as f: n = json.load(f)
     except Exception: return None
+    me = current()
+    if me.get("sha") and (n.get("sha", "")[:7] == me["sha"][:7] or (_when(n) and _when(me) and _when(n) <= _when(me))):
+        tidy(); return None
+    return n
+
+
+def tidy():
+    """clear what an update leaves behind: the unpacked copy, the zip, a half-download from before. The app's folder stays one build big"""
+    d = os.path.join(paths.HOME, "update")
+    if not os.path.isdir(d): return
+    shutil.rmtree(os.path.join(d, "new"), ignore_errors=True)
+    for f in os.listdir(d):
+        p = os.path.join(d, f)
+        try:
+            if f.endswith(".zip") or (f.endswith(".part") and time.time() - os.path.getmtime(p) > 3 * 86400): os.remove(p)
+            elif os.path.isdir(p): shutil.rmtree(p, ignore_errors=True)
+        except OSError: pass
 
 
 def _log(msg):
@@ -170,11 +191,14 @@ def handle_args():
         def tidy():
             for _ in range(30):
                 time.sleep(1)
-                try: shutil.rmtree(os.path.join(folder(), "new")); _log("tidied the update folder away"); return
-                except FileNotFoundError: return
+                try: shutil.rmtree(os.path.join(folder(), "new")); tidy(); _log("tidied the update folder away"); return
+                except FileNotFoundError: tidy(); return
                 except OSError: pass
         threading.Thread(target=tidy, daemon=True, name="update tidy").start()
         return False
+    if FROZEN and os.path.basename(paths.HOME).lower() != "new":
+        try: ready()                                                         # (clears a leftover that isn't newer)
+        except Exception: pass
     return _apply_waiting()
 
 

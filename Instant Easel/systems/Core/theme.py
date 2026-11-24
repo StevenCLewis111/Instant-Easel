@@ -6,7 +6,7 @@ be changed live from the Theme tab (border/text hue, background hue, panel opaci
 import colorsys, tkinter as tk
 
 PALETTE = dict(bg="#11151f", panel="#1a2033", panel2="#141a2a", border="#22e05a", title="#f5c400", text="#e8e8ec",
-               muted="#9aa0b4", button="#28498c", button_hi="#335bb0", danger="#d9374b", danger_hi="#ef4b5f",
+               muted="#9aa0b4", button="#28498c", button_hi="#335bb0", danger="#d9374b", danger_hi="#ef4b5f", go="#1f8a3c", go_hi="#27a84a", done="#b02a3c", done_hi="#c93448",
                toggle_on="#28a745", toggle_off="#2b3a5c", field="#0d1220", tab="#2b4a8b", tab_active="#1a2033")
 FAMILY = "Courier New"                                   # replaced by Courier Prime (bundled, heavier bold) once init_fonts() runs
 SCALE = 1.0                                              # Settings > Display > Text size
@@ -257,6 +257,8 @@ class _Painted:
         except tk.TclError: pass
 
 _BAR_RED = {}
+_RED = ((60, 0, 10), (255, 150, 160), (215, 40, 60))
+_BAR_TINTS = {"danger": _RED, "done": _RED, "go": ((0, 40, 10), (150, 255, 170), (30, 160, 60))}
 def bar_art():
     """the painted bar the HISTORY button uses (images/UI/Color Wheel Menu/bar_blank.png); None if it isn't there"""
     try:
@@ -269,11 +271,13 @@ def _on_bar(words, w):
     from PIL import ImageOps
     W, H = words.width, max(words.height, int(round(30 * Z)))
     base = AP.bar("bar_blank", W, H, 0.3)
-    if getattr(w, "kind", "") == "danger":
-        key = (W, H)
+    kind = getattr(w, "kind", "")
+    if kind in _BAR_TINTS:                                                    # danger / done red, go green
+        key = (W, H, kind)
         if key not in _BAR_RED:
             if len(_BAR_RED) > 200: _BAR_RED.clear()
-            red = ImageOps.colorize(base.convert("L"), (60, 0, 10), (255, 150, 160), mid=(215, 40, 60)).convert("RGBA"); red.putalpha(base.getchannel("A")); _BAR_RED[key] = red
+            lo, hi, mid = _BAR_TINTS[kind]
+            tint = ImageOps.colorize(base.convert("L"), lo, hi, mid=mid).convert("RGBA"); tint.putalpha(base.getchannel("A")); _BAR_RED[key] = tint
         base = _BAR_RED[key]
     if not getattr(w, "enabled", True): base = AP.shade(ImageOps.grayscale(base.convert("RGB")).convert("RGBA"), 0.6); base.putalpha(AP.bar("bar_blank", W, H, 0.3).getchannel("A"))
     elif getattr(w, "hover", False): base = AP.shade(base, 1.15)
@@ -291,7 +295,7 @@ class Text(_Painted, tk.Label):
     def _style(self): self.configure(bg=self.master["bg"], fg=PALETTE["muted" if self.muted else "text"])
 
 class Button(_Painted, tk.Label):
-    """blue rounded-look button; green outline on hover/focus; Enter or Space activates it"""
+    """blue rounded-look button (kind "danger" / "done" red, "go" green); green outline on hover/focus; Enter or Space activates it"""
     def __init__(self, master, text, command=None, kind="normal", width=None, **kw):
         super().__init__(master, text=text, font=MONO, padx=14, pady=6, cursor="hand2", takefocus=1, highlightthickness=HL, width=width or 0, **kw)
         self.kind = kind; self.command = command; self.enabled = True; self.hover = False
@@ -303,7 +307,7 @@ class Button(_Painted, tk.Label):
         self._style(); on_change(self._style); self._paint_init(MONO)
     def _set_hover(self, h): self.hover = h; self._style()
     def _style(self):
-        key = "danger" if self.kind == "danger" else "button"; hi = key + "_hi"
+        key = self.kind if self.kind in ("danger", "go", "done") else "button"; hi = key + "_hi"
         bg = PALETTE[hi] if (self.hover and self.enabled) else PALETTE[key]
         focused = self.focus_get() is self if self.winfo_exists() else False
         ring = PALETTE["border"] if (self.hover or focused) and self.enabled else self.master["bg"]

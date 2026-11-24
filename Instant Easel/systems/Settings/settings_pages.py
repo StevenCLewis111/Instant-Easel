@@ -8,6 +8,42 @@ import theme as T, prefs, skin
 def _frame(parent):
     f = tk.Frame(parent, bg=parent["bg"]); T.on_change(lambda: f.configure(bg=f.master["bg"])); return f
 
+BUSY = set()   # the downloads running now (by name): their buttons say Downloading… and a second press doesn't start another
+
+def _dl_button(parent, app, have, get, busy=None, width=12, label="Download"):
+    """green Download until it's here, then a red Downloaded that doesn't download it again. It looks again every 1.5 s, so it
+    turns red by itself when the download finishes; while one runs it says Downloading… and pressing it doesn't start another"""
+    b = T.Button(parent, label, None, kind="go", width=width); st = {"shown": None, "asked": 0.0}
+    def check(f):
+        try: return bool(f())
+        except Exception: return False
+    def running(): return check(busy) if busy else (time.time() - st["asked"] < 4)
+    def click():
+        if check(have): return T.banner(app, "ALREADY DOWNLOADED — nothing to get", "success")
+        if st["asked"] and running(): return T.banner(app, "STILL DOWNLOADING — it carries on in the background", "busy")
+        st["asked"] = time.time(); get(); look(again=False)
+    def look(again=True):
+        try:
+            if not b.winfo_exists(): return
+            if again and not b.winfo_viewable(): b.after(1500, look); return
+        except tk.TclError: return
+        here = check(have); now = "here" if here else ("busy" if st["asked"] and running() else "get")
+        if here: st["asked"] = 0.0
+        if now != st["shown"]:
+            st["shown"] = now; b.kind = "done" if here else "go"
+            b.configure(text={"here": "Downloaded", "busy": "Downloading…", "get": label}[now]); b._style()
+        if again: b.after(1500, look)
+    b.command = click; b.after(10, look); return b
+
+
+def _bg(name, work):
+    """run a download on its own thread, marked busy (BUSY) while it runs"""
+    def run():
+        BUSY.add(name)
+        try: work()
+        finally: BUSY.discard(name)
+    threading.Thread(target=run, daemon=True, name=name).start()
+
 class SettingsPage(tk.Frame):
     TITLE = "Settings"; NOTE = ""
     def __init__(self, master, app):
@@ -203,9 +239,10 @@ class DrawingAIPage(SettingsPage):
         for kind, (name, what) in AI.KINDS.items():
             r = _frame(self.da_rows); r.pack(fill="x", anchor="w", pady=3); here = AI.have(kind)
             T.Text(r, ("✓ " if here else "   ") + name.upper(), font=T.f(9), width=38, anchor="w").pack(side="left")
-            if here: T.Button(r, "Remove", lambda k=kind: (AI.remove(k), self._da_list()), kind="danger", width=8).pack(side="left", padx=4)
-            else: T.Button(r, f"Download ({AI.download_size(kind) / 1e6:.0f} MB)", lambda k=kind: self._da_get([k]), width=18).pack(side="left", padx=4)
+            _dl_button(r, self.app, lambda k=kind: AI.have(k), lambda k=kind: self._da_get([k]), busy=lambda k=kind: f"drawing ai {k}" in BUSY,
+                       width=18, label=f"Download ({AI.download_size(kind) / 1e6:.0f} MB)").pack(side="left", padx=4)
             T.Button(r, "Add your own…", lambda k=kind: self._da_own(k), width=14).pack(side="left", padx=4)
+            if here: T.Button(r, "Remove", lambda k=kind: (AI.remove(k), self._da_list()), kind="danger", width=8).pack(side="left", padx=4)
             T.Text(r, what, muted=True, font=T.f(8)).pack(side="left", padx=6)
 
     def _da_all(self):
@@ -217,6 +254,9 @@ class DrawingAIPage(SettingsPage):
     def _da_get(self, kinds):
         import ai_cutout as AI, threading
         q = self.app.q; self.da_bar.pack(before=self.da_rows, anchor="w", pady=(0, 6))
+        kinds = [k for k in kinds if not AI.have(k) and f"drawing ai {k}" not in BUSY]          # (never one that's here or on its way)
+        if not kinds: self.da_bar.pack_forget(); return T.banner(self.app, "ALREADY DOWNLOADED — nothing to get", "success")
+        for k in kinds: BUSY.add(f"drawing ai {k}")
         def work():
             done = []
             for k in kinds:
@@ -225,6 +265,7 @@ class DrawingAIPage(SettingsPage):
                     AI.ensure(k, lambda d, t, n=name: q.put(lambda: self.da_bar.winfo_exists() and self.da_bar.set(d / t if t else None, f"Downloading the {n} model…")))
                     done.append(name)
                 except Exception as e: q.put(lambda e=e, n=name: T.banner(self.app, f"{n.upper()} DIDN'T DOWNLOAD — {e}", "error"))
+            for k in kinds: BUSY.discard(f"drawing ai {k}")
             def end():
                 if self.winfo_exists(): self.da_bar.pack_forget(); self._da_list()
                 if done: T.banner(self.app, "READY — " + ", ".join(done), "success")

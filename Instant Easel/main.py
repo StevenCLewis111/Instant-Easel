@@ -906,7 +906,7 @@ class PlannedPage(tk.Frame):
 
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.7 (Nov 24, 2026)"
+VERSION = "0.9.8 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
