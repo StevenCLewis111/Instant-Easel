@@ -7,7 +7,8 @@ full_setup.py: Download Everything. One download that puts every part of Pro on 
                        big ones for a bigger graphics card later (the app picks the size that suits the PC it's on)
     picture models     Z-Image Turbo and FLUX.2 Klein in every size, Stable Diffusion 1.5 and XL
     picture add-ons    the upscalers and the guides (pose, outline, depth, scribble), and every template
-    the video model    Wan 2.2 5B for the AI Videos tab
+    the video models   Wan 2.2 5B, and LTX-2.3 (video with sound) for a bigger PC
+    the audio model    voices (Kokoro) and sound effects (MMAudio + PyTorch), in their own Python
     code checkers      Node.js, TypeScript, GCC (C / C++), Java and Go, so AI Coding can check its code (Windows)
 
 What's already here is skipped. A file that stops halfway carries on from where it stopped next time. One thing failing doesn't stop
@@ -178,6 +179,21 @@ def items():
             lambda r, q=quant: imaging.install_video_part("t5", q, r))
     add("Video model", "Wan 2.2: video decoder", imaging.WAN["vae_size"],
         lambda: imaging.have_file(imaging.VDIR, "wan2.2_vae", ends=(".safetensors",)), lambda r: imaging.install_video_part("vae", None, r))
+
+    import video_engine as V
+    for part, label in (("diffusion", "LTX-2.3 22B (video with sound)"), ("llm", "LTX-2.3: text reader (Gemma 3 12B)"),
+                        ("vae", "LTX-2.3: video decoder"), ("audio_vae", "LTX-2.3: sound decoder")):
+        test = {"diffusion": lambda f: f.startswith("ltx-2.3") and f.endswith(".gguf"), "llm": lambda f: f.startswith("gemma-3"),
+                "vae": lambda f: f.endswith("_video_vae.safetensors"), "audio_vae": lambda f: f.endswith("_audio_vae.safetensors")}[part]
+        add("Video model", label, V.LTX["sizes"][part], lambda t=test: any(t(f.lower()) for f in os.listdir(V.ltx_dir())),
+            lambda r, p=part: V.install_ltx(report=r, part=p), note="for a 16 GB+ card (slow on smaller); LTX-2 licence" if part == "diffusion" else "")
+
+    import audio_engine as AU
+    for power in ("weak", "strong"):
+        add("Audio model", f"Voices: Kokoro ({'8-bit, small' if power == 'weak' else 'full'})", AU.VOICE_FILES[power][1] + (0.15 if power == "weak" else 0),
+            lambda p=power: AU.have("voices", p), lambda r, p=power: AU.install("voices", p, report=r))
+    add("Audio model", "Sound effects: PyTorch + MMAudio", 2.5, lambda: AU.have("effects"), lambda r: AU.install("effects", "weak", report=r),
+        note="non-commercial weights; its weights come the first time it runs")
 
     if sys.platform == "win32":
         add("Code checkers", "Node.js (checks JavaScript)", 0.035, lambda: _tool_here("node"), _node)

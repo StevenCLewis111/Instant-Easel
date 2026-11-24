@@ -218,7 +218,42 @@ class AIModelsPage(SettingsPage):
             videos = self._choices("AI Videos", custom=("file", "Your own model file"))
             self._row_with("VIDEO", "built", "model_AI_Videos", videos, prefs.get("model_AI_Videos") if prefs.get("model_AI_Videos") in videos else self._default("AI Videos", videos),
                            download=self._dl_video, add=self._add_video, folder=os.path.join(brain.ROOT, "video"))
+        self._audio_rows(head)
         self._tick()
+
+    # ---- the audio model: voices and sound effects, each weak or strong (it runs in its own downloaded Python)
+    def _audio_rows(self, head):
+        import audio_engine as A
+        head("AUDIO MODEL  (AI Videos > Add Sound: a voice for your words, sound effects matched to the video)")
+        self._aud = {}
+        for kind, name, note in (("voices", "VOICES", "Kokoro 82M: 13 voices, runs on the processor (Apache-2.0)."),
+                                 ("effects", "EFFECTS", "MMAudio on PyTorch: sound that matches what happens. Non-commercial weights (CC-BY-NC).")):
+            r = self._row(name, "built"); v = tk.StringVar(value="Strong" if A.have(kind, "strong") else "Weak")
+            T.Choice(r, "size", ["Weak", "Strong"], v).pack(side="left", padx=(0, 6))
+            T.Button(r, "Download", lambda k=kind, v=v: self._aud_get(k, v.get().lower()), width=10).pack(side="left", padx=3)
+            T.Button(r, "Remove", lambda k=kind, v=v: (A.remove(k, v.get().lower() if k == "voices" else None), self._aud_show()), kind="danger", width=8).pack(side="left", padx=3)
+            st = T.Text(r, "", font=T.f(8), muted=True); st.pack(side="left", padx=8); self._aud[kind] = (v, st)
+            v.trace_add("write", lambda *a: self._aud_show())
+            T.Text(self.body, note, muted=True, font=T.f(8)).pack(anchor="w", padx=(30, 0))
+        self._aud_show()
+
+    def _aud_show(self):
+        import audio_engine as A
+        for kind, (v, st) in self._aud.items():
+            p = v.get().lower(); here = A.downloaded(kind)
+            st.configure(text=("✓ here" if A.have(kind, p) else f"about {A.size_gb(kind, p):.1f} GB to download")
+                         + (f" · downloaded: {', '.join(x.title() for x in here)}" if here else ""))
+
+    def _aud_get(self, kind, power):
+        import audio_engine as A
+        q = self.app.q
+        def work():
+            try:
+                A.install(kind, power, report=lambda t, f: q.put(lambda t=t: self.winfo_exists() and self._aud[kind][1].configure(text=t[:90])))
+                q.put(lambda: (self._aud_show(), T.banner(self.app, f"AUDIO MODEL READY — {kind} ({power})", "success")))
+            except Exception as e: q.put(lambda e=e: (self._aud_show(), T.banner(self.app, f"AUDIO DOWNLOAD DIDN'T FINISH — {e}", "error")))
+        threading.Thread(target=work, daemon=True, name="audio download").start()
+        T.banner(self.app, f"DOWNLOADING THE AUDIO MODEL ({kind}, {power})", "success")
 
     # ---- what's offered: the models that fit this PC (best first), plus any you already downloaded
     def _choices(self, area, custom=None):

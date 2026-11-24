@@ -61,6 +61,19 @@ Most are fetched from the [rembg](https://github.com/danielgatis/rembg) project'
 |---|---|---|---|
 | [Wan 2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) (Wan team, Alibaba); GGUF and decoder by QuantStack (decoder also from Comfy-Org) | AI Videos | Apache-2.0 | ✅ |
 | umt5-xxl text encoder (Google, as shipped with Wan); GGUF by [city96](https://huggingface.co/city96/umt5-xxl-encoder-gguf) | AI Videos' text reader | Apache-2.0 | ✅ |
+| [LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) 22B distilled (Lightricks); GGUF and decoders by [unsloth](https://huggingface.co/unsloth/LTX-2.3-GGUF) | AI Videos: video with sound (the strong video model) | **LTX-2 Community License**: free, commercial use included, for anyone under $10M a year in revenue; above that a paid licence | ⚠️ |
+| [Gemma 3 12B](https://huggingface.co/google/gemma-3-12b-it) (Google); GGUF by [unsloth](https://huggingface.co/unsloth/gemma-3-12b-it-qat-GGUF) | LTX-2.3's text reader | Gemma Terms of Use (sharing allowed; Google's prohibited-use policy passes on) | ⚠️ |
+
+## Audio model (AI Videos > Add Sound; runs in its own Python, downloaded onto your AI drive)
+| Part | Used by | Licence | Share? |
+|---|---|---|---|
+| Python (from the official [nuget.org package](https://www.nuget.org/packages/python) on Windows) | runs the audio model, apart from the app | PSF License | ✅ |
+| [Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M) (hexgrad), model files by [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) | voices | Apache-2.0 (kokoro-onnx: MIT) | ✅ |
+| [phonemizer](https://github.com/bootphon/phonemizer) and [eSpeak NG](https://github.com/espeak-ng/espeak-ng) (via espeakng-loader) | turn the words into sounds for Kokoro | GPL-3.0 | ✅ (GPL: pass on its source offer) |
+| [MMAudio](https://github.com/hkchengrex/MMAudio) (Ho Kei Cheng et al., UIUC, Sony AI) | sound effects matched to the video | code MIT; **model weights CC-BY-NC-4.0: non-commercial only** | ⛔ |
+| [PyTorch](https://pytorch.org), torchvision, torchaudio (Meta / Linux Foundation) | runs MMAudio | BSD-3-Clause | ✅ |
+| [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) with its [FFmpeg](https://ffmpeg.org) | mixing the sound into the video, joining clips | BSD-2-Clause; the FFmpeg program it brings is GPL | ✅ (GPL: pass on its source offer) |
+| [soundfile](https://github.com/bastibe/python-soundfile) / libsndfile | writing the voice | BSD-3-Clause / LGPL-2.1 | ✅ |
 
 ## Templates (Settings > Templates)
 Made by other people for Z-Image Turbo. Each is its own work with its own licence.
@@ -89,7 +102,7 @@ Made by other people for Z-Image Turbo. Each is its own work with its own licenc
 
 ## What you make with them
 The licences above are about the models and tools themselves. Pictures, videos and code you make with them are generally yours,
-but the OpenRAIL models (⚠️) and the Qwen Research License (⛔) also set rules on how their output may be used, so read
+but the OpenRAIL models, LTX-2 and Gemma (⚠️), and the Qwen Research License and MMAudio's weights (⛔) also set rules on how their output may be used, so read
 those if you'll ever publish or sell what they made.
 
 ## Methods (written for this app, after the published papers)

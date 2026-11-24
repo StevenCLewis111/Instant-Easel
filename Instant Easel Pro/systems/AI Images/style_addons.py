@@ -41,7 +41,7 @@ CATALOG = {
 }
 
 
-BASES = {"zimage": "Z-Image Turbo", "klein": "FLUX.2 Klein", "sdxl": "SDXL", "sd15": "SD 1.5", "wan22": "Wan 2.2 (video)"}
+BASES = {"zimage": "Z-Image Turbo", "klein": "FLUX.2 Klein", "sdxl": "SDXL", "sd15": "SD 1.5", "wan22": "Wan 2.2 (video)", "ltx2": "LTX-2.3 (video)"}
 
 
 def base_of(e): return (e or {}).get("base", "zimage")
@@ -55,6 +55,7 @@ def base_from_civitai(name):
     if any(k in n for k in ("sdxl", "pony", "illustrious", "noobai")): return "sdxl"
     if n.startswith("sd1") or "sd1.5" in n: return "sd15"
     if "wan" in n and "2.2" in n and "5b" in n: return "wan22"
+    if "ltx" in n and "2.3" in n: return "ltx2"
     return ""
 
 

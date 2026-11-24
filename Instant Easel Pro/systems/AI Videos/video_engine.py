@@ -28,9 +28,61 @@ NEGATIVE = ("色调艳丽，过曝，静态，细节模糊不清，字幕，风�
 #  JPEG artifacts, extra fingers, bad hands and faces, deformed limbs, frozen frames, cluttered background, three legs, crowds, walking backwards)
 
 _proc = dict(p=None)
+# the video models, weak to strong. LTX-2.3 makes the sound too (LTX-2 Community License: free under $10M a year in revenue)
+MODELS = {"wan22": dict(label="Wan 2.2 5B", power="weak", sound=False),
+          "ltx2": dict(label="LTX-2.3 22B (with sound)", power="strong", sound=True)}
+LTX = dict(repo="unsloth/LTX-2.3-GGUF", llm_repo="unsloth/gemma-3-12b-it-qat-GGUF", llm_file="gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+           vae="vae/ltx-2.3-22b-dev_video_vae.safetensors", audio_vae="vae/ltx-2.3-22b-dev_audio_vae.safetensors",
+           sizes=dict(diffusion=13.5, llm=7.3, vae=1.5, audio_vae=0.4))
 
 
 def _im(): import imaging; return imaging
+
+
+def ltx_dir():
+    d = os.path.join(_im().ROOT, "video", "ltx23"); os.makedirs(d, exist_ok=True); return d
+
+
+def ltx_parts():
+    """{part: path} of LTX-2.3's files, or None"""
+    d = ltx_dir(); fs = os.listdir(d); out = {}
+    for part, test in (("diffusion", lambda f: f.startswith("ltx-2.3") and f.endswith(".gguf")), ("llm", lambda f: f.startswith("gemma-3") and f.endswith(".gguf")),
+                       ("vae", lambda f: f.endswith("_video_vae.safetensors")), ("audio_vae", lambda f: f.endswith("_audio_vae.safetensors"))):
+        hit = sorted(f for f in fs if test(f.lower()))
+        if not hit: return None
+        out[part] = os.path.join(d, hit[0])
+    return out
+
+
+def ltx_missing():
+    out = []
+    if not _im().engine_exe(): out.append("the picture engine")
+    if not ltx_parts(): out.append("the LTX-2.3 model")
+    return out
+
+
+def install_ltx(report=None, part=None):
+    """LTX-2.3: the distilled model (8 steps: the quick one), its video and audio decoders and its Gemma 3 text reader. part: just one of them"""
+    im = _im(); d = ltx_dir(); have = os.listdir(d)
+    if not im.engine_exe() and part is None: im._install_runtime(report=report)
+    want = [part] if part else ["diffusion", "llm", "vae", "audio_vae"]
+    if "diffusion" in want and not any(f.lower().startswith("ltx-2.3") and f.endswith(".gguf") for f in have):
+        fs = im._hf_files(LTX["repo"])
+        pick = ([f for f in fs if "/" not in f and "distilled" in f and "UD-Q4_K_M" in f and "1.1" not in f] or
+                [f for f in fs if "/" not in f and "distilled" in f and "Q4_K_M" in f] or [f for f in fs if "/" not in f and "Q4_K_M" in f])
+        if not pick: raise RuntimeError("no LTX-2.3 model file found to download")
+        im._get(f"https://huggingface.co/{LTX['repo']}/resolve/main/{pick[0]}", os.path.join(d, os.path.basename(pick[0])), "LTX-2.3 (video + sound)", LTX["sizes"]["diffusion"], report)
+    if "llm" in want and not any(f.lower().startswith("gemma-3") for f in have):
+        im._get(f"https://huggingface.co/{LTX['llm_repo']}/resolve/main/{LTX['llm_file']}", os.path.join(d, LTX["llm_file"]), "LTX-2.3's text reader (Gemma 3 12B)", LTX["sizes"]["llm"], report)
+    for k in ("vae", "audio_vae"):
+        if k in want and not os.path.exists(os.path.join(d, os.path.basename(LTX[k]))):
+            im._get(f"https://huggingface.co/{LTX['repo']}/resolve/main/{LTX[k]}", os.path.join(d, os.path.basename(LTX[k])),
+                    "LTX-2.3's " + ("video" if k == "vae" else "sound") + " decoder", LTX["sizes"][k], report)
+
+
+def downloaded_models():
+    """the video models that are here, weak to strong"""
+    return [k for k in MODELS if (k == "wan22" and _have_model() and not [m for m in missing() if "engine" not in m]) or (k == "ltx2" and ltx_parts())]
 
 
 def parts(): return _im().video_parts()
@@ -68,7 +120,7 @@ def _vram():
     except Exception: return 0
 
 
-def plan_speed(wanted, w, h, frames):
+def plan_speed(wanted, w, h, frames, model="wan22"):
     """(Fast / Slow, why) from what's free right now. Fast needs the model, the text reader and the frames' working memory on the card"""
     if wanted == "Slow": return "Slow", ""
     try:
@@ -78,7 +130,7 @@ def plan_speed(wanted, w, h, frames):
         if wanted == "Auto" and float(pc["vram_gb"]) < 12: return "Slow", f"a {float(pc['vram_gb']):g} GB card: the slow way (the model waits in PC memory)"
         free = hardware.free().get("vram_gb", 0)
     except Exception: return "Slow", ""
-    p = parts() or {}
+    p = (ltx_parts() if model == "ltx2" else parts()) or {}
     files = sum(os.path.getsize(f) for f in p.values() if os.path.exists(f)) / 2 ** 30 if p else 10
     work = 1.5 + 2.5 * (w * h * frames) / (832 * 480 * 49)
     if free >= files + work: return "Fast", ""
@@ -106,6 +158,17 @@ def build_cmd(prompt, w, h, frames, steps, seed, negative, speed, work, image=No
            "--video-frames", str(frames), "--steps", str(steps), "--cfg-scale", f"{cfg:g}", "--sampling-method", "euler",
            "--flow-shift", f"{FLOW_SHIFT:g}", "-s", str(seed), "-o", os.path.join(work, "video.avi")]
     if "--fps" in im._help_text(): cmd += ["--fps", str(FPS)]
+    if image: cmd += ["-i", image]
+    if lora_dir: cmd += ["--lora-model-dir", lora_dir]
+    return cmd + _speed_flags(speed, safest)
+
+
+def build_ltx_cmd(prompt, w, h, frames, steps, seed, negative, speed, work, image=None, lora_dir=None, safest=False):
+    im = _im(); p = ltx_parts(); fl = im._flags()
+    cmd = [im.engine_exe(), "-M", "vid_gen", "--diffusion-model", p["diffusion"], "--vae", p["vae"], "--audio-vae", p["audio_vae"], "--llm", p["llm"],
+           "-p", prompt, fl["width"], str(w), fl["height"], str(h), "--video-frames", str(frames), "--fps", str(FPS),
+           "--steps", str(max(8, steps // 2)), "--cfg-scale", "1.0", "--sampling-method", "euler", "-s", str(seed), "-o", os.path.join(work, "video.webm")]
+    if negative: cmd += [fl["negative"], negative]
     if image: cmd += ["-i", image]
     if lora_dir: cmd += ["--lora-model-dir", lora_dir]
     return cmd + _speed_flags(speed, safest)
@@ -179,17 +242,20 @@ def _oom(tail):
 
 
 def make(prompt, seconds="2 seconds", size="Wide 832×480", quality="Normal", speed="Auto", image=None, seed=None, negative="",
-         lora=None, on_progress=None, stop=None, meta=None):
-    """make one video. -> dict(video (the .avi), frames (count), fps, seconds, speed, folder). Raises when it can't"""
-    im = _im()
-    if missing(): raise RuntimeError("download first: " + ", ".join(missing()))
-    w, h = SIZES.get(size, (832, 480)); frames = LENGTHS.get(seconds, 49); steps = QUALITY.get(quality, 20)
+         lora=None, on_progress=None, stop=None, meta=None, model="wan22", resolution=1.0, save=True):
+    """make one video. -> dict(video (.avi, or .webm with sound from LTX), frames (count), fps, seconds, speed, folder). Raises when it can't"""
+    im = _im(); ltx = model == "ltx2"
+    miss = ltx_missing() if ltx else missing()
+    if miss: raise RuntimeError("download first: " + ", ".join(miss))
+    w, h = SIZES.get(size, (832, 480)) if isinstance(size, str) else size; frames = LENGTHS.get(seconds, 49) if isinstance(seconds, str) else int(seconds)
+    if resolution != 1.0: w, h = max(256, round(w * resolution / 32) * 32), max(256, round(h * resolution / 32) * 32)
+    steps = QUALITY.get(quality, 20)
     seed = random.randint(0, 2 ** 31 - 1) if seed in (None, "", "random") else int(seed)
     try:
         import brain                                                             # (the card can't hold the text model and the video model at once)
         if brain.ready(): brain.stop()
     except Exception: pass
-    mode, why = plan_speed(speed, w, h, frames)
+    mode, why = plan_speed(speed, w, h, frames, model)
     if why and on_progress: on_progress(0.0, why[0].upper() + why[1:])
     work = os.path.join(paths.ai("my-models", "runtime", "video-work"), datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
     os.makedirs(work, exist_ok=True)
@@ -203,7 +269,9 @@ def make(prompt, seconds="2 seconds", size="Wide 832×480", quality="Normal", sp
         if stop is not None and stop.is_set(): raise RuntimeError("stopped")
         for f in glob.glob(os.path.join(work, "video*")): os.remove(f)
         if i and on_progress: on_progress(0.0, "Ran out of memory — trying again " + ("the slow way" if not safest else "the slowest, safest way") + "…")
-        code, tail = _run(build_cmd(full, w, h, frames, steps, seed, negative, m, work, start, lora_dir, safest), steps, on_progress, stop, stall if not safest else 120)
+        cmd = (build_ltx_cmd(full, w, h, frames, steps, seed, negative, m, work, start, lora_dir, safest) if ltx else
+               build_cmd(full, w, h, frames, steps, seed, negative, m, work, start, lora_dir, safest))
+        code, tail = _run(cmd, int(cmd[cmd.index("--steps") + 1]), on_progress, stop, stall if not safest else 120)
         if stop is not None and stop.is_set(): raise RuntimeError("stopped")
         out = _result(work)
         if code == 0 and out: mode = m; break
@@ -212,11 +280,11 @@ def make(prompt, seconds="2 seconds", size="Wide 832×480", quality="Normal", sp
     if not out:
         last = [l for l in tail.strip().splitlines() if l.strip()][-3:]
         raise RuntimeError("the engine didn't make a video" + (": " + " / ".join(last)[:300] if last else ""))
-    dest = _save(out, prompt, meta=dict(meta or {}, prompt=full, seed=seed, size=f"{w}x{h}", frames=frames, steps=steps, speed=mode,
-                                         start_picture=bool(image)))
-    shutil.rmtree(work, ignore_errors=True)
+    info = dict(meta or {}, prompt=full, seed=seed, size=f"{w}x{h}", frames=frames, steps=steps, speed=mode, start_picture=bool(image), model=model)
+    if save: dest = _save(out, prompt, meta=info); shutil.rmtree(work, ignore_errors=True)
+    else: dest = out                                                         # (Long Video: the clip stays in the work folder until it's joined)
     on_progress and on_progress(1.0, "Done")
-    return dict(video=dest, frames=frames, fps=FPS, seconds=round(frames / FPS, 1), speed=mode, seed=seed, folder=os.path.dirname(dest))
+    return dict(video=dest, frames=frames, fps=FPS, seconds=round(frames / FPS, 1), speed=mode, seed=seed, folder=os.path.dirname(dest), sound=ltx)
 
 
 def _result(work):
@@ -273,9 +341,17 @@ def frames_of(path, limit=None):
         except Exception: pass
         i = b + 2
         if limit and len(out) >= limit: break
-    if not out:
+    if not out:                                                              # (.webm / .mp4: read with ffmpeg, from the audio model's Python or the PC)
         try:
-            import imageio.v3 as iio; out = [Image.fromarray(f) for f in iio.imread(path)]
+            import audio_engine as A, tempfile, subprocess as sp
+            ff = A.ffmpeg()
+            if ff:
+                d = tempfile.mkdtemp(prefix="ie-frames-")
+                sp.run([ff, "-loglevel", "error", "-i", path, "-vf", "scale='min(960,iw)':-2", os.path.join(d, "f%05d.jpg")],
+                       creationflags=0x08000000 if sys.platform == "win32" else 0)
+                for f in sorted(glob.glob(os.path.join(d, "f*.jpg")))[:limit or None]:
+                    with Image.open(f) as im: out.append(im.convert("RGB").copy())
+                shutil.rmtree(d, ignore_errors=True)
         except Exception: pass
     return out
 
@@ -292,6 +368,45 @@ def save_as(path, kind, fps=FPS):
         small[0].save(dest, save_all=True, append_images=small[1:], duration=int(1000 / fps), loop=0, optimize=True)
     else: frames[0].save(dest, save_all=True, append_images=frames[1:], duration=int(1000 / fps), loop=0, quality=88)
     return dest
+
+
+def jpeg_frames(path):
+    """the engine's .avi frames as the JPEG bytes they're stored as (nothing decoded: joining long videos stays light)"""
+    data = open(path, "rb").read(); out = []; i = 0
+    while True:
+        a = data.find(b"\xff\xd8\xff", i)
+        if a < 0: break
+        b = data.find(b"\xff\xd9", a + 3)
+        if b < 0: break
+        out.append(data[a:b + 2]); i = b + 2
+    return out
+
+
+def write_avi(frames, path, fps=FPS, quality=92):
+    """frames (PIL images, or JPEG bytes from jpeg_frames) -> an MJPEG .avi (plays in Windows' player and VLC; what the engine writes)"""
+    import struct
+    from PIL import Image
+    if not frames: raise RuntimeError("no frames")
+    if isinstance(frames[0], bytes):
+        jpgs = list(frames)
+        with Image.open(io.BytesIO(jpgs[0])) as im: w, h = im.size
+    else:
+        w, h = frames[0].size; jpgs = []
+        for f in frames:
+            b = io.BytesIO(); (f if f.size == (w, h) else f.resize((w, h))).convert("RGB").save(b, "JPEG", quality=quality); jpgs.append(b.getvalue())
+    def chunk(tag, data): return tag + struct.pack("<I", len(data)) + data + (b"\0" if len(data) % 2 else b"")
+    def lst(tag, data): return b"LIST" + struct.pack("<I", len(data) + 4) + tag + data
+    n = len(jpgs); big = max(len(j) for j in jpgs)
+    avih = struct.pack("<14I", int(1e6 / fps), big * fps, 0, 0x10, n, 0, 1, big, w, h, 0, 0, 0, 0)
+    strh = struct.pack("<4s4sIHHIIIIIIIIhhhh", b"vids", b"MJPG", 0, 0, 0, 0, 1, fps, 0, n, big, 0xFFFFFFFF, 0, 0, 0, w, h)
+    strf = struct.pack("<IiiHH4sIiiII", 40, w, h, 1, 24, b"MJPG", w * h * 3, 0, 0, 0, 0)
+    hdrl = lst(b"hdrl", chunk(b"avih", avih) + lst(b"strl", chunk(b"strh", strh) + chunk(b"strf", strf)))
+    movi_items = b""; idx = b""; off = 4
+    for j in jpgs:
+        c = chunk(b"00dc", j); idx += struct.pack("<4sIII", b"00dc", 0x10, off, len(j)); movi_items += c; off += len(c)
+    body = b"AVI " + hdrl + lst(b"movi", movi_items) + chunk(b"idx1", idx)
+    with open(path, "wb") as f: f.write(b"RIFF" + struct.pack("<I", len(body)) + body)
+    return path
 
 
 def last_frame(path, dest=None):
