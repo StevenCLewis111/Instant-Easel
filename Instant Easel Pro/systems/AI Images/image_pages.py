@@ -493,19 +493,13 @@ class ImagePage(tk.Frame):
             for ev in ("<Button-1>", "<Button-3>", "<Return>"): self.model_choice.unbind(ev)
             self.model_choice.configure(cursor="arrow")
         self.style = self.var("style", prefs.get("image_default_style") or "None")
-        self.style_choice = ListChoice(self.pick_row, "template", self.styles.names(), self.style); self.style_choice.pack(side="left")
-        self._sync_model_pick()
-        self.model.trace_add("write", lambda *a: self._model_picked())
         if self.VIEWER:
             self._words_label = head_row(host); _HeadTitle(self._words_label, self.WORDS).place(relx=0.5, rely=1.0, anchor="s")
         else: self._words_label = T.Text(host, self.WORDS, font=T.f(10)); self._words_label.pack(anchor="w", pady=(4, 2))
-        self.prompt = T.Field(host, height=3, **({"width": 10} if self.VIEWER else {}))   # (beside the viewer it fills whatever height is left)
-        self.prompt.pack(fill="both" if self.VIEWER else "x", expand=bool(self.VIEWER))
+        self.prompt = T.Field(host, height=2, **({"width": 10} if self.VIEWER else {}))   # (a fixed two lines: the settings box gets the rest)
+        self.prompt.pack(fill="x")
         if self._mem.get("words"): self.prompt.insert("1.0", self._mem["words"])
-        self.lo_row = _frame(host); self.lo_row.pack(fill="x", pady=(4, 0))
-        T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 8))
-        self.leave_out = self.var("leave_out", imaging.NEGATIVE); T.Entry(self.lo_row, self.leave_out, width=10 if self.VIEWER else 60).pack(side="left", fill="x", expand=True)
-        self.lo_note = T.Text(host, "", muted=True, font=T.f(8)); self.lo_note.configure(wraplength=480 if self.VIEWER else 1000)
+        self.leave_out = self.var("leave_out", imaging.NEGATIVE)
         # the settings, laid out in a tidy grid (2 across beside the viewer, 3 across otherwise)
         if self.VIEWER:                                                              # beside the viewer: in a bordered area that scrolls if it must
             self.optarea = OptionPanel(host); self.optarea.pack(pady=(8, 0), fill="x"); self.optbox = self.optarea.inner
@@ -513,6 +507,7 @@ class ImagePage(tk.Frame):
         ob = self.optbox
         self._opts = []
         def add(w, span=1): self._opts.append((w, span)); return w
+        self.style_choice = add(ListChoice(ob, "template", self.styles.names(), self.style))     # first: its choices show on the right
         if self.SIZE:
             self.size = self.var("size", prefs.get("image_default_size") or imaging.SIZES[0])
             if self.size.get() not in imaging.SIZES: self.size.set(imaging.SIZES[0])
@@ -535,11 +530,15 @@ class ImagePage(tk.Frame):
             if self.amount.get() not in self.AMOUNT: self.amount.set(self.AMOUNT_DEFAULT or list(self.AMOUNT)[1])
             add(T.Choice(ob, self.AMOUNT_LABEL, list(self.AMOUNT), self.amount))
             self.amount.trace_add("write", lambda *a: self._model_changed())        # Sketch: following the lines exactly switches to SD 1.5
+        self.lo_row = add(_frame(ob))                                                # LEAVE OUT (Stable Diffusion only; hidden for the others)
+        T.Text(self.lo_row, "LEAVE OUT", font=T.f(9)).pack(side="left", padx=(0, 6)); T.Entry(self.lo_row, self.leave_out, width=22).pack(side="left")
         self.upscale = self.var("upscale", prefs.get("image_auto_upscale") or "Off")
         if self.UPSCALE_AFTER: add(T.Choice(ob, "upscale", UPSCALE, self.upscale))
         self.build_extra(ob)                                                         # a section's own settings (each packs into ob; moved into the grid below)
         for w in ob.winfo_children():
             if w not in [x for x, _ in self._opts] and w is not self.follow_choice: w.pack_forget(); add(w)
+        self._sync_model_pick()
+        self.model.trace_add("write", lambda *a: self._model_picked())
         seed = _frame(ob); T.Text(seed, "SEED", font=T.f(9)).pack(side="left", padx=(0, 4))
         self.seed = self.var("seed", "random")
         T.Button(seed, "Random", lambda: self.seed.set("random"), width=7).pack(side="left", padx=(0, 4))
@@ -560,7 +559,7 @@ class ImagePage(tk.Frame):
             self.go_btn.pack(side="left", padx=(0, 6)); stop.configure(width=8); stop.pack(side="left", padx=6)
             skin.file_button(T.Button(b, "Open my Images folder", lambda: prefs.open_folder(prefs.save_folder()))).pack(side="left", padx=6)
         mh = host
-        if self.VIEWER: self.notes = mh = _frame(host); self.notes.pack(fill="x")    # the two message lines: take no room while they're empty
+        if self.VIEWER: self.notes = mh = _frame(host)                                # (the message lines aren't shown beside the viewer: it shows the progress)
         self.msg = T.Text(mh, "", muted=True, font=T.f(9)); self.msg.pack(anchor="w" if self.VIEWER else "center")
         if self.VIEWER: self.msg.configure(wraplength=int(480 * T.Z))
         self.used = T.Text(mh, "", muted=True, font=T.f(8)); self.used.configure(wraplength=480 if (self.SPLIT or self.VIEWER) else 1000)
@@ -568,12 +567,9 @@ class ImagePage(tk.Frame):
         if self.VIEWER:
             self.msg._first = self.msg
             for lab in (self.msg, self.used): _hide_when_empty(lab)
-        if self.VIEWER:                                                              # everything under the words box is placed first, from the bottom up,
-            for w in (self.optarea, self.gobar, self.notes, self.lo_row):           # so the words box only gets the height that's left and nothing is cut off;
-                                                                                         # the settings box last, so its bottom lines up with the picture buttons' box
-                w.pack_configure(side="bottom", before=self._words_label)
-            self.lo_row.pack_configure(pady=(6, 0)); self.optarea.pack_configure(fill="x", pady=0)
-            self.gobar.pack_configure(fill="x", pady=(10, 10))                       # Paint it / Stop: the same gap above (to LEAVE OUT) as below (to the box)
+        if self.VIEWER:                                                              # top to bottom: the words box, Paint it / Stop right under it,
+            self.gobar.pack(fill="x", pady=(10, 10), after=self.prompt)              # then the settings box taking all the height that's left
+            self.optarea.pack_configure(fill="both", expand=True, pady=0, after=self.gobar)
             host.bind("<Configure>", lambda e: e.widget is host and self.after(20, self._fit_left), add="+")
             self.bind("<Configure>", lambda e: e.widget is self and self.get_btn.winfo_manager() and self.after(30, self._place_dl), add="+")
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
@@ -616,10 +612,9 @@ class ImagePage(tk.Frame):
         try:
             H = self.host.winfo_height()
             if H < 50 or not self.host.winfo_viewable(): return
-            others = self.host.winfo_reqheight() - self.prompt.winfo_reqheight() - self.optarea.winfo_reqheight()
+            others = self.host.winfo_reqheight() - self.optarea.winfo_reqheight()
             border = self.optarea.winfo_reqheight() - int(float(self.optarea.left.cv.cget("height")))
-            room = H - others - self.prompt.winfo_reqheight() - border             # all but the words box's 3 lines
-            self.optarea.set_height(max(int(40 * T.Z), min(room, int(H * 0.5))))   # at most half the column: the words box keeps a fair share
+            self.optarea.set_height(max(int(60 * T.Z), H - others - border - 2))    # everything below Paint it / Stop
         except tk.TclError: pass
 
     # ---- building blocks for the sections
@@ -683,6 +678,8 @@ class ImagePage(tk.Frame):
         except Exception: names = self.styles.names()
         self.style_choice.choices = names
         if self.style.get() not in names: self.style.set("None")
+        oa = getattr(self, "optarea", None)
+        if oa is not None and oa.current is self.style_choice: oa.show(self.style_choice)
 
     def _model_picked(self):
         self._fit_templates(); self._model_changed()
@@ -708,19 +705,8 @@ class ImagePage(tk.Frame):
         """LEAVE OUT and FOLLOW MY WORDS only matter for Stable Diffusion (Z-Image and FLUX.2 ignore them): hidden for the others"""
         try: dit = self.imaging.spec(self.model_key())["dit"]
         except Exception: dit = False
-        self._hidden_opts = {self.follow_choice} if dit else set()
-        if self.SHOW_FOLLOW: self._layout_opts()
-        if dit:
-            if self.lo_row.winfo_manager(): self.lo_row.pack_forget()
-            self.lo_note.configure(text=f"{self.imaging.model_label(self.model_key()) or 'This model'} follows your words as written: say what you want rather than what to leave out.")
-            if not self.lo_note.winfo_manager():
-                if self.VIEWER: self.lo_note.pack(side="bottom", anchor="w", after=self.notes, pady=(6, 0))   # where LEAVE OUT was
-                else: self.lo_note.pack(after=self.prompt, anchor="w")
-        else:
-            if self.lo_note.winfo_manager(): self.lo_note.pack_forget()
-            if not self.lo_row.winfo_manager():
-                if self.VIEWER: self.lo_row.pack(side="bottom", after=self.notes, fill="x", pady=(6, 0))
-                else: self.lo_row.pack(after=self.prompt, fill="x", pady=(4, 0))
+        self._hidden_opts = {self.follow_choice, self.lo_row} if dit else set()      # (these models follow the words as written)
+        self._layout_opts()
 
     def _tick(self):
         if not self.winfo_exists(): return
