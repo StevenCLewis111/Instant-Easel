@@ -249,7 +249,7 @@ class UpdatesPage(SettingsPage):
     def build(self):
         import updater as U, main
         me = U.current()
-        T.Text(self.body, f"THIS BUILD: {me.get('sha', '')[:7] or main.VERSION}" + (f"  ·  made {me['built']}" if me.get("built") else
+        T.Text(self.body, f"THIS VERSION: {main.VERSION}" + (f"  ·  build {me['sha'][:7]}, made {me['built']}" if me.get("built") else
                ("  ·  running from the source (updates come with git pull)" if not U.FROZEN else "")), font=T.f(11)).pack(anchor="w", pady=(0, 8))
         self.toggle("Check for updates when the app opens", "check_updates_on_start", "When there's a newer build it asks before downloading anything.")
         r = _frame(self.body); r.pack(anchor="w", pady=(6, 4))
