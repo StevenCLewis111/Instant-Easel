@@ -26,6 +26,20 @@ REMOVE_WORDS = "the surrounding background continuing naturally, seamless, nothi
 BRUSH = {"Small": 8, "Medium": 18, "Large": 36}
 UPSCALE = ["Off", "2x", "4x"]
 RESOLUTION = {"Low": 0.75, "Medium": 1.0, "High": 1.25}                  # x the model's own size, each way (Low is quicker, High sharper)
+UNCLOTHED = re.compile(r"\b(nude|nudes|naked|topless|bottomless|unclothed|undressed|nsfw|no clothes|without clothes|bare[- ]chested)\b", re.I)
+COVERED = re.compile(r"\b(bikini|swimsuit|swimwear|bathing suit|lingerie|underwear|bra|panties|towel|robe|clothed|dressed|covered|censored|"
+                     r"modest|tasteful|implied|shirt|dress|top)\b", re.I)
+
+
+def keeps_request(asked, rewritten):
+    """False when the fuller description changed the request: it dropped that the person is unclothed, or added clothing they didn't ask for
+    (text models tend to turn 'nude' into 'bikini'); the person's own words are painted then"""
+    if not UNCLOTHED.search(asked): return True
+    if not UNCLOTHED.search(rewritten): return False
+    added = {w.lower() for w in COVERED.findall(rewritten)} - {w.lower() for w in COVERED.findall(asked)}
+    return not added
+
+
 STRENGTH = {"zimage": "strong", "klein": "strong", "sdxl": "medium", "sd15": "weak", "file": "yours"}   # the image models, weak to strong
 GUIDE_STRENGTH = {"Loosely": 0.6, "Normal": 0.85, "Exactly": 1.0}
 PIC_TYPES = [("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")]
@@ -648,10 +662,18 @@ class ImagePage(tk.Frame):
                 elif k == "sdxl": here = bool(im.model_file("sdxl"))                     # (the SDXL download, or an SDXL-type model of yours: Pony, Illustrious…)
                 else: here = im.have(k)
             except Exception: here = False
-            if here: out.append(k)
+            if here:
+                out.append(k)
+                try:                                                                 # your Model Mixes on this model, right after it
+                    import model_mixes as MM
+                    out += [m for m in MM.for_base(k) if MM.ready(m)]
+                except Exception: pass
         return out
 
     def _label(self, k):
+        if str(k).startswith("mix:"):
+            import model_mixes as MM; b = MM.base(k)
+            return f"{MM.name(k) or k} · {STRENGTH.get(b, '')}".strip(" ·")
         name = {"file": "Your own model"}.get(k) or self.imaging.MODELS.get(k, {}).get("label", k)
         return f"{name} · {STRENGTH.get(k, '')}".strip(" ·")
 
@@ -661,9 +683,9 @@ class ImagePage(tk.Frame):
         return [self._label(k) for k in self._downloaded()]
 
     def _picked_key(self):
-        v = self.model.get() if hasattr(self, "model") else ""
-        for k in ("zimage", "klein", "sdxl", "sd15", "file"):
-            if v.startswith(self._label(k).split(" · ")[0]) and k in self._downloaded(): return k
+        v = (self.model.get() if hasattr(self, "model") else "").split(" · ")[0]
+        for k in self._downloaded():                                                 # (exact: "Z-Image Turbo / Tumblr" isn't plain Z-Image Turbo)
+            if v == self._label(k).split(" · ")[0]: return k
         return ""
 
     def _sync_model_pick(self):
@@ -715,6 +737,7 @@ class ImagePage(tk.Frame):
         """[(download key, what it is)] this section still needs"""
         out = []; im = self.imaging; key = self.model_key()
         if not im.engine_exe(): out.append(("engine", "the image engine"))
+        if str(key).startswith("mix:"): key = self.imaging.kind(key)              # a Model Mix needs what its main model needs
         if not im.have(key) and not (self.MODEL == "paint" and im.ready()):
             out.append((key if key in ("zimage", "klein", "sd15", "sdxl") else "sd15", im.MODELS.get(key, {}).get("label", "Stable Diffusion 1.5")))
         return out
@@ -786,17 +809,20 @@ class ImagePage(tk.Frame):
             if self.imaging.spec(key)["dit"]:
                 ask = ("Rewrite this picture request as a vivid description for an image model in 2 to 4 plain sentences (60 to 110 words): "
                        "the subject first, then the setting, composition, lighting and colours. Say what must be in it, not what must not. "
-                       "Keep every detail the person asked for and invent nothing that changes their meaning. Reply with the description only.\n\n" + text)
+                       "Keep every detail the person asked for and invent nothing that changes their meaning. Keep what they said about clothing exactly: "
+                       "never add clothing, cover or swimwear they didn't ask for, and never leave out or soften anything they asked for. "
+                       "Reply with the description only.\n\n" + text)
             else:
                 ask = ("Rewrite this request as one short picture description for Stable Diffusion: the subject first, then style, lighting and details, "
-                       "as comma-separated tags, under 45 words. Reply with the tags only.\n\n" + text)
+                       "as comma-separated tags, under 45 words. Keep what they said about clothing exactly: never add clothing, cover or swimwear they "
+                       "didn't ask for. Reply with the tags only.\n\n" + text)
             try:                                                                     # names / words it may not know: looked up and remembered
                 import glossary; found = glossary.for_text(text)
                 if found: ask += ("\n\nWhat these words in the request mean (use this so you describe the right thing, and describe how it looks "
                                   "rather than only naming it):\n" + glossary.notes(found))
             except Exception: pass
-            ans = brain.ask("AI Images", ask, max_tokens=200, use_library=False)
-            return ans.strip().strip('"') or text
+            ans = brain.ask("AI Images", ask, max_tokens=200, use_library=False).strip().strip('"')
+            return ans if ans and keeps_request(text, ans) else text
         except Exception: return text
 
     def _remember(self, text):

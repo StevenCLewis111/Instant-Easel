@@ -709,6 +709,112 @@ class StyleAddonsPage(SettingsPage):
             except Exception as ex: T.banner(self.app, f"COULDN'T ADD IT — {ex}")
         T.Button(bar, "Add it", ok, width=12).pack(side="left"); T.Button(bar, "Cancel", win.destroy, width=10).pack(side="left", padx=6)
         win.bind("<Escape>", lambda _e: win.destroy())
+# ---------------------------------------------------------------- Model Mixes (a main model + add-on files, saved as a new main model)
+class ModelMixesPage(SettingsPage):
+    TITLE = "Model Mixes"; NOTE = ("A Model Mix is a main picture model with add-on files (LoRAs) you choose switched on with it, saved as a new main model "
+                                   "you pick like any other, e.g. \"Z-Image Turbo / Tumblr\". Pick the files from your PC; each one is checked to make sure "
+                                   "it's made for that main model before the mix is made. A mix stays until you delete it, and templates still go on top of it.")
+    def build(self):
+        top = _frame(self.body); top.pack(anchor="w", pady=(4, 8))
+        T.Button(top, "New mix…", self._mm_new, width=14).pack(side="left")
+        self.mm_rows = _frame(self.body); self.mm_rows.pack(anchor="w", fill="x"); self._mm_list()
+
+    def _mm_list(self):
+        import model_mixes as MM, style_addons as SA
+        for w in self.mm_rows.winfo_children(): w.destroy()
+        allm = MM.mixes()
+        if not allm:
+            return T.Text(self.mm_rows, "No mixes yet: press New mix… to make one.", muted=True, font=T.f(9)).pack(anchor="w", pady=4)
+        for base in MM.MAIN_MODELS:
+            keys = MM.for_base(base)
+            if not keys: continue
+            _rule(self.mm_rows); T.Text(self.mm_rows, f"ON {SA.BASES.get(base, base).upper()}", font=T.f(10)).pack(anchor="w", pady=(4, 2))
+            for k in keys:
+                m = allm[k]; r = _frame(self.mm_rows); r.pack(fill="x", anchor="w", pady=2)
+                T.Text(r, ("✓ " if MM.ready(k) else "! ") + m.get("name", k).upper(), font=T.f(9), width=34, anchor="w").pack(side="left")
+                T.Button(r, "Delete", lambda k=k: self._mm_delete(k), kind="danger", width=8).pack(side="left", padx=4)
+                parts = ", ".join(f"{a.get('label', a['file'])} ({float(a.get('weight', 0.8)):g})" for a in m.get("addons", []))
+                T.Text(r, parts if MM.ready(k) else "an add-on file is missing: delete it and make it again", muted=True, font=T.f(8)).pack(side="left", padx=6)
+
+    def _mm_delete(self, key):
+        import model_mixes as MM
+        from tkinter import messagebox
+        n = MM.name(key)
+        if not messagebox.askyesno("Delete mix", f"Delete the mix {n}?\n\nThe add-on files you picked stay where they are.", parent=self.app): return
+        MM.delete(key); self._mm_list(); T.banner(self.app, f"DELETED — {n.upper()}", "success")
+
+    def _mm_new(self):
+        """the New mix window: the main model, a name, the add-on files (each with its strength and trigger words); checked, confirmed, made"""
+        import model_mixes as MM, style_addons as SA, imaging
+        from tkinter import filedialog, messagebox
+        win = tk.Toplevel(self.app); win.title("New Model Mix"); win.configure(bg=T.PALETTE["panel"]); win.transient(self.app)
+        bar = _frame(win); bar.pack(side="bottom", fill="x", padx=16, pady=(0, 14))
+        f = _frame(win); f.pack(side="top", fill="both", expand=True, padx=16, pady=(14, 6))
+        def entry(parent, var, width=40):
+            return tk.Entry(parent, textvariable=var, width=width, bg=T.PALETTE["field"], fg="white", insertbackground="white", relief="flat")
+        here = [k for k in MM.MAIN_MODELS if imaging.have(k)] or list(MM.MAIN_MODELS)
+        T.Text(f, "MAIN MODEL", font=T.f(9)).pack(anchor="w", pady=(0, 2))
+        main = tk.StringVar(value=SA.BASES.get(imaging.kind() if imaging.kind() in here else here[0]))
+        T.Choice(f, "", [SA.BASES[k] for k in here], main).pack(anchor="w")
+        T.Text(f, "NAME (SHOWN AS  MAIN MODEL / NAME)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
+        nm = tk.StringVar(); entry(f, nm).pack(anchor="w")
+        T.Text(f, "ADD-ON FILES (.SAFETENSORS LORAS)", font=T.f(9)).pack(anchor="w", pady=(10, 2))
+        grid = _frame(f); grid.pack(anchor="w", fill="x")                          # one grid: the headings line up with every file's row
+        for col, t in enumerate(("FILE", "STRENGTH", "TRIGGER WORDS", "CHECK")):
+            T.Text(grid, t, font=T.f(8), anchor="w").grid(row=0, column=col, sticky="w", padx=(0, 8))
+        items = []                                                             # [dict(path, weight var, trigger var, row, status)]
+        def key_of_main(): return next(k for k, n in SA.BASES.items() if n == main.get())
+        def recheck(*_a):
+            res = MM.check(key_of_main(), [i["path"] for i in items])
+            for i, r in zip(items, res):
+                txt = "OK" + (" — " + r["note"] if r["note"] else "") if r["ok"] else "CAN'T USE: " + r["problem"]
+                i["status"].configure(text=txt.upper() if r["ok"] else txt, fg="#66bb6a" if r["ok"] else "#ef5350")
+            return res
+        main.trace_add("write", recheck)
+        row_no = [1]
+        def add_files():
+            for p in filedialog.askopenfilenames(parent=win, title="Choose add-on files", filetypes=[("Add-ons (LoRA)", "*.safetensors"), ("All files", "*.*")]):
+                if not items:                                                  # the first file: the main model it's made for, when that's here
+                    b = SA.detect_base(p)
+                    if b in here and SA.BASES[b] != main.get(): main.set(SA.BASES[b])
+                wv, tv = tk.StringVar(value="0.8"), tk.StringVar(); n = row_no[0]; row_no[0] += 1
+                cells = [T.Text(grid, os.path.basename(p)[:40], font=T.f(8), anchor="w"), entry(grid, wv, width=6), entry(grid, tv, width=24),
+                         tk.Label(grid, text="", bg=grid["bg"], font=T.f(8), anchor="w", wraplength=320, justify="left")]
+                it = dict(path=p, weight=wv, trigger=tv, cells=cells, status=cells[3]); items.append(it)
+                cells.append(T.Button(grid, "✕", lambda it=it: (items.remove(it), [c.destroy() for c in it["cells"]], recheck()), width=3, kind="danger"))
+                for col, c in enumerate(cells): c.grid(row=n, column=col, sticky="w", padx=(0, 8), pady=2)
+                if not nm.get().strip(): nm.set(os.path.splitext(os.path.basename(p))[0].replace("_", " ").replace("-", " ").strip().title())
+            recheck()
+        T.Button(f, "Add files…", add_files, width=12).pack(anchor="w", pady=(6, 0))
+        T.Text(f, "Strength: 0.6 gentle, 0.8 normal, 1.0 strong. Trigger words: the words the add-on's maker says switch it on (blank if none). "
+                  "Each file is read to see which main model it's made for; one made for another model, or a whole model, can't be used.",
+               muted=True, font=T.f(8), wraplength=560).pack(anchor="w", pady=(6, 0))
+        def make():
+            try:
+                res = recheck()
+                if not items: raise ValueError("add at least one add-on file")
+                bad = [r for r in res if not r["ok"]]
+                if bad: raise ValueError(f"{os.path.basename(bad[0]['path'])} can't be used: {bad[0]['problem']} (remove it with ✕)")
+                picks = []
+                for i in items:
+                    try: w = float(i["weight"].get() or 0.8)
+                    except ValueError: raise ValueError(f"the strength of {os.path.basename(i['path'])} is a number, like 0.8")
+                    picks.append(dict(path=i["path"], weight=w, trigger=i["trigger"].get()))
+                base = key_of_main(); title = f"{SA.BASES[base]} / {nm.get().strip()}"
+                lines = "\n".join(f"  • {os.path.basename(p['path'])}  (strength {p['weight']:g}{', trigger: ' + p['trigger'] if p['trigger'].strip() else ''})" for p in picks)
+                unsure = [os.path.basename(r["path"]) for r in res if r["note"]]
+                warn = MM.warnings(picks) + ([f"{', '.join(unsure)}: the file doesn't say which model it's for" ] if unsure else [])
+                msg = (f"Make the mix {title}?\n\n{lines}\n\nThey all fit {SA.BASES[base]}." + ("\n\nNote: " + "\n".join(warn) if warn else "")
+                       + "\n\nIt will be a main model you can pick on the AI Images pages.")
+                if not messagebox.askyesno("Make this mix?", msg, parent=win): return
+                key = MM.create(nm.get(), base, picks)
+                win.destroy(); self._mm_list()
+                T.banner(self.app, f"MIX MADE — {MM.name(key).upper()} is now a main model on the AI Images pages", "success")
+            except Exception as ex: T.banner(self.app, f"COULDN'T MAKE THE MIX — {ex}")
+        T.Button(bar, "Check & make it", make, width=16).pack(side="left"); T.Button(bar, "Cancel", win.destroy, width=10).pack(side="left", padx=6)
+        win.bind("<Escape>", lambda _e: win.destroy())
+
+
 class CodeLanguagesPage(SettingsPage):
     TITLE = "Code Languages"; NOTE = ("The languages AI Coding works out from your questions. Each has its own setup: how you write it (style, libraries "
                                       "and versions, things to avoid), its own library it looks things up in, and a checker that compiles its code before "

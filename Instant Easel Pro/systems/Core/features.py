@@ -151,6 +151,7 @@ MENUS = [
         options=["Choose the AI drive (everything moves there)", "Each AI's portion with used / budget", "Adding stops politely when a portion is full"]),
    dict(name="Download Everything", status="built", order=0, desc="One download of every engine, model (every size, even ones for a bigger PC), add-on, the video model and the code checkers.", options=[]),
    dict(name="Templates", status="built", order=0, desc="Templates: ready-made styles, each switched on or off, and your own from a link, for any image or video model.", options=[]),
+   dict(name="Model Mixes", status="built", order=0, desc="A main picture model with add-on files of yours switched on with it, checked to fit, saved as a new main model to pick (e.g. Z-Image Turbo / Tumblr).", options=["New mix: main model, name, add-on files with strength and trigger words", "Each file checked against the main model", "Delete a mix"]),
    dict(name="Updates", status="built", order=0, desc="Updates in place: checks GitHub, downloads the newer build, restarts into it.", options=["Check when the app opens", "Download and update", "Restart to update"]),
    dict(name="Code Languages", status="built", order=0, desc="Switch AI Coding's languages on or off; each one's profile, library and checker.", options=[]),
    dict(name="Drawing AI", status="built", order=0, desc="Download the Drawing tab's AI models (any or all), remove them, or add your own.", options=[]),

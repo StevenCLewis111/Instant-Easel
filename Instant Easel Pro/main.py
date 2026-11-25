@@ -255,7 +255,7 @@ class InstantEasel(tk.Tk):
         built = {"Image Scraper": ScraperPage, **LA.page_classes(), **IP.page_classes(), **WP.page_classes(), "Theme": ThemePage, "Draw": draw_studio.DrawStudio,
                  **EP.page_classes(), **VP.page_classes(), "About": AboutPage,
                  "General": SP.GeneralPage, "Performance": SP.PerformancePage, "Display": SP.DisplayPage, "Privacy & Data": SP.PrivacyPage,
-                 "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Templates": SP.StyleAddonsPage, "Download Everything": SP.DownloadEverythingPage, "Code Languages": SP.CodeLanguagesPage, "Updates": SP.UpdatesPage, "Drawing AI": SP.DrawingAIPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
+                 "AI Models": SP.AIModelsPage, "AI Images": SP.AIImagesPage, "AI Storage": SP.AIStoragePage, "Templates": SP.StyleAddonsPage, "Model Mixes": SP.ModelMixesPage, "Download Everything": SP.DownloadEverythingPage, "Code Languages": SP.CodeLanguagesPage, "Updates": SP.UpdatesPage, "Drawing AI": SP.DrawingAIPage, "Pen & Tablet": SP.PenPage, "Shortcuts": SP.ShortcutsPage, "Backup & Reset": SP.BackupPage}
         self.body = T.Panel(self.frame, pad=0, inner=True); self.body.pack(fill="both", expand=True, pady=(0, 14))
         self.pages = {}
         for i, (m, _, tools) in enumerate(self.menus):
@@ -1081,7 +1081,7 @@ class ScraperPage(Page):
 # ---------------------------------------------------------------- Paint
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.13 (Nov 24, 2026)"
+VERSION = "0.9.14 (Nov 25, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)

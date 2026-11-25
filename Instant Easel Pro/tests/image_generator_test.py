@@ -132,6 +132,57 @@ check("reference pictures on a model that can't use them: a clear message", bad)
 reset(); up = imaging.upscale(r[0], 2)
 check("Upscale a picture: saved as a new picture with its details", up and os.path.exists(up) and prefs.picture_info(up).get("upscaled") == "2x", up)
 
+# ---- Model Mixes: a main model + add-on files of yours, saved as a new main model
+import model_mixes as MM, style_addons as SA, struct as _st
+def lora_file(name, keys, meta=None, mb=0):
+    """a small stand-in .safetensors file: just the table of contents the checks read"""
+    head = {k: dict(dtype="F16", shape=[4, 4], data_offsets=[0, 32]) for k in keys}
+    if meta: head["__metadata__"] = meta
+    raw = json.dumps(head).encode(); p = os.path.join(TMP, "picked", name); os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "wb") as f: f.write(_st.pack("<Q", len(raw)) + raw + b"\0" * 32); f.truncate(max(f.tell(), mb * 1024 * 1024))
+    return p
+tumblr = lora_file("tumblr.safetensors", ["diffusion_model.layers.0.attention.qkv.lora_A.weight", "diffusion_model.context_refiner.0.attention.qkv.lora_B.weight"])
+real = lora_file("realism.safetensors", ["x.lora_down.weight"], meta={"ss_base_model_version": "zimage_turbo"})
+sd_one = lora_file("sd-face.safetensors", ["lora_unet_down_blocks_0_attentions_0_proj_in.lora_down.weight", "lora_te_text_model_encoder_layers_0_mlp_fc1.lora_down.weight"])
+whole = lora_file("whole.safetensors", ["model.diffusion_model.input_blocks.0.0.weight"])
+res = MM.check("zimage", [tumblr, real, sd_one, whole, tumblr])
+check("mix check: Z-Image add-ons fit Z-Image", res[0]["ok"] and res[1]["ok"] and res[0]["base"] == "zimage", res[:2])
+check("mix check: an SD 1.5 add-on is refused for Z-Image, and says so", not res[2]["ok"] and "SD 1.5" in res[2]["problem"], res[2])
+check("mix check: a whole model (not an add-on) is refused", not res[3]["ok"] and "add-on" in res[3]["problem"], res[3])
+check("mix check: the same file twice is refused", not res[4]["ok"] and "twice" in res[4]["problem"], res[4])
+check("mix warning: strengths adding up too high are pointed out", MM.warnings([dict(weight=1.2), dict(weight=1.3)]) and not MM.warnings([dict(weight=0.8)]))
+try: MM.create("Bad", "zimage", [dict(path=sd_one, weight=0.8)]); refused = False
+except ValueError as e: refused = "SD 1.5" in str(e)
+check("a mix with a file made for another model isn't made", refused)
+key = MM.create("Tumblr", "zimage", [dict(path=tumblr, weight=0.8, trigger="tmblr style"), dict(path=real, weight=0.6)])
+check("mix made: 'Z-Image Turbo / Tumblr', its own key, its files copied beside the templates", key == "mix:tumblr" and MM.name(key) == "Z-Image Turbo / Tumblr"
+      and MM.ready(key) and os.path.isfile(os.path.join(SA.folder(), "mix-tumblr-1.safetensors")) and os.path.isfile(tumblr), (key, MM.mixes()))
+try: MM.create("tumblr", "zimage", [dict(path=tumblr)]); twice = False
+except ValueError: twice = True
+check("two mixes can't share a name", twice)
+check("a mix paints with its main model and is downloaded when it and its files are", imaging.kind(key) == "zimage" and imaging.have(key) and imaging.model_label(key) == "Z-Image Turbo / Tumblr")
+reset(); out = imaging.paint("a woman on a beach", model=key, n=1)
+c = calls()[-1]; words = c[c.index("-p") + 1]
+check("mix painting: Z-Image's files, both add-ons with their strengths and trigger words, the add-on folder", "--diffusion-model" in c and "<lora:mix-tumblr-1:0.8>" in words
+      and "<lora:mix-tumblr-2:0.6>" in words and "tmblr style" in words and c[c.index("--lora-model-dir") + 1] == SA.folder(), c)
+check("…saved with the mix's name", prefs.picture_info(out[0]).get("model") == "Z-Image Turbo / Tumblr", prefs.picture_info(out[0]))
+tpl = os.path.join(SA.folder(), SA.slug("Anime") + ".safetensors"); shutil.copy2(tumblr, tpl)
+sty = styles.resolve("Anime", "a cat", key)
+reset(); imaging.paint(sty["prompt"], model=key, lora=sty["lora"] or ("", None))
+words = calls()[-1][calls()[-1].index("-p") + 1]
+check("a template goes on top of a mix: the template's add-on and the mix's in one run", "<lora:anime:" in words and "<lora:mix-tumblr-1:" in words, words)
+os.remove(tpl)
+prefs.set("model_AI_Images", key)
+check("a mix can be the chosen main model", imaging.choice() == key and imaging.kind() == "zimage")
+prefs.set("model_AI_Images", "zimage")
+import image_pages as IPG
+check("fuller description: a request for a nude keeps it (the rewrite is used when it does)", IPG.keeps_request("a nude woman on a beach", "A nude woman stands on a sunny beach at dusk."))
+check("…and a rewrite that turns it into a bikini is thrown away (your words are painted)", not IPG.keeps_request("a nude woman on a beach", "A woman in a red bikini on a sunny beach."))
+check("…as is one that drops it", not IPG.keeps_request("a naked man in the rain", "A man walks in the rain at night, lit by neon."))
+check("…requests that don't mention it are left alone", IPG.keeps_request("a cat in a hat", "A cat wearing a top hat."))
+check("deleting a mix removes it and its copies (the picked files stay)", MM.delete(key) and not MM.get(key) and not os.path.isfile(os.path.join(SA.folder(), "mix-tumblr-1.safetensors")) and os.path.isfile(tumblr))
+MM.create("Tumblr", "zimage", [dict(path=tumblr, weight=0.8)])                     # (kept for the page checks below)
+
 # ---- robustness
 reset("oom-unless-offload"); notes = []; real_note = jobs.note; jobs.note = lambda t, k="busy": notes.append(t)
 out = imaging.paint("a big castle", model="sd15", n=1)
@@ -169,6 +220,13 @@ def run_page(title, setup, expect=1):
 def words(pg, t): pg.prompt.delete("1.0", "end"); pg.prompt.insert("1.0", t)
 c = run_page("Text to Image", lambda pg: (words(pg, "a lighthouse"), pg.style.set("Cartoon"), pg.improve.set(False)))
 check("  Text to Image uses the chosen style", "cartoon" in " ".join(c).lower())
+tti = sec["Text to Image"]; tti._sync_model_pick(); mix_label = next((n for n in tti.model_choice.choices if n.startswith("Z-Image Turbo / Tumblr")), "")
+check("the image model picker lists the mix right after its main model", mix_label and tti.model_choice.choices.index(mix_label) == 1, tti.model_choice.choices)
+def pick_mix(pg): pg.model.set(mix_label); words(pg, "a lighthouse"); pg.style.set("None"); pg.improve.set(False)
+c = run_page("Text to Image", pick_mix)
+check("  picking the mix paints with it (plain Z-Image Turbo isn't mistaken for it)", tti.model_key() == "mix:tumblr" and "<lora:mix-tumblr-1:0.8>" in " ".join(c), (tti.model_key(), c))
+tti.model.set(next(n for n in tti.model_choice.choices if n.startswith("Z-Image Turbo ·")))
+check("  …and picking plain Z-Image Turbo again leaves the mix off", tti.model_key() == "zimage", tti.model_key())
 c = run_page("Image to Image", lambda pg: (pg.slot.set(pic), words(pg, "make it autumn")))
 check("  Image to Image repaints the start picture", "-i" in c and "--strength" in c)
 c = run_page("Prompt to Edit", lambda pg: (pg.slot.set(pic), words(pg, "make it night")))

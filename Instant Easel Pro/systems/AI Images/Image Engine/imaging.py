@@ -88,6 +88,7 @@ def choice():
     """the chosen picture model; if none is chosen yet, the best one already here, else the best one for this PC (catalog.py)"""
     c = _prefs().get("model_AI_Images")
     if c in ("zimage", "klein", "sd15", "sdxl", "file"): return c
+    if _mix(c): return c                                                     # a Model Mix of yours (model_mixes.py)
     if zimage_parts(): return "zimage"
     try:                                                                     # the best for this PC, even if a smaller one is already here
         import catalog; b = catalog.best("AI Images")                        # (Stable Diffusion 1.5 stands in until it's downloaded)
@@ -148,10 +149,19 @@ def model_file(key=None):
         if own: return os.path.join(IMAGE, own[0])
     return os.path.join(IMAGE, files[0]) if files else None
 
+def _mix(key):
+    """the Model Mix saved under key ('mix:...'), or None"""
+    if not (isinstance(key, str) and key.startswith("mix:")): return None
+    try:
+        import model_mixes as MM; return MM.get(key)
+    except Exception: return None
+
 def kind(key=None):
     """the model actually used for key (the chosen one by default): 'zimage', 'klein', 'sd15', 'sdxl' or 'file'.
-    A big model that isn't downloaded yet is stood in for by Stable Diffusion 1.5 when that's here"""
+    A big model that isn't downloaded yet is stood in for by Stable Diffusion 1.5 when that's here. A Model Mix paints with its main model"""
     c = key or choice()
+    m = _mix(c)
+    if m: c = m.get("base", "sd15")
     if c == "zimage" and zimage_parts(): return "zimage"
     if c == "klein" and klein_parts(): return "klein"
     if c in ("zimage", "klein"): return "sd15" if model_file("sd15") else c
@@ -163,7 +173,9 @@ def spec(key=None):
     f = model_file(k) or ""; return MODELS["sdxl" if "xl" in os.path.basename(f).lower() else "sd15"]
 
 def have(key):
-    """is this model downloaded?"""
+    """is this model downloaded? (a Model Mix: its main model and all its add-on files)"""
+    if _mix(key):
+        import model_mixes as MM; return MM.ready(key) and have(MM.base(key))
     if key == "zimage": return bool(zimage_parts())
     if key == "klein": return bool(klein_parts())
     return bool(model_file(key))
@@ -175,6 +187,8 @@ def _model_args(key=None):
     f = model_file(k); return ["-m", f] if f else None
 
 def model_label(key=None):
+    m = _mix(key or choice())
+    if m and kind(key) == m.get("base"): return m.get("name", "")
     k = kind(key)
     if k in ("zimage", "klein"): return MODELS[k]["label"]
     f = model_file(k); return os.path.basename(f) if f else ""
@@ -517,6 +531,12 @@ def paint(prompt, n=1, size="Square 1:1", steps=20, cfg=7.0, seed=None, negative
     brain.free_card()                                                         # the whole graphics card for the picture
     w, h = pixels(size, key)
     extra, lora_dir = image_model_bits(image_model, key) if lora is None else lora
+    if _mix(key) and k == _mix(key).get("base"):                              # a Model Mix: its add-ons go on with any template's
+        import model_mixes as MM
+        mix_text, mix_dir = MM.bits(key)
+        if not mix_dir: raise RuntimeError(f"an add-on file of {MM.name(key)} is missing (Settings > Model Mixes: make it again)")
+        if lora_dir: MM.place_in(key, lora_dir)
+        extra, lora_dir = (extra or "") + mix_text, lora_dir or mix_dir
     if sp["steps"]: steps = sp["steps"].get(steps, steps if steps <= 12 else 8)
     if sp["cfg"] is not None: cfg = sp["cfg"]
     base_seed = random.randint(0, 2 ** 31 - 2) if seed is None else int(seed); last.update(seed=base_seed, note="", model=model_label(key))
@@ -549,8 +569,9 @@ def paint(prompt, n=1, size="Square 1:1", steps=20, cfg=7.0, seed=None, negative
                     if trimmed != prompt or t_extra != (extra or ""):
                         prompt, extra = trimmed, ("" if not t_extra.strip(" ,") else t_extra)
                         if "<lora:" not in (prompt + extra).lower(): lora_dir = None
-                        last["note"] = f"the {stem} template doesn't fit {model_label(key)}: painted without it"
-                        jobs.note(f"THE {stem.upper()} TEMPLATE IS MADE FOR ANOTHER MODEL — painting without it"); continue
+                        what = "add-on of your mix" if stem.startswith("mix-") else "template"
+                        last["note"] = f"the {stem} {what} doesn't fit {model_label(key)}: painted without it"
+                        jobs.note(f"THE {stem.upper()} {what.upper()} IS MADE FOR ANOTHER MODEL — painting without it"); continue
                 if not OOM.search(tail):
                     if not plain:                                                 # an extra this engine/model doesn't take (preview, speed boost,
                         plain = True; continue                                    # sharper pass): once more without any of them
