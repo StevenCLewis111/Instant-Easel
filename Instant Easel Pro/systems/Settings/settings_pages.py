@@ -635,7 +635,11 @@ class StyleAddonsPage(SettingsPage):
             _dl_button(r, self.app, lambda s=style: SA.installed(s), lambda s=style: self._sa_get(s), busy=lambda s=style: f"template {s}" in BUSY).pack(side="left", padx=4)
             if here: T.Button(r, "Remove", lambda s=style: (SA.remove(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
             if e.get("own"): T.Button(r, "Forget", lambda s=style: (SA.forget_own(s), self._sa_list()), kind="danger", width=8).pack(side="left", padx=4)
-            T.Text(r, e.get("note", ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
+            bad = SA.UNSUPPORTED.get(SA._base_in_file(style)) if here else None
+            if bad:
+                warn = T.Text(r, f"MADE FOR {bad.upper()}: PRO DOESN'T RUN IT, SO IT'S LEFT OUT", font=T.f(8))
+                warn._style = lambda w=warn: w.configure(bg=w.master["bg"], fg="#ef5350"); warn._style(); warn.pack(side="left", padx=6)
+            else: T.Text(r, e.get("note", ""), muted=True, font=T.f(8)).pack(side="left", padx=6)
     def _sa_get(self, style, quiet=False):
         import style_addons as SA; q = self.app.q
         if SA.installed(style) or f"template {style}" in BUSY: return self._sa_next()           # (never twice)
@@ -670,7 +674,7 @@ class StyleAddonsPage(SettingsPage):
             src.set(p)
             found = SA.detect_base(p)                                          # which model it's for: read from the file
             if found in SA.BASES: base.set(SA.BASES[found]); seen.configure(text=f"READ FROM THE FILE: MADE FOR {SA.BASES[found].upper()}")
-            elif found == "flux1": seen.configure(text="THIS FILE IS MADE FOR FLUX.1, WHICH PRO DOESN'T RUN")
+            elif found in SA.UNSUPPORTED: seen.configure(text=f"THIS FILE IS MADE FOR {SA.UNSUPPORTED[found].upper()}, WHICH PRO DOESN'T RUN")
             else: seen.configure(text="COULDN'T TELL FROM THE FILE WHICH MODEL IT'S FOR: PICK IT BELOW")
             if not vals["style"].get().strip():
                 vals["style"].set(os.path.splitext(os.path.basename(p))[0].replace("_", " ").replace("-", " ").strip().title())

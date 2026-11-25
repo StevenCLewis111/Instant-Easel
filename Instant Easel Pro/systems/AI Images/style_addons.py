@@ -41,6 +41,7 @@ CATALOG = {
 }
 
 
+UNSUPPORTED = {"flux1": "FLUX.1", "sd2": "Stable Diffusion 2.x"}         # models templates are made for that Pro doesn't run
 BASES = {"zimage": "Z-Image Turbo", "klein": "FLUX.2 Klein", "sdxl": "SDXL", "sd15": "SD 1.5", "wan22": "Wan 2.2 (video)", "ltx2": "LTX-2.3 (video)"}
 
 
@@ -83,8 +84,16 @@ def detect_base(path):
         if any(k in said for k in ("sdxl", "xlv1", "xlbase", "pony", "illustrious", "noobai", "stablediffusionxl")): return "sdxl"
         if "wan" in said and "2.2" in said: return "wan22"
         if "ltx" in said: return "ltx2"
+        if any(k in said for k in ("sdv2", "sd2", "v21", "v20", "stablediffusionv2")): return "sd2"     # (SD 2.x: Pro doesn't run it)
         if any(k in said for k in ("sdv1", "sd1", "v15", "stablediffusionv1")): return "sd15"
+    if str(meta.get("ss_v2", "")).lower() == "true": return "sd2"
     keys = [k for k in h if k != "__metadata__"]; j = " ".join(keys).lower()
+    if re.search(r"lora_te_text_model_encoder_layers_(1[2-9]|2\d)_", j): return "sd2"   # SD 2's text reader is 23 layers deep (SD 1.5's: 12)
+    for k in keys:                                                            # ...and 1024 wide (SD 1.5's: 768)
+        if k.lower().startswith("lora_te_") and k.lower().endswith("lora_down.weight"):
+            shp = (h[k] or {}).get("shape") or []
+            if len(shp) == 2 and shp[1] == 1024: return "sd2"
+            break
     if "context_refiner" in j or "noise_refiner" in j: return "zimage"            # Z-Image's own blocks
     if "double_blocks" in j or "single_blocks" in j or "single_transformer_blocks" in j: return "flux1" if "flux1" in said else "klein"
     if "lora_te2_" in j or "lora_te1_" in j or "text_encoder_2" in j or "conditioner.embedders.1" in j: return "sdxl"
@@ -277,6 +286,7 @@ def add_file(style, path, trigger="", weight=0.9, base=None):
     if not path.lower().endswith(".safetensors"): raise RuntimeError("a template is a .safetensors file")
     found = detect_base(path)
     if found == "flux1": raise RuntimeError("it's made for FLUX.1, which Pro doesn't run (FLUX.2 Klein templates work)")
+    if found == "sd2": raise RuntimeError("it's made for Stable Diffusion 2.x, which Pro doesn't run (SD 1.5 and SDXL templates work)")
     base = found if found in BASES else base
     if not base: raise RuntimeError("couldn't tell which model it's made for: pick it under MADE FOR")
     if os.path.getsize(path) > 3e9: raise RuntimeError("that's too big for a template: a whole model goes in with Settings > AI Models > Add manually")

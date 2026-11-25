@@ -541,9 +541,12 @@ def paint(prompt, n=1, size="Square 1:1", steps=20, cfg=7.0, seed=None, negative
                 bad = LORA_MISFIT.search(tail or "")
                 if bad:                                                           # a template / your own model made for another picture model:
                     stem = os.path.splitext(re.split(r"[\\/]", bad.group(1))[-1])[0]   # painted without it, and said so
-                    trimmed = re.sub(r"\s*<lora:" + re.escape(stem) + r":[^>]*>", "", prompt, flags=re.I)
-                    if trimmed != prompt:
-                        prompt = trimmed; last["note"] = f"the {stem} template doesn't fit {model_label(key)}: painted without it"
+                    tag = r"\s*<lora:" + re.escape(stem) + r":[^>]*>"                 # (in the words, or in what the template adds to them)
+                    trimmed, t_extra = re.sub(tag, "", prompt, flags=re.I), re.sub(tag, "", extra or "", flags=re.I)
+                    if trimmed != prompt or t_extra != (extra or ""):
+                        prompt, extra = trimmed, ("" if not t_extra.strip(" ,") else t_extra)
+                        if "<lora:" not in (prompt + extra).lower(): lora_dir = None
+                        last["note"] = f"the {stem} template doesn't fit {model_label(key)}: painted without it"
                         jobs.note(f"THE {stem.upper()} TEMPLATE IS MADE FOR ANOTHER MODEL — painting without it"); continue
                 if not OOM.search(tail):
                     if not plain:                                                 # an extra this engine/model doesn't take (preview, speed boost,

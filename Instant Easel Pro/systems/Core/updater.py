@@ -188,13 +188,14 @@ def handle_args():
         i = sys.argv.index("--finish-update"); finish(sys.argv[i + 1] if len(sys.argv) > i + 1 else 0); return True
     if "--cleanup-update" in sys.argv:
         import threading
-        def tidy():
-            for _ in range(30):
+        def after_update():                                                   # (the new copy has just been put in: clear the update folder.
+            for _ in range(30):                                               #  A file can still be held a moment, so it tries for 30 s)
                 time.sleep(1)
-                try: shutil.rmtree(os.path.join(folder(), "new")); tidy(); _log("tidied the update folder away"); return
-                except FileNotFoundError: tidy(); return
+                try:
+                    if os.path.isdir(os.path.join(folder(), "new")): shutil.rmtree(os.path.join(folder(), "new"))
+                    tidy(); _log("tidied the update folder away"); return
                 except OSError: pass
-        threading.Thread(target=tidy, daemon=True, name="update tidy").start()
+        threading.Thread(target=after_update, daemon=True, name="update tidy").start()
         return False
     if FROZEN and os.path.basename(paths.HOME).lower() != "new":
         try: ready()                                                         # (clears a leftover that isn't newer)

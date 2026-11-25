@@ -698,6 +698,9 @@ class ImagePage(tk.Frame):
             st = self.style.get(); e = SA.entries().get(st)
             if not e or st in self.styles.BUILT_IN or not SA.installed(st): return
             want = SA._base_in_file(st) or SA.base_of(e)
+            if want in SA.UNSUPPORTED:
+                return T.banner(self.app, f"THE {st.upper()} TEMPLATE IS MADE FOR {SA.UNSUPPORTED[want].upper()}, WHICH PRO DOESN'T RUN — "
+                                          "it's left out of your pictures (SD 1.5, SDXL, Z-Image and FLUX.2 Klein templates work)", "error")
             if want not in ("zimage", "klein", "sdxl", "sd15") or self.imaging.kind(self.model_key()) == want: return
             name = SA.BASES.get(want, want)
             if want in self._downloaded():
