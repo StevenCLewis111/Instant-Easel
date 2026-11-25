@@ -580,7 +580,7 @@ class ImagePage(tk.Frame):
         self.run_bar = T.ProgressBar(self if not self.SPLIT else host, width=520)   # (sections without the viewer: a bar above the results while it paints)
         self.results = _frame(self if not self.SPLIT else host)
         if not self.VIEWER: self.results.pack(fill="both", expand=True, pady=(4, 0))
-        self.style.trace_add("write", lambda *a: self._model_changed()); self.bind("<Map>", lambda e: e.widget is self and self.refresh(), add="+")
+        self.style.trace_add("write", lambda *a: (self._template_picked(), self._model_changed())); self.bind("<Map>", lambda e: e.widget is self and self.refresh(), add="+")
         if self.viewer is not None:                                                  # the picture box shows the shape and number of pictures to come
             for v in ((self.size,) if self.SIZE else ()) + (self.count,): v.trace_add("write", lambda *a: self.viewer.clear())
         self._model_changed(); self._tick()
@@ -645,7 +645,7 @@ class ImagePage(tk.Frame):
             try:
                 if k == "file": here = any(f.lower().endswith((".safetensors", ".ckpt", ".gguf")) and f != im.SD15["file"] and "xl" not in f.lower()
                                            for f in os.listdir(im.IMAGE)) if os.path.isdir(im.IMAGE) else False
-                elif k == "sdxl": here = os.path.exists(os.path.join(im.IMAGE, getattr(im, "SDXL", {}).get("file", "-")))
+                elif k == "sdxl": here = bool(im.model_file("sdxl"))                     # (the SDXL download, or an SDXL-type model of yours: Pony, Illustrious…)
                 else: here = im.have(k)
             except Exception: here = False
             if here: out.append(k)
@@ -679,7 +679,8 @@ class ImagePage(tk.Frame):
         try:
             import style_addons as SA
             kind = self.imaging.kind(self.model_key()); entries = SA.entries()
-            names = [n for n in self.styles.names() if n not in entries or n in self.styles.BUILT_IN or SA.base_of(entries[n]) == kind]
+            if self._own_model_pick(): names = self.styles.names()               # all of them: picking one switches to its model
+            else: names = [n for n in self.styles.names() if n not in entries or n in self.styles.BUILT_IN or SA.base_of(entries[n]) == kind]
         except Exception: names = self.styles.names()
         self.style_choice.choices = names
         if self.style.get() not in names: self.style.set("None")
@@ -688,6 +689,25 @@ class ImagePage(tk.Frame):
 
     def _model_picked(self):
         self._fit_templates(); self._model_changed()
+
+    def _template_picked(self):
+        """a template made for another image model: switch to that model (or say which one to download)"""
+        if getattr(self, "_switching", False) or not self._own_model_pick(): return
+        try:
+            import style_addons as SA
+            st = self.style.get(); e = SA.entries().get(st)
+            if not e or st in self.styles.BUILT_IN or not SA.installed(st): return
+            want = SA._base_in_file(st) or SA.base_of(e)
+            if want not in ("zimage", "klein", "sdxl", "sd15") or self.imaging.kind(self.model_key()) == want: return
+            name = SA.BASES.get(want, want)
+            if want in self._downloaded():
+                self._switching = True
+                try: self.model.set(self._label(want))
+                finally: self._switching = False
+                T.banner(self.app, f"IMAGE MODEL: {name.upper()} — the {st} template is made for it", "success")
+            else:
+                T.banner(self.app, f"THE {st.upper()} TEMPLATE IS MADE FOR {name.upper()} — download it in Settings > AI Models, then pick it here", "busy")
+        except Exception: pass
     def needs(self):
         """[(download key, what it is)] this section still needs"""
         out = []; im = self.imaging; key = self.model_key()

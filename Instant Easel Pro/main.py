@@ -863,9 +863,9 @@ class Section(tk.Frame):
         T.wheel_area(holder, lambda n: self._msb.winfo_manager() and cv.yview_scroll(n, "units"))
         first = MAIN_PAGE.get(menu)
         for f in tools:                                                                          # (30px each side of the buttons; the status dot sits in the right-hand space)
-            if first and f["name"] != first and not f.get("hidden") and not getattr(self, "_opts_head", None):
-                self._opts_head = h = themed_frame(mf); h.pack(fill="x", expand=True); self.rows.append(h)   # the rest of this tab: its MODEL OPTIONS
-                T.Line(h, vertical=False).pack(fill="x", pady=(0, 4)); T.Text(h, "MODEL OPTIONS", font=T.f(10)).pack()
+            if first and f["name"] == first and not getattr(self, "_opts_head", None):      # MODEL OPTIONS heads the list, a line under it,
+                self._opts_head = h = themed_frame(mf); h.pack(fill="x", expand=True); self.rows.append(h)   # then the main page and the rest
+                T.Text(h, "MODEL OPTIONS", font=T.f(10)).pack(); T.Line(h, vertical=False).pack(fill="x", pady=(4, 0))
             if f.get("hidden"):
                 self.pages[f["name"]] = built[f["name"]](self.content, app) if f["name"] in built else PlannedPage(self.content, app, f); continue
             row = themed_frame(mf); row.pack(fill="x", pady=0, expand=True); self.rows.append(row)
@@ -1081,7 +1081,7 @@ class ScraperPage(Page):
 # ---------------------------------------------------------------- Paint
 
 # ---------------------------------------------------------------- About
-VERSION = "0.9.10 (Nov 24, 2026)"
+VERSION = "0.9.11 (Nov 24, 2026)"
 class AboutPage(Page):
     def __init__(self, master, app):
         super().__init__(master, app)
