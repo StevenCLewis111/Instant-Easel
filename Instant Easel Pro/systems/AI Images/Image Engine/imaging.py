@@ -59,6 +59,7 @@ OLD_SIZES = {"Square": "Square 1:1", "Tall": "Tall 2:3", "Wide": "Wide 3:2"}
 GUIDANCE = {"Loosely": 5.0, "Normal": 7.0, "Closely": 9.5}              # how closely the picture follows the words (SD's cfg scale)
 ZSTEPS = {12: 6, 20: 8, 30: 10}
 last = dict(seed=None, note="", model="")                               # the last paint(): its seed, any note (painted smaller...), model
+LORA_MISFIT = re.compile(r"LoRA '([^']+)' has no matching model weights", re.I)
 OOM = re.compile(r"out of (device |host )?memory|ErrorOutOfDeviceMemory|OutOfDeviceMemory|DeviceLost|failed to allocate|"
                  r"allocation .{0,40}failed|bad_alloc|VK_ERROR_OUT_OF", re.I)
 MODES = ["Fast", "Balanced", "Safe"]
@@ -537,6 +538,13 @@ def paint(prompt, n=1, size="Square 1:1", steps=20, cfg=7.0, seed=None, negative
                 if code == 0 and made: break
                 if _proc["stalled"]: raise RuntimeError(f"the image engine stopped responding for {_pref('image_stall_minutes', 10)} minutes, so it was stopped "
                                                         "(Settings > AI Images sets how long to wait). Try Safe mode or a smaller size")
+                bad = LORA_MISFIT.search(tail or "")
+                if bad:                                                           # a template / your own model made for another picture model:
+                    stem = os.path.splitext(re.split(r"[\\/]", bad.group(1))[-1])[0]   # painted without it, and said so
+                    trimmed = re.sub(r"\s*<lora:" + re.escape(stem) + r":[^>]*>", "", prompt, flags=re.I)
+                    if trimmed != prompt:
+                        prompt = trimmed; last["note"] = f"the {stem} template doesn't fit {model_label(key)}: painted without it"
+                        jobs.note(f"THE {stem.upper()} TEMPLATE IS MADE FOR ANOTHER MODEL — painting without it"); continue
                 if not OOM.search(tail):
                     if not plain:                                                 # an extra this engine/model doesn't take (preview, speed boost,
                         plain = True; continue                                    # sharper pass): once more without any of them

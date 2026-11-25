@@ -59,6 +59,69 @@ def base_from_civitai(name):
     return ""
 
 
+def _header(path):
+    """a .safetensors file's table of contents (its tensor names and the maker's notes), read from its first bytes only"""
+    import struct
+    with open(path, "rb") as f:
+        n = struct.unpack("<Q", f.read(8))[0]
+        if not 2 <= n <= 100_000_000: raise ValueError("not a .safetensors file")
+        return json.loads(f.read(n))
+
+
+def detect_base(path):
+    """which picture model a template (LoRA) file was made for, read from the file itself: one of BASES, or '' when it can't tell.
+    First the maker's notes (most training tools write the base model in), then the names of the parts it changes."""
+    try: h = _header(path)
+    except Exception: return ""
+    meta = h.get("__metadata__") or {}
+    said = " ".join(str(meta.get(k, "")) for k in ("ss_base_model_version", "modelspec.architecture", "ss_sd_model_name",
+                                                    "ss_base_model", "base_model", "baseModel")).lower().replace("-", "").replace("_", "").replace(" ", "")
+    if said:
+        if "zimage" in said: return "zimage"
+        if "klein" in said or "flux2" in said or "flux.2" in said: return "klein"
+        if "flux" in said: return "flux1"                                          # (FLUX.1: Pro doesn't run it)
+        if any(k in said for k in ("sdxl", "xlv1", "xlbase", "pony", "illustrious", "noobai", "stablediffusionxl")): return "sdxl"
+        if "wan" in said and "2.2" in said: return "wan22"
+        if "ltx" in said: return "ltx2"
+        if any(k in said for k in ("sdv1", "sd1", "v15", "stablediffusionv1")): return "sd15"
+    keys = [k for k in h if k != "__metadata__"]; j = " ".join(keys).lower()
+    if "context_refiner" in j or "noise_refiner" in j: return "zimage"            # Z-Image's own blocks
+    if "double_blocks" in j or "single_blocks" in j or "single_transformer_blocks" in j: return "flux1" if "flux1" in said else "klein"
+    if "lora_te2_" in j or "lora_te1_" in j or "text_encoder_2" in j or "conditioner.embedders.1" in j: return "sdxl"
+    if re.search(r"(input_blocks_[4-8]_1_transformer_blocks_[1-9]|down_blocks[._][12][._]attentions[._]\d[._]transformer_blocks[._][1-9])", j): return "sdxl"
+    if "lora_te_" in j or "lora_unet_" in j or "down_blocks" in j or "input_blocks" in j: return "sd15"
+    if "self_attn" in j and "cross_attn" in j and "blocks." in j: return "wan22"
+    if "layers." in j and ("attention" in j or "adaln" in j): return "zimage"
+    return ""
+
+
+_seen = {}
+def _base_in_file(style):
+    """the base read from this style's downloaded file (remembered while the file is unchanged), or ''"""
+    p = installed(style)
+    if not p: return ""
+    key = (p, os.path.getmtime(p), os.path.getsize(p))
+    if key not in _seen: _seen.clear() if len(_seen) > 200 else None; _seen[key] = detect_base(p)
+    return _seen[key]
+
+
+def _fix_base(style, b):
+    """a template of yours that was filed under the wrong model: put right in your-addons.json"""
+    own = _own()
+    if style in own and own[style].get("base") != b:
+        own[style]["base"] = b
+        try:
+            with open(_own_file(), "w") as f: json.dump(own, f, indent=1)
+        except OSError: pass
+
+
+def check_all():
+    """put right any of your templates filed under the wrong model (what each file says it's for wins)"""
+    for style, e in _own().items():
+        real = _base_in_file(style)
+        if real in BASES and real != base_of(e): _fix_base(style, real)
+
+
 def enabled(style):
     import prefs
     return style not in (prefs.get("addons_off") or [])
@@ -100,7 +163,10 @@ def installed(style):
 def lora_for(style, model_kind="zimage"):
     """(text for the prompt, folder) when this style's add-on is here, switched on, and made for the model that's painting; else None"""
     e = entries().get(style)
-    if not e or not installed(style) or not enabled(style) or base_of(e) != model_kind: return None
+    if not e or not installed(style) or not enabled(style): return None
+    real = _base_in_file(style)                                               # what the file itself says it's for wins
+    if real and real in BASES and real != base_of(e) and e.get("own"): _fix_base(style, real); e = dict(e, base=real)
+    if (real or base_of(e)) != model_kind: return None
     trig = e.get("trigger", "").strip(); w = float(e.get("weight", 0.9))
     return (f", {trig}" if trig else "") + f" <lora:{slug(style)}:{w:g}>", folder()
 
@@ -153,7 +219,10 @@ def download(style, on_done=None):
     def work():
         try:
             fetch(style); imaging._set(None, "")
-            on_done and on_done(True, f"the {style} add-on is ready — it switches on when {BASES.get(base_of(e), 'its model')} paints in {style}")
+            real = _base_in_file(style)
+            if real in BASES and real != base_of(e) and e.get("own"): _fix_base(style, real); e2 = dict(e, base=real)
+            else: e2 = e
+            on_done and on_done(True, f"the {style} add-on is ready — it switches on when {BASES.get(base_of(e2), 'its model')} paints in {style}")
         except Exception as ex:
             imaging._set(None, ""); on_done and on_done(False, str(ex))
     threading.Thread(target=work, daemon=True, name="style add-on " + style).start()
@@ -200,11 +269,16 @@ def add_own(style, link, trigger="", weight=0.9, base=None):
     return own[style].get("repo") or own[style]["url"]
 
 
-def add_file(style, path, trigger="", weight=0.9, base="zimage"):
-    """your own template from a file you already have (a LoRA .safetensors): copied in, nothing to download"""
+def add_file(style, path, trigger="", weight=0.9, base=None):
+    """your own template from a file you already have (a LoRA .safetensors): copied in, nothing to download.
+    base: the model it's for; read from the file itself when not given (and the file wins when it says something else)"""
     import shutil
     if not os.path.isfile(path): raise RuntimeError("that file isn't there")
     if not path.lower().endswith(".safetensors"): raise RuntimeError("a template is a .safetensors file")
+    found = detect_base(path)
+    if found == "flux1": raise RuntimeError("it's made for FLUX.1, which Pro doesn't run (FLUX.2 Klein templates work)")
+    base = found if found in BASES else base
+    if not base: raise RuntimeError("couldn't tell which model it's made for: pick it under MADE FOR")
     if os.path.getsize(path) > 3e9: raise RuntimeError("that's too big for a template: a whole model goes in with Settings > AI Models > Add manually")
     os.makedirs(folder(), exist_ok=True); own = _own(); style = style.strip()
     dest = os.path.join(folder(), slug(style) + ".safetensors")
@@ -212,7 +286,7 @@ def add_file(style, path, trigger="", weight=0.9, base="zimage"):
     own[style] = dict(local=True, trigger=trigger.strip(), weight=float(weight), base=base or "zimage",
                       note=f"Your file ({os.path.basename(path)}).", own=True)
     with open(_own_file(), "w") as f: json.dump(own, f, indent=1)
-    return dest
+    return base
 
 
 def forget_own(style):

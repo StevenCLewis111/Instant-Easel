@@ -619,6 +619,8 @@ class StyleAddonsPage(SettingsPage):
     def _sa_list(self):
         import style_addons as SA, imaging
         for w in self.sa_rows.winfo_children(): w.destroy()
+        try: SA.check_all()                                                     # (yours filed under the wrong model: put right first)
+        except Exception: pass
         now = imaging.kind(); group = None
         for style, e in sorted(SA.entries().items(), key=lambda kv: (list(SA.BASES).index(SA.base_of(kv[1])) if SA.base_of(kv[1]) in SA.BASES else 9)):
             base = SA.base_of(e)
@@ -666,6 +668,10 @@ class StyleAddonsPage(SettingsPage):
             p = filedialog.askopenfilename(parent=win, title="Choose a template file", filetypes=[("Templates (LoRA)", "*.safetensors"), ("All files", "*.*")])
             if not p: return
             src.set(p)
+            found = SA.detect_base(p)                                          # which model it's for: read from the file
+            if found in SA.BASES: base.set(SA.BASES[found]); seen.configure(text=f"READ FROM THE FILE: MADE FOR {SA.BASES[found].upper()}")
+            elif found == "flux1": seen.configure(text="THIS FILE IS MADE FOR FLUX.1, WHICH PRO DOESN'T RUN")
+            else: seen.configure(text="COULDN'T TELL FROM THE FILE WHICH MODEL IT'S FOR: PICK IT BELOW")
             if not vals["style"].get().strip():
                 vals["style"].set(os.path.splitext(os.path.basename(p))[0].replace("_", " ").replace("-", " ").strip().title())
         T.Button(r, "Pick a file…", pick, width=12).pack(side="left")
@@ -676,10 +682,11 @@ class StyleAddonsPage(SettingsPage):
             T.Text(f, label.upper(), font=T.f(9)).pack(anchor="w", pady=(8, 2)); v = tk.StringVar(value=default); vals[key] = v
             entry(f, v).pack(anchor="w")
         T.Text(f, "MADE FOR", font=T.f(9)).pack(anchor="w", pady=(8, 2))
-        names = ["Not sure / read it from the page"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
+        names = ["Not sure / read it for me"] + list(SA.BASES.values()); base = tk.StringVar(value=names[0])
         T.Choice(f, "", names, base).pack(anchor="w")
-        T.Text(f, "A template only works with the model it was made for ('base model' where you got it). A Civitai link says it for you; "
-                  "otherwise pick it (Z-Image Turbo if you don't know).", muted=True, font=T.f(8), wraplength=420).pack(anchor="w", pady=(4, 0))
+        seen = T.Text(f, "", font=T.f(8)); seen.pack(anchor="w", pady=(4, 0))
+        T.Text(f, "A template only works with the model it was made for. It's read for you from the file (or a Civitai page) and "
+                  "put right by itself if it was set wrong.", muted=True, font=T.f(8), wraplength=420).pack(anchor="w", pady=(4, 0))
         T.Text(f, "SITE KEY  (only for links to files that need you signed in)", font=T.f(9)).pack(anchor="w", pady=(8, 2))
         key = tk.StringVar(value=prefs.get("civitai_key") or "")
         entry(f, key, show="•").pack(anchor="w")
@@ -690,8 +697,8 @@ class StyleAddonsPage(SettingsPage):
                 if not st: raise RuntimeError("give it a style name")
                 b = next((k for k, n in SA.BASES.items() if n == base.get()), None)
                 if os.path.isfile(where):
-                    SA.add_file(st, where, vals["trigger"].get(), w, base=b or "zimage"); win.destroy(); self._sa_list()
-                    return T.banner(self.app, f"ADDED — {st.upper()} TEMPLATE READY", "success")
+                    got = SA.add_file(st, where, vals["trigger"].get(), w, base=b); win.destroy(); self._sa_list()
+                    return T.banner(self.app, f"ADDED — {st.upper()} TEMPLATE, MADE FOR {SA.BASES.get(got, got).upper()} (it's used when that model paints)", "success")
                 prefs.set("civitai_key", key.get().strip())
                 if b is None and "civitai.com" not in where: b = "zimage"
                 SA.add_own(st, where, vals["trigger"].get(), w, base=b); win.destroy(); self._sa_list(); self._sa_get(st)
