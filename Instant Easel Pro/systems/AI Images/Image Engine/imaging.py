@@ -323,6 +323,7 @@ def download_size(key=None):
     if key == "zimage": return 0 if zimage_parts() else sum(p[4] for p in zimage_download_plan()) * 1e9
     if key == "klein": return 0 if klein_parts() else sum(p[4] for p in klein_download_plan()) * 1e9
     if key == "sd15": return 0 if model_file("sd15") else SD15["size"]
+    if key == "sdxl": return 0 if model_file("sdxl") else SDXL["size"] * 1e9
     if key in ADDON_FILES: return 0 if addon(key) else ADDON_FILES[key]["size"] * 1e9
     return 0
 
@@ -336,9 +337,9 @@ _dl_lock = threading.Lock()
 def downloading(): return _dl_lock.locked()
 
 def download(on_done=None, key=None):
-    """the engine (if missing) and one thing: 'zimage' / 'klein' / 'sd15' / an add-on ('upscale_photo', 'pose'...) / 'engine' alone.
+    """the engine (if missing) and one thing: 'zimage' / 'klein' / 'sd15' / 'sdxl' / an add-on ('upscale_photo', 'pose'...) / 'engine' alone.
     Default: the picture model chosen in Settings. Runs in the background; on_done(ok, message)"""
-    key = key or (choice() if choice() in ("zimage", "klein", "sd15") else "sd15")
+    key = key or (choice() if choice() in ("zimage", "klein", "sd15", "sdxl") else "sd15")
     def work():
         if not _dl_lock.acquire(blocking=False):
             on_done and on_done(False, "another image download is still running — it carries on; try again when it's done"); return
@@ -350,10 +351,12 @@ def download(on_done=None, key=None):
             if key == "zimage": _install_parts(ZDIR, zimage_download_plan(), ZIMAGE["vae_file"], ZIMAGE["llm_repo"], "z_image")
             elif key == "klein": _install_parts(KDIR, klein_download_plan(), KLEIN["vae_file"], KLEIN["llm_repo"], "flux2-klein")
             elif key == "sd15": _get(f"https://huggingface.co/{SD15['repo']}/resolve/main/{SD15['file']}", os.path.join(IMAGE, SD15["file"]), SD15["label"], SD15["size"] / 1e9)
+            elif key == "sdxl":
+                if not model_file("sdxl"): install_sdxl()
             elif key in ADDON_FILES:
                 a = ADDON_FILES[key]; url = a.get("url") or f"https://huggingface.co/{GUIDE_REPO}/resolve/main/{a['file']}"
                 _get(url, os.path.join(ADDONS, a["file"]), a["label"], a["size"])
-            name = {"zimage": ZIMAGE["label"], "klein": KLEIN["label"], "sd15": SD15["label"], "engine": "the image engine"}.get(key) or ADDON_FILES.get(key, {}).get("label", key)
+            name = {"zimage": ZIMAGE["label"], "klein": KLEIN["label"], "sd15": SD15["label"], "sdxl": SDXL["label"], "engine": "the image engine"}.get(key) or ADDON_FILES.get(key, {}).get("label", key)
             _set(None, ""); on_done and on_done(True, f"{name} is downloaded")
         except Exception as e:
             _set("error", f"Download failed: {e}"); on_done and on_done(False, str(e))

@@ -716,7 +716,7 @@ class ImagePage(tk.Frame):
         out = []; im = self.imaging; key = self.model_key()
         if not im.engine_exe(): out.append(("engine", "the image engine"))
         if not im.have(key) and not (self.MODEL == "paint" and im.ready()):
-            out.append((key if key in ("zimage", "klein", "sd15") else "sd15", im.MODELS.get(key, {}).get("label", "Stable Diffusion 1.5")))
+            out.append((key if key in ("zimage", "klein", "sd15", "sdxl") else "sd15", im.MODELS.get(key, {}).get("label", "Stable Diffusion 1.5")))
         return out
     def upgrade(self):
         """(download key, label) of the better picture model this PC is meant for, while Stable Diffusion 1.5 stands in for it"""
