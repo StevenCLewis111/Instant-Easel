@@ -160,12 +160,30 @@ class PrivacyPage(SettingsPage):
         self.buttons(("Clear training pictures", self.clear_pictures, "danger"), ("Clear what the AI tabs were taught", self.clear_taught, "danger"))
         self.refresh()
     def refresh(self):
-        rows = [("Training pictures and image models", prefs.folder_size(self.lib)), ("What the AI tabs were taught", prefs.folder_size(self.tabs)),
-                ("Downloaded AI models", prefs.folder_size(self.models)),
-                ("Your work folder (images, videos, code, chats)", prefs.folder_size(prefs.work_root()))]
-        for name in ("instant_easel_settings.json", "instant_easel_theme.json", "instant_easel_errors.log"):
-            p = _data_file(name); rows.append((name, os.path.getsize(p) if os.path.exists(p) else 0))
-        self.usage.configure(text="\n".join(f"{k:<44} {prefs.human(v):>10}" for k, v in rows))
+        # Measuring walks every file of the model folders (tens of thousands once the audio and image engines are installed), which froze
+        # the window at start; it runs on its own thread and the page fills in when it is done.
+        self.usage.configure(text="Measuring...")
+        def measure():
+            try:
+                rows = [("Training pictures and image models", prefs.folder_size(self.lib)), ("What the AI tabs were taught", prefs.folder_size(self.tabs)),
+                        ("Downloaded AI models", prefs.folder_size(self.models)),
+                        ("Your work folder (images, videos, code, chats)", prefs.folder_size(prefs.work_root()))]
+                for name in ("instant_easel_settings.json", "instant_easel_theme.json", "instant_easel_errors.log"):
+                    p = _data_file(name); rows.append((name, os.path.getsize(p) if os.path.exists(p) else 0))
+                text = "\n".join(f"{k:<44} {prefs.human(v):>10}" for k, v in rows)
+            except Exception as e:
+                text = f"Could not measure the folders: {e}"
+            box.append(text)
+        box = []
+        def show():   # runs on the window's own thread; Tk may only be touched from there
+            try:
+                if not self.usage.winfo_exists(): return
+                if box: self.usage.configure(text=box[0])
+                else: self.usage.after(250, show)
+            except tk.TclError:
+                pass   # the window closed while measuring
+        threading.Thread(target=measure, name="storage size", daemon=True).start()
+        self.usage.after(250, show)
     def clear_pictures(self):
         if T.popup(self.app, "CLEAR TRAINING PICTURES?", "Deletes every image model and the pictures waiting to be learned.\nThis can't be undone.",
                    (("Clear", "danger"), ("Cancel", "normal"))) == "Clear":

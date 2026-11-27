@@ -325,7 +325,8 @@ class InstantEasel(tk.Tk):
             x = x0 if col == 0 else x0 + lock_w - im.width                          # outer edge where the page's border is in the windowed layout
             self.mascot_lbl[col].place(x=x, y=body_y - im.height, bordermode="outside")      # flat bottom standing on the line
         self.update_idletasks()
-        if any(self.mascot_lbl[c].winfo_width() + 1 < self._mpil[c].width for c in self._mpil) and getattr(self, "_fit_tries", 0) < 2:
+        _mpil = getattr(self, "_mpil", {})   # no mascot picture made yet (the window is still being built): nothing to measure
+        if any(self.mascot_lbl[c].winfo_width() + 1 < _mpil[c].width for c in _mpil) and getattr(self, "_fit_tries", 0) < 2:
             self._fit_tries = getattr(self, "_fit_tries", 0) + 1; return self.after(30, self._size_mascots)    # the layout moved: measure once more
         self._fit_tries = 0
         self._paint_header()
